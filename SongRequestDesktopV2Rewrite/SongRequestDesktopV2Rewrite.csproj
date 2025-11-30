@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>SRshortLogo.ico</ApplicationIcon>
+    <Platforms>AnyCPU;x64</Platforms>
+    <AssemblyName>SongRequest V2</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="SRLoader.gif" />
+    <None Remove="SRshortLogo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="SRshortLogo.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CefSharp.Wpf.NETCore" Version="141.0.110" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="TagLibSharp" Version="2.2.0" />
+    <PackageReference Include="YoutubeExplode" Version="6.5.6" />
+    <PackageReference Include="YoutubeExplode.Converter" Version="6.5.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="SRLoader.gif" />
+    <Resource Include="SRshortLogo.png" />
+  </ItemGroup>
+
+</Project>

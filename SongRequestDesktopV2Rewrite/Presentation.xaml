@@ -1,0 +1,162 @@
+﻿<Window x:Class="SongRequestDesktopV2Rewrite.Presentation"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
+        mc:Ignorable="d"
+        Title="Presentation" Height="720" Width="1280" Background="#101010" WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <SolidColorBrush x:Key="PanelBackground" Color="#202020"/>
+        <SolidColorBrush x:Key="MutedText" Color="#9A9A9A"/>
+        <SolidColorBrush x:Key="AccentColor" Color="#5B8DEF"/>
+        <SolidColorBrush x:Key="AccentColorLight" Color="#7AD1FF"/>
+
+        <Style TargetType="Border" x:Key="CardBorder">
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Background" Value="{StaticResource PanelBackground}"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="BorderBrush" Value="#111"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- Simple animated marquee for non-timed lyrics -->
+        <Storyboard x:Key="MarqueeStoryboard" RepeatBehavior="Forever">
+            <DoubleAnimation Storyboard.TargetName="MarqueeTranslate" Storyboard.TargetProperty="X" From="600" To="-1200" Duration="0:0:18" />
+        </Storyboard>
+
+        <!-- Subtle pulse for highlighted timed-lyrics line -->
+        <Storyboard x:Key="PulseHighlight" RepeatBehavior="Forever" AutoReverse="True">
+            <ColorAnimation Storyboard.TargetName="TimedHighlightLine" Storyboard.TargetProperty="(TextBlock.Background).(SolidColorBrush.Color)" To="#33FFFFFF" Duration="0:0:0.8"/>
+        </Storyboard>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Left: Now playing & lyrics -->
+        <Border x:Name="PlayerPanel" Grid.Column="0" Style="{StaticResource CardBorder}" Background="Black">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Thumbnail with 16:9 area and two-color gradient background for the panel -->
+                <Border Grid.Row="0" CornerRadius="10" Height="270" Margin="6" Padding="10">
+                    <Grid>
+                        <Grid.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#162238" Offset="0"/>
+                                <GradientStop Color="#28385A" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Grid.Background>
+
+                        <!-- Thumbnail centered and constrained to 16:9 -->
+                        <Viewbox Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Grid Width="480" Height="270">
+                                <Border CornerRadius="8" Background="#111" >
+                                    <Image x:Name="PresentationThumbnail" Stretch="UniformToFill"/>
+                                </Border>
+                            </Grid>
+                        </Viewbox>
+                    </Grid>
+                </Border>
+
+                <!-- Title / artist -->
+                <StackPanel Grid.Row="1" Orientation="Vertical" Margin="12,6" HorizontalAlignment="Left">
+                    <TextBlock x:Name="PresentationTitle" Text="Song Title" FontSize="36" FontWeight="Bold" Foreground="White" TextTrimming="CharacterEllipsis" MaxWidth="920" />
+                    <TextBlock x:Name="PresentationArtist" Text="Artist Name" FontSize="20" Foreground="{StaticResource MutedText}" Margin="0,6,0,0" />
+                </StackPanel>
+
+                <!-- Progress + numbers -->
+                <StackPanel Grid.Row="2" Orientation="Vertical" Margin="12" VerticalAlignment="Top">
+                    <Slider x:Name="PresentationProgress" Minimum="0" Maximum="1" Value="0" Height="8" IsEnabled="False" IsHitTestVisible="False" Background="#2A2A2A"/>
+                    <DockPanel Margin="0,8,0,0">
+                        <TextBlock x:Name="PresentationElapsed" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Left" FontSize="16" />
+                        <TextBlock x:Name="PresentationRemaining" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Right" FontSize="16" TextAlignment="Right" />
+                    </DockPanel>
+
+                    <!-- Lyrics display area: timed (left) and non-timed marquee (right) stacked vertically -->
+                    <Grid Margin="0,18,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="3*" />
+                            <RowDefinition Height="80" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Timed lyrics: scrollable list with animated highlight on the 'current' line -->
+                        <Border Grid.Row="0" Background="#070707" CornerRadius="8" Padding="10" Margin="0,0,0,8" >
+                            <ScrollViewer x:Name="TimedLyricsScroll" VerticalScrollBarVisibility="Hidden">
+                                <StackPanel x:Name="TimedLyricsStack" VerticalAlignment="Top">
+                                    <!-- Example lines; consumers can populate at runtime -->
+                                    <TextBlock Text="[00:00] First line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
+                                    <TextBlock x:Name="TimedHighlightLine" Text="[00:10] Second line (highlighted)" FontSize="18" Foreground="White" Margin="0,6" Background="#00111111" />
+                                    <TextBlock Text="[00:20] Third line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
+                                    <TextBlock Text="[00:30] Fourth line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <!-- Non-timed marquee lyrics -->
+                        <Border Grid.Row="1" Background="#0B0B0B" CornerRadius="8" Padding="8" >
+                            <Grid ClipToBounds="True">
+                                <TextBlock x:Name="MarqueeText" FontSize="18" Foreground="#DDDDDD">
+                                    This is a non-timed lyrics marquee — the text will scroll across for public display.
+                                    <TextBlock.RenderTransform>
+                                        <TranslateTransform x:Name="MarqueeTranslate" X="0" />
+                                    </TextBlock.RenderTransform>
+                                </TextBlock>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Small footer label -->
+                <TextBlock Grid.Row="3" Text="Now Playing" Foreground="#777" HorizontalAlignment="Left" Margin="12,8,0,6" />
+            </Grid>
+        </Border>
+
+        <!-- Right: Next up (3 items horizontally) -->
+        <Border Grid.Column="1" Style="{StaticResource CardBorder}" Margin="12,0,0,0">
+            <StackPanel>
+                <TextBlock Text="Next Up" FontSize="20" FontWeight="Bold" Foreground="White" Margin="4" />
+                <ItemsControl x:Name="NextThreeItems" Margin="6">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="240" Margin="6" Background="#0F0F0F" CornerRadius="8" Padding="8">
+                                <StackPanel>
+                                    <Border Height="80" CornerRadius="6" Background="#111" HorizontalAlignment="Stretch">
+                                        <Image Source="/SRshortLogo.png" Stretch="UniformToFill" />
+                                    </Border>
+                                    <TextBlock Text="Title Example" Foreground="White" FontWeight="SemiBold" Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="Artist" Foreground="#BBBBBB" FontSize="12"/>
+                                    <TextBlock Text="ETA: 02:34" Foreground="#999" FontSize="12" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="" Height="8"/>
+                <TextBlock Text="(No controls on this screen)" Foreground="#666" FontSize="12" HorizontalAlignment="Center" Margin="8"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard Storyboard="{StaticResource MarqueeStoryboard}" />
+            <BeginStoryboard Storyboard="{StaticResource PulseHighlight}" x:Name="PulseBeg" />
+        </EventTrigger>
+    </Window.Triggers>
+</Window>

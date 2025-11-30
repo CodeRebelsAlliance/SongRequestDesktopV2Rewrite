@@ -1,0 +1,57 @@
+﻿<Window x:Class="SongRequestDesktopV2Rewrite.About"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
+        mc:Ignorable="d"
+        Title="About SongRequest" Height="420" Width="680" WindowStartupLocation="CenterOwner" ResizeMode="NoResize" Background="#101010">
+    <Grid Background="#101010" Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="12" VerticalAlignment="Top">
+            <Border Width="96" Height="96" CornerRadius="12" Background="#222" HorizontalAlignment="Left" VerticalAlignment="Top">
+                <Image Source="/SRshortLogo.png" Stretch="Uniform" />
+            </Border>
+            <StackPanel Margin="12,6">
+                <TextBlock x:Name="AppTitle" Text="Technik-AG SongRequest" FontSize="22" FontWeight="Bold" Foreground="White"/>
+                <TextBlock x:Name="VersionText" Text="Version 2.1" FontSize="12" Foreground="#CCCCCC" Margin="0,6,0,0" />
+                <TextBlock Text="https://redstefan.software/songrequests/" FontSize="12" Foreground="#AAAAAA"/>
+            </StackPanel>
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="#0E0E0E" CornerRadius="8" Padding="12" Margin="12">
+            <StackPanel>
+                <TextBlock Text="About this application" FontWeight="SemiBold" FontSize="14" Foreground="White"/>
+                <TextBlock Text="" Height="6"/>
+                <TextBlock TextWrapping="Wrap" Foreground="#BFBFBF">
+                    Copyright © 2025 — CodeRebelsAlliance (leMineGaming and Contributors). All rights reserved.
+                    This application is provided as-is. See the GitHub repository for source, issues and releases.
+                </TextBlock>
+
+                <Separator Margin="6"/>
+
+                <TextBlock Text="Badges" FontWeight="SemiBold" FontSize="13" Foreground="White" Margin="0,6,0,6"/>
+                <WrapPanel x:Name="BadgesPanel" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,0,6">
+                    <Image Width="160" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/v/release/leMineGaming/SongRequestDesktopV2Rewrite?label=release&amp;style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/releases"/>
+                    <Image Width="160" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/license/leMineGaming/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/blob/main/LICENSE"/>
+                    <Image Width="140" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/stars/leMineGaming/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/stargazers"/>
+                    <Image Width="140" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/issues/leMineGaming/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/issues"/>
+                </WrapPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button x:Name="CheckUpdatesButton" Content="Check for updates" Width="150" Height="32" Click="CheckUpdatesButton_Click" Background="#FF5B8DEF" Foreground="White"/>
+                    <TextBlock x:Name="UpdateStatus" Text="" Foreground="#CCCCCC" VerticalAlignment="Center" Margin="12,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,6,6">
+            <Button Content="Close" Width="92" Height="32" Click="CloseButton_Click" Background="#505050" Foreground="White"/>
+        </StackPanel>
+    </Grid>
+</Window>

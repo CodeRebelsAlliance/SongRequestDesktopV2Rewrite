@@ -1,0 +1,597 @@
+﻿<Window x:Class="SongRequestDesktopV2Rewrite.MusicPlayer"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
+        mc:Ignorable="d"
+        Title="Music Player - SongRequest" Height="800" Width="1500" MinWidth="1275" MinHeight="550" Icon="/SRshortLogo.png">
+    <Window.Resources>
+
+            <!-- Accent brushes (reuse existing AccentBrush if available) -->
+            <SolidColorBrush x:Key="ControlAccent" Color="#5B8DEF"/>
+            <SolidColorBrush x:Key="ControlAccentLight" Color="#7AD1FF"/>
+            <SolidColorBrush x:Key="ControlHover" Color="#2A2A2A"/>
+            <SolidColorBrush x:Key="ControlBorder" Color="#303030"/>
+            <SolidColorBrush x:Key="ControlSurface" Color="#1A1A1A"/>
+            <SolidColorBrush x:Key="PanelBackground" Color="#202020"/>
+        <SolidColorBrush x:Key="MutedText" Color="#9A9A9A"/>
+
+        <!-- Animated ComboBox (functional: Toggle bound to IsDropDownOpen, Popup IsOpen bound) -->
+        <Style TargetType="ComboBox" x:Key="AnimatedComboBox">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{StaticResource ControlSurface}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="Bd"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="1"
+                  CornerRadius="8">
+                                <DockPanel LastChildFill="True" Margin="6,0">
+                                    <ContentPresenter x:Name="ContentSite"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                VerticalAlignment="Center" />
+                                    <!-- ToggleButton must be two-way bound to IsDropDownOpen -->
+                                    <ToggleButton x:Name="Toggle"
+                            DockPanel.Dock="Right"
+                            Width="34"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            Focusable="False"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                        <Grid>
+                                            <Path x:Name="Arrow" Data="M 0 0 L 4 4 L 8 0 Z" Fill="White" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                                <Path.RenderTransform>
+                                                    <RotateTransform Angle="0"/>
+                                                </Path.RenderTransform>
+                                            </Path>
+                                        </Grid>
+                                    </ToggleButton>
+                                </DockPanel>
+                            </Border>
+
+                            <Popup x:Name="PART_Popup"
+                 Placement="Bottom"
+                 AllowsTransparency="True"
+                 Focusable="False"
+                 IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                 PlacementTarget="{Binding ElementName=Bd}"
+                 PopupAnimation="Slide">
+                                <Border Background="{StaticResource PanelBackground}"
+                    BorderBrush="{StaticResource ControlBorder}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="6"
+                    SnapsToDevicePixels="True">
+                                    <ScrollViewer Margin="0" CanContentScroll="True">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                            </Trigger>
+
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlHover}"/>
+                            </Trigger>
+
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <!-- rotate arrow when open -->
+                                <Setter TargetName="Arrow" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <RotateTransform Angle="180"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource ControlAccent}"/>
+                            </Trigger>
+
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource ControlAccentLight}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlHover}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Animated Slider (functional: uses PART_Track so Value/Thumb work) -->
+        <Style TargetType="Slider" x:Key="AnimatedSlider">
+            <Setter Property="Height" Value="8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid x:Name="RootGrid" Height="{TemplateBinding Height}" VerticalAlignment="Center">
+                            <!-- background track is represented by the IncreaseRepeatButton -->
+                            <!-- We'll provide a Track using the required PART name so the Slider logic works -->
+                            <Track x:Name="PART_Track" Focusable="False" IsDirectionReversed="False" 
+                 Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" 
+                 Value="{Binding Value, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <Track.DecreaseRepeatButton>
+                                    <!-- This area represents the filled portion -->
+                                    <RepeatButton x:Name="PART_DecreaseRepeatButton" Background="{StaticResource ControlAccent}" Height="4" Command="Slider.DecreaseSmall" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <!-- The remaining track -->
+                                    <RepeatButton x:Name="PART_IncreaseRepeatButton" Background="{StaticResource ControlBorder}" Height="4" Command="Slider.IncreaseSmall" />
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb x:Name="Thumb" Width="14" Height="14" HorizontalAlignment="Left" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                        <Thumb.RenderTransform>
+                                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                        </Thumb.RenderTransform>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Grid>
+                                                    <Ellipse Fill="{StaticResource ControlAccent}" Width="14" Height="14" />
+                                                    <Ellipse Width="10" Height="10" Fill="#FFFFFF20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+
+                        <ControlTemplate.Triggers>
+                            <EventTrigger RoutedEvent="Thumb.DragStarted" SourceName="Thumb">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.22" Duration="0:0:0.12"/>
+                                        <DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.22" Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+
+                            <EventTrigger RoutedEvent="Thumb.DragCompleted" SourceName="Thumb">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.0" Duration="0:0:0.12"/>
+                                        <DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.0" Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PART_IncreaseRepeatButton" Property="Background" Value="#2A2A2A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Helper value converterless binding for track fill: a small attached behaviour in code-behind is best for precise fill,
+       but if you prefer pure XAML: consumers can animate the TrackFill width from code when Value changes.
+       The style above focuses on thumb animation + look & feel. -->
+
+        <!-- Queue ListBox item animation & selection styling -->
+        <Style TargetType="ListBox" x:Key="QueueListStyle">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <TranslateTransform Y="0"/>
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Margin" Value="6"/>
+                        <Setter Property="Padding" Value="8"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Bd" Background="Transparent" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                        <Grid>
+                                            <ContentPresenter/>
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="#222831"/>
+                                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource ControlAccent}"/>
+                                            <Setter TargetName="Bd" Property="BorderThickness" Value="1"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlHover}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <!-- Removed EventTrigger in Style.Triggers to avoid XDG0031; entrance animations can be handled in code or per-item Loaded handlers if desired. -->
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border Background="Transparent" x:Name="BdRoot">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BdRoot" Property="Background" Value="#252525"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- Theme brushes -->
+            <SolidColorBrush x:Key="WindowBackground" Color="#121212"/>
+            <LinearGradientBrush x:Key="AccentBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FF5B8DEF" Offset="0.0"/>
+                <GradientStop Color="#FF7AD1FF" Offset="1.0"/>
+            </LinearGradientBrush>
+            
+
+            <!-- Button color resources -->
+            <SolidColorBrush x:Key="AccentButtonBackground" Color="#FF5B8DEF"/>
+            <SolidColorBrush x:Key="AccentButtonHover" Color="#FF7AD1FF"/>
+            <SolidColorBrush x:Key="DangerButtonBackground" Color="#FFE45757"/>
+            <SolidColorBrush x:Key="DangerButtonHover" Color="#FFFF7B7B"/>
+            <SolidColorBrush x:Key="SuccessButtonBackground" Color="#FF4CAF50"/>
+            <SolidColorBrush x:Key="SuccessButtonHover" Color="#FF66D17C"/>
+            <SolidColorBrush x:Key="WarningButtonBackground" Color="#FFFFB020"/>
+            <SolidColorBrush x:Key="WarningButtonHover" Color="#FFFFC658"/>
+            <SolidColorBrush x:Key="SecondaryButtonBackground" Color="#505050"/>
+            <SolidColorBrush x:Key="SecondaryButtonHover" Color="#6A6A6A"/>
+
+            <!-- Modern rounded button (includes click popout and loading overlay) -->
+            <Style TargetType="Button" x:Key="RoundedButton">
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Background" Value="#2C2C2C"/>
+                <Setter Property="Padding" Value="10,6"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                <Setter Property="RenderTransform">
+                    <Setter.Value>
+                        <ScaleTransform ScaleX="1" ScaleY="1"/>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid>
+                                <!-- Visual content -->
+                                <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="15"
+                                SnapsToDevicePixels="True"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                                    <Border.RenderTransform>
+                                        <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                    </Border.RenderTransform>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                                </Border>
+
+                                <!-- Loading overlay (ProgressBar indeterminate) -->
+                                <Grid x:Name="BtnLoadingOverlay" Visibility="{Binding Path=(local:UIHelpers.IsLoading), RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BoolToVis}}"
+                              Background="#80000000" IsHitTestVisible="False">
+                                    <ProgressBar Width="48" Height="12" IsIndeterminate="True" Foreground="White"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Grid>
+
+                            <ControlTemplate.Triggers>
+                                <!-- hover only scales; color hover handled by derived styles -->
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                         To="1.03" Duration="0:0:0.14" />
+                                                <DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                         To="1.03" Duration="0:0:0.14" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                         To="1.0" Duration="0:0:0.14" />
+                                                <DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                         To="1.0" Duration="0:0:0.14" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+
+                                <!-- click "popout" (small size change) -->
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                         To="0.96" Duration="0:0:0.06" />
+                                                <DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                         To="0.96" Duration="0:0:0.06" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                         To="1.0" Duration="0:0:0.12" />
+                                                <DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                         To="1.0" Duration="0:0:0.12" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Colored button styles (based on RoundedButton) -->
+            <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+                <Setter Property="Background" Value="{StaticResource AccentButtonBackground}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource AccentButtonBackground}"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="{StaticResource AccentButtonHover}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AccentButtonHover}"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+                <Setter Property="Background" Value="{StaticResource DangerButtonBackground}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource DangerButtonBackground}"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="{StaticResource DangerButtonHover}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource DangerButtonHover}"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+                <Setter Property="Background" Value="{StaticResource SuccessButtonBackground}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource SuccessButtonBackground}"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="{StaticResource SuccessButtonHover}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource SuccessButtonHover}"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="WarningButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+                <Setter Property="Background" Value="{StaticResource WarningButtonBackground}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource WarningButtonBackground}"/>
+                <Setter Property="Foreground" Value="Black"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="{StaticResource WarningButtonHover}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource WarningButtonHover}"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+                <Setter Property="Background" Value="{StaticResource SecondaryButtonBackground}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource SecondaryButtonBackground}"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="{StaticResource SecondaryButtonHover}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource SecondaryButtonHover}"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Rounded text box style -->
+            <Style TargetType="TextBox" x:Key="RoundedTextBox">
+                <Setter Property="Background" Value="DimGray"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="Padding" Value="10,6"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="MinHeight" Value="60"/>
+                <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TextBox">
+                            <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8"
+                            SnapsToDevicePixels="True">
+                                <ScrollViewer x:Name="PART_ContentHost" Margin="0"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Subtle card animation for content panels -->
+            <Style TargetType="Border" x:Key="CardBorder">
+                <Setter Property="CornerRadius" Value="12"/>
+                <Setter Property="Background" Value="{StaticResource PanelBackground}"/>
+                <Setter Property="Padding" Value="8"/>
+                <Setter Property="Effect">
+                    <Setter.Value>
+                        <DropShadowEffect Color="#000000" BlurRadius="12" ShadowDepth="4" Opacity="0.35"/>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="RenderTransform">
+                    <Setter.Value>
+                        <TranslateTransform Y="6"/>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Opacity" Value="0"/>
+            </Style>
+
+            <!-- Small helper style for icon-like narrow buttons -->
+            <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+                <Setter Property="Width" Value="95"/>
+                <Setter Property="Height" Value="36"/>
+            </Style>
+    </Window.Resources>
+
+    <Grid x:Name="RootGrid" Background="#101010">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="60"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <!-- Top bar -->
+        <Border x:Name="TopBarBorder" Grid.Row="0" Margin="6" Style="{StaticResource CardBorder}" Opacity="1">
+            <DockPanel Background="Transparent" LastChildFill="True" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="2,0">
+                    <Image x:Name="LogoImage" Width="34" Height="32" Stretch="Fill" Margin="4,0" Source="/SRshortLogo.png"/>
+                    <TextBlock Text="Technik-AG" FontFamily="Segoe UI Black" FontSize="16"
+                               VerticalAlignment="Center" Margin="8,0, 4, 0" Foreground="Silver"/>
+                    <TextBlock Text="Song" FontFamily="Segoe UI Black" FontSize="22"
+                               VerticalAlignment="Center" Margin="2, 0,0, 0" Foreground="Yellow"/>
+                    <TextBlock Text="Request" FontFamily="Segoe UI Black" FontSize="22"
+                               VerticalAlignment="Center" Margin="0, 0,2, 0" Foreground="Orange"/>
+                    <TextBlock Text=" - Music Player" FontFamily="Segoe UI Black" FontSize="22"
+                               VerticalAlignment="Center" Margin="0, 0,2, 0" Foreground="White"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <Grid x:Name="InnerGrid" Background="#101010" Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="845"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: Now playing -->
+            <Border Margin="0,12,0,12" CornerRadius="12" Padding="12" Background="Black" HorizontalAlignment="Center" Width="835" x:Name="Player">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="120"/>
+                        <RowDefinition Height="*"/>
+                        <!-- lyrics will occupy this row -->
+                        <RowDefinition Height="60"/>
+                        <!-- progress -->
+                        <RowDefinition Height="80"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Current song display -->
+                    <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="6">
+                        <Border Width="192" Height="108" CornerRadius="8" Background="#222" x:Name="ThumbnailBorder">
+                            <Image x:Name="NowThumbnail" Stretch="Uniform"/>
+                        </Border>
+                        <StackPanel Margin="12,0">
+                            <TextBlock x:Name="NowTitle" Text="Title" FontSize="26" FontWeight="Bold" Foreground="White" />
+                            <TextBlock x:Name="NowArtist" Text="Artist" FontSize="24" FontWeight="Bold" Foreground="#CCCCCC"/>
+                            <TextBlock x:Name="NowLength" Text="00:00" FontSize="18" Foreground="#999999" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Lyrics panel (below thumbnail, above progress) -->
+                    <Border Grid.Row="1" Background="#CF070707" CornerRadius="8" Padding="8" Margin="6,8,6,8" x:Name="WholeLyricsPanel" Visibility="Hidden">
+                        <ScrollViewer x:Name="LyricsScrollViewer" VerticalScrollBarVisibility="Hidden">
+                            <StackPanel x:Name="LyricsStackPanel" Orientation="Vertical" />
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Progress + time -->
+                    <StackPanel Grid.Row="2" Margin="6,12" Orientation="Vertical">
+                        <Slider x:Name="ProgressSlider" Minimum="0" Maximum="1" Value="0" Height="8" Background="#2A2A2A" 
+                        IsMoveToPointEnabled="True" PreviewMouseLeftButtonUp="ProgressSlider_PreviewMouseLeftButtonUp" Style="{StaticResource AnimatedSlider}"/>
+                        <DockPanel Margin="4,6,4,0">
+                            <TextBlock x:Name="ElapsedText" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Left" FontWeight="Bold" FontSize="20"/>
+                            <TextBlock x:Name="RemainingText" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Right" TextAlignment="Right" FontWeight="Bold" FontSize="20"/>
+                        </DockPanel>
+                    </StackPanel>
+
+                    <!-- Controls -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,6" Width="791">
+                        <Button x:Name="PrevButton" Content="⏮" Width="35" Height="35" Margin="6" Padding="1" Click="PrevButton_Click" Style="{StaticResource AccentButton}" FontSize="18"/>
+                        <Button x:Name="PlayPauseButton" Content="▶" Width="44" Height="44" Margin="6" Click="PlayPauseButton_Click" Style="{StaticResource SuccessButton}" FontSize="24"/>
+                        <Button x:Name="StopButton" Content="⏹" Width="35" Height="35" Margin="6" Padding="1" Click="StopButton_Click" Style="{StaticResource DangerButton}" FontSize="18"/>
+                        <Button x:Name="NextButton" Content="⏭" Width="35" Height="35" Margin="6" Padding="1" Click="NextButton_Click" Style="{StaticResource AccentButton}" FontSize="18"/>
+
+                        <StackPanel Orientation="Vertical" Margin="24,0">
+                            <TextBlock Text="Volume" Foreground="#DDD" FontWeight="Bold" FontSize="18"/>
+                            <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" Value="0.9" Width="130" SmallChange="0.1" Style="{StaticResource AnimatedSlider}"/>
+                            <TextBlock Text="Crossfade (s)" Foreground="#DDD" FontWeight="Bold" FontSize="18"/>
+                            <Slider x:Name="CrossfadeSlider" Minimum="0" Maximum="10" Value="4" Width="130" Style="{StaticResource AnimatedSlider}"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Vertical" Margin="12,0">
+                            <TextBlock Text="Output" Foreground="#DDD" FontWeight="Bold" FontSize="18"/>
+                            <ComboBox x:Name="OutputDeviceCombo" Width="300" Style="{StaticResource AnimatedComboBox}" FontSize="16"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Right: Queue -->
+            <Border Grid.Column="1" Margin="12,12,12,12" CornerRadius="12" Padding="12" Background="#161616">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Grid.Row="0" HorizontalAlignment="Stretch">
+                        <TextBlock Text="Queue" FontSize="16" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="8,0,0,0">
+                            <Button x:Name="AddButton" Content="Add" Width="50" Margin="6" Click="AddButton_Click" Style="{StaticResource SuccessButton}"/>
+                            <Button x:Name="AddNextButton" Content="Add Next" Width="72" Margin="6" Click="AddNextButton_Click" Style="{StaticResource AccentButton}"/>
+                            <Button x:Name="ShuffleButton" Content="Shuffle" Width="72" Margin="6" Click="ShuffleButton_Click" Style="{StaticResource SecondaryButton}"/>
+                            <Button x:Name="ClearButton" Content="Clear" Width="72" Margin="6" Click="ClearButton_OnClickButton_Click" Style="{StaticResource DangerButton}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <ListBox x:Name="QueueList" Grid.Row="1" SelectionMode="Single" Style="{StaticResource QueueListStyle}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="93"/>
+                                        <ColumnDefinition Width="50"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Image Source="{Binding thumbnail.Source}" Width="85" Height="48" Grid.Column="0"/>
+                                    <TextBlock Text="{Binding length}" Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Center" Foreground="#AAAAAA"/>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="{Binding Title}" Foreground="White" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Artist}" Foreground="#BBBBBB" FontSize="11"/>
+                                        <TextBlock Text="{Binding EstimatedStartDisplay}" Foreground="#888" FontSize="11"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="NewPresButton" Content="New Presentation" Width="120" Margin="6" Click="NewPresButton_OnClick" Style="{StaticResource AccentButton}"/>
+                        <Button x:Name="RemoveButton" Content="Remove" Width="72" Margin="6" Click="RemoveButton_Click" Style="{StaticResource DangerButton}"/>
+                        <Button x:Name="MoveUpButton" Content="Up" Width="56" Margin="6" Click="MoveUpButton_Click" Style="{StaticResource SecondaryButton}"/>
+                        <Button x:Name="MoveDownButton" Content="Down" Width="56" Margin="6" Click="MoveDownButton_Click" Style="{StaticResource SecondaryButton}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
