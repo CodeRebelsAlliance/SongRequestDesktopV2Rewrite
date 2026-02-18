@@ -65,9 +65,14 @@ namespace SongRequestDesktopV2Rewrite
             }
             catch (Exception ex)
             {
+                // Log the error for debugging
                 System.Diagnostics.Debug.WriteLine($"Error initializing Presentation window: {ex.Message}\n{ex.StackTrace}");
-                MessageBox.Show($"Error initializing Presentation window: {ex.Message}\n\nPlease check the debug output for more details.", 
+                
+                // Show user-friendly error message
+                MessageBox.Show($"Failed to initialize Presentation window: {ex.Message}", 
                     "Presentation Window Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                
+                // Rethrow so the caller can handle the failed construction
                 throw;
             }
         }
