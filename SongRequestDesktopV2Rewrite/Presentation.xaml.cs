@@ -122,7 +122,10 @@ namespace SongRequestDesktopV2Rewrite
                         var lg = new LinearGradientBrush(c1, c2, new System.Windows.Point(0, 0), new System.Windows.Point(1, 1));
                         playerPanel.Background = lg;
                     }
-                    catch { }
+                    catch (Exception)
+                    {
+                        // If gradient extraction fails, keep default background
+                    }
                 }
 
                 // Fetch lyrics if this is a new song
@@ -278,7 +281,7 @@ namespace SongRequestDesktopV2Rewrite
                     }
                 });
             }
-            catch
+            catch (Exception)
             {
                 // On error, show no lyrics message
                 await Dispatcher.InvokeAsync(DisplayNoLyrics);
