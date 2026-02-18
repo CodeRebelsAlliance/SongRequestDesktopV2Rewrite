@@ -14,6 +14,7 @@ namespace SongRequestDesktopV2Rewrite
         private string _bearerToken = "Bearer Multicore2024SR";
         private string _address = "http://127.0.0.1:5000";
         private string _defaultSorting = "none";
+        private bool _presentationFullscreen = false;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -45,6 +46,12 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _defaultSorting;
             set => SetField(ref _defaultSorting, value);
+        }
+
+        public bool PresentationFullscreen
+        {
+            get => _presentationFullscreen;
+            set => SetField(ref _presentationFullscreen, value);
         }
 
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
