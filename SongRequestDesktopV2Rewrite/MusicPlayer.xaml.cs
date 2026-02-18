@@ -87,16 +87,8 @@ namespace SongRequestDesktopV2Rewrite
 
         private void NewPresentation()
         {
-            try
-            {
-                Presentation pres = new Presentation(this);
-                pres.Show();
-            }
-            catch (Exception ex)
-            {
-                // Log error for debugging - don't show another message since Presentation constructor already showed one
-                System.Diagnostics.Debug.WriteLine($"NewPresentation failed: {ex.Message}");
-            }
+            Presentation pres = new Presentation(this);
+            pres.Show();
         }
 
         private void ComputeQueueTimings()

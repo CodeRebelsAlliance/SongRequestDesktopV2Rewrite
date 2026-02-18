@@ -24,57 +24,39 @@ namespace SongRequestDesktopV2Rewrite
 
         public Presentation(MusicPlayer musicPlayer)
         {
-            try
+            InitializeComponent();
+
+            _musicPlayer = musicPlayer;
+
+            var nextCtrl = FindName("NextThreeItems") as ItemsControl;
+            if (nextCtrl != null) nextCtrl.ItemsSource = _next;
+
+            // subscribe to music player events
+            _musicPlayer.NowPlayingTick += MusicPlayer_NowPlayingTick;
+            _musicPlayer.QueueChanged += MusicPlayer_QueueChanged;
+
+            // timer to update marquee animation state if needed
+            _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            _timer.Tick += (s, e) => { /* keep UI alive for animations */ };
+            _timer.Start();
+
+            // initial population of next items
+            MusicPlayer_QueueChanged(this, EventArgs.Empty);
+
+            // Apply fullscreen setting
+            ApplyFullscreenSetting();
+
+            // Listen for config changes
+            ConfigService.Instance.Current.PropertyChanged += (s, e) =>
             {
-                InitializeComponent();
-
-                _musicPlayer = musicPlayer;
-
-                var nextCtrl = FindName("NextThreeItems") as ItemsControl;
-                if (nextCtrl != null) nextCtrl.ItemsSource = _next;
-
-                // subscribe to music player events
-                _musicPlayer.NowPlayingTick += MusicPlayer_NowPlayingTick;
-                _musicPlayer.QueueChanged += MusicPlayer_QueueChanged;
-
-                // timer to update marquee animation state if needed
-                _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-                _timer.Tick += (s, e) => { /* keep UI alive for animations */ };
-                _timer.Start();
-
-                // initial population of next items
-                MusicPlayer_QueueChanged(this, EventArgs.Empty);
-
-                // Apply fullscreen setting
-                ApplyFullscreenSetting();
-
-                // Listen for config changes
-                if (ConfigService.Instance?.Current != null)
+                if (e.PropertyName == nameof(Config.PresentationFullscreen))
                 {
-                    ConfigService.Instance.Current.PropertyChanged += (s, e) =>
-                    {
-                        if (e.PropertyName == nameof(Config.PresentationFullscreen))
-                        {
-                            Dispatcher.Invoke(ApplyFullscreenSetting);
-                        }
-                    };
+                    Dispatcher.Invoke(ApplyFullscreenSetting);
                 }
+            };
 
-                // Set initial "nothing playing" state
-                ShowNothingPlayingState();
-            }
-            catch (Exception ex)
-            {
-                // Log the error for debugging
-                System.Diagnostics.Debug.WriteLine($"Error initializing Presentation window: {ex.Message}\n{ex.StackTrace}");
-                
-                // Show user-friendly error message
-                MessageBox.Show($"Failed to initialize Presentation window: {ex.Message}", 
-                    "Presentation Window Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                
-                // Rethrow so the caller can handle the failed construction
-                throw;
-            }
+            // Set initial "nothing playing" state
+            ShowNothingPlayingState();
         }
 
         private void MusicPlayer_QueueChanged(object sender, EventArgs e)
@@ -227,35 +209,15 @@ namespace SongRequestDesktopV2Rewrite
 
         private void ApplyFullscreenSetting()
         {
-            try
+            var fullscreen = ConfigService.Instance.Current.PresentationFullscreen;
+            if (fullscreen)
             {
-                if (ConfigService.Instance?.Current == null)
-                {
-                    // If config service is not available, use default windowed mode
-                    WindowStyle = WindowStyle.SingleBorderWindow;
-                    WindowState = WindowState.Normal;
-                    ResizeMode = ResizeMode.CanResize;
-                    return;
-                }
-
-                var fullscreen = ConfigService.Instance.Current.PresentationFullscreen;
-                if (fullscreen)
-                {
-                    WindowStyle = WindowStyle.None;
-                    WindowState = WindowState.Maximized;
-                    ResizeMode = ResizeMode.NoResize;
-                }
-                else
-                {
-                    WindowStyle = WindowStyle.SingleBorderWindow;
-                    WindowState = WindowState.Normal;
-                    ResizeMode = ResizeMode.CanResize;
-                }
+                WindowStyle = WindowStyle.None;
+                WindowState = WindowState.Maximized;
+                ResizeMode = ResizeMode.NoResize;
             }
-            catch (Exception ex)
+            else
             {
-                // Log error but don't crash - just use default windowed mode
-                System.Diagnostics.Debug.WriteLine($"Error applying fullscreen setting: {ex.Message}");
                 WindowStyle = WindowStyle.SingleBorderWindow;
                 WindowState = WindowState.Normal;
                 ResizeMode = ResizeMode.CanResize;
@@ -449,31 +411,6 @@ namespace SongRequestDesktopV2Rewrite
                 }
 
                 _currentLyricIndex = newIndex;
-            }
-        }
-
-        protected override void OnClosed(EventArgs e)
-        {
-            base.OnClosed(e);
-
-            // Clean up event subscriptions to prevent memory leaks
-            try
-            {
-                if (_musicPlayer != null)
-                {
-                    _musicPlayer.NowPlayingTick -= MusicPlayer_NowPlayingTick;
-                    _musicPlayer.QueueChanged -= MusicPlayer_QueueChanged;
-                }
-
-                // Stop the timer
-                if (_timer != null)
-                {
-                    _timer.Stop();
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error during Presentation window cleanup: {ex.Message}");
             }
         }
     }
