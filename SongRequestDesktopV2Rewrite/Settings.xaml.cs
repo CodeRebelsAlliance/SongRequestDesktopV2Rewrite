@@ -34,14 +34,12 @@ namespace SongRequestDesktopV2Rewrite
             var tokenBox = GetControl<TextBox>("TokenBox");
             var addressBox = GetControl<TextBox>("AddressBox");
             var sortingBox = GetControl<TextBox>("DefaultSortingBox");
-            var fullscreenCheckbox = GetControl<CheckBox>("PresentationFullscreenCheckbox");
 
             if (fetchingBox != null) fetchingBox.Text = cfg.FetchingTimer.ToString();
             if (threadsBox != null) threadsBox.Text = cfg.Threads.ToString();
             if (tokenBox != null) tokenBox.Text = cfg.BearerToken;
             if (addressBox != null) addressBox.Text = cfg.Address;
             if (sortingBox != null) sortingBox.Text = cfg.DefaultSorting;
-            if (fullscreenCheckbox != null) fullscreenCheckbox.IsChecked = cfg.PresentationFullscreen;
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -51,7 +49,6 @@ namespace SongRequestDesktopV2Rewrite
             var tokenBox = GetControl<TextBox>("TokenBox");
             var addressBox = GetControl<TextBox>("AddressBox");
             var sortingBox = GetControl<TextBox>("DefaultSortingBox");
-            var fullscreenCheckbox = GetControl<CheckBox>("PresentationFullscreenCheckbox");
             var statusTb = GetControl<TextBlock>("StatusText");
 
             try
@@ -66,7 +63,6 @@ namespace SongRequestDesktopV2Rewrite
                     cfg.BearerToken = tokenBox?.Text ?? string.Empty;
                     cfg.Address = addressBox?.Text ?? string.Empty;
                     cfg.DefaultSorting = sortingBox?.Text ?? string.Empty;
-                    cfg.PresentationFullscreen = fullscreenCheckbox?.IsChecked ?? false;
                 });
 
                 if (statusTb != null)
