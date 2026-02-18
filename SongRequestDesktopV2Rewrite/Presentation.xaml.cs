@@ -65,7 +65,8 @@ namespace SongRequestDesktopV2Rewrite
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error initializing Presentation window: {ex.Message}\n\nStack trace:\n{ex.StackTrace}", 
+                System.Diagnostics.Debug.WriteLine($"Error initializing Presentation window: {ex.Message}\n{ex.StackTrace}");
+                MessageBox.Show($"Error initializing Presentation window: {ex.Message}\n\nPlease check the debug output for more details.", 
                     "Presentation Window Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 throw;
             }
@@ -463,7 +464,6 @@ namespace SongRequestDesktopV2Rewrite
                 if (_timer != null)
                 {
                     _timer.Stop();
-                    _timer = null;
                 }
             }
             catch (Exception ex)
