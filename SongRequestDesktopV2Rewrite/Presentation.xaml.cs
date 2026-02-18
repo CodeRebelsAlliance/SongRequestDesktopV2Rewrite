@@ -16,6 +16,10 @@ namespace SongRequestDesktopV2Rewrite
         private DispatcherTimer _timer;
         private ObservableCollection<Song> _next = new ObservableCollection<Song>();
         private MusicPlayer _musicPlayer;
+        private LyricsService _lyricsService = new LyricsService();
+        private List<(TimeSpan Time, string Text)> _currentSyncedLines = new List<(TimeSpan, string)>();
+        private Song _lastSong = null;
+        private int _currentLyricIndex = -1;
 
         public Presentation(MusicPlayer musicPlayer)
         {
@@ -37,6 +41,21 @@ namespace SongRequestDesktopV2Rewrite
 
             // initial population of next items
             MusicPlayer_QueueChanged(this, EventArgs.Empty);
+
+            // Apply fullscreen setting
+            ApplyFullscreenSetting();
+
+            // Listen for config changes
+            ConfigService.Instance.Current.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(Config.PresentationFullscreen))
+                {
+                    Dispatcher.Invoke(ApplyFullscreenSetting);
+                }
+            };
+
+            // Set initial "nothing playing" state
+            ShowNothingPlayingState();
         }
 
         private void MusicPlayer_QueueChanged(object sender, EventArgs e)
@@ -60,6 +79,13 @@ namespace SongRequestDesktopV2Rewrite
         {
             Dispatcher.Invoke(() =>
             {
+                // Check if nothing is playing
+                if (e.Current == null)
+                {
+                    ShowNothingPlayingState();
+                    return;
+                }
+
                 // Update now playing fields
                 var titleTb = FindName("PresentationTitle") as TextBlock;
                 var artistTb = FindName("PresentationArtist") as TextBlock;
@@ -67,9 +93,15 @@ namespace SongRequestDesktopV2Rewrite
                 var prog = FindName("PresentationProgress") as Slider;
                 var elapsedTb = FindName("PresentationElapsed") as TextBlock;
                 var remainingTb = FindName("PresentationRemaining") as TextBlock;
+                var playerPanel = FindName("PlayerPanel") as Border;
+                var nothingPlayingPanel = FindName("NothingPlayingPanel") as Border;
 
-                if (titleTb != null && e.Current != null) titleTb.Text = e.Current.Title;
-                if (artistTb != null && e.Current != null) artistTb.Text = e.Current.Artist;
+                // Show player panel, hide nothing playing panel
+                if (playerPanel != null) playerPanel.Visibility = Visibility.Visible;
+                if (nothingPlayingPanel != null) nothingPlayingPanel.Visibility = Visibility.Collapsed;
+
+                if (titleTb != null) titleTb.Text = e.Current.Title;
+                if (artistTb != null) artistTb.Text = e.Current.Artist;
                 if (thumb != null && e.Current?.thumbnail?.Source != null) thumb.Source = e.Current.thumbnail.Source as ImageSource;
 
                 if (prog != null && e.TotalTime.TotalSeconds > 0)
@@ -81,7 +113,6 @@ namespace SongRequestDesktopV2Rewrite
                 if (remainingTb != null) remainingTb.Text = (e.TotalTime - e.CurrentTime).ToString(@"mm\:ss");
 
                 // Apply player panel gradient from thumbnail
-                var playerPanel = FindName("PlayerPanel") as Border;
                 if (playerPanel != null && thumb?.Source is BitmapSource bmp)
                 {
                     try
@@ -93,7 +124,15 @@ namespace SongRequestDesktopV2Rewrite
                     catch { }
                 }
 
-                // Optionally update highlighted timed lyric based on e.CurrentTime (not implemented parsing in this demo)
+                // Fetch lyrics if this is a new song
+                if (_lastSong != e.Current)
+                {
+                    _lastSong = e.Current;
+                    _ = FetchAndDisplayLyricsAsync(e.Current);
+                }
+
+                // Update lyrics display based on current time
+                UpdateLyricsDisplay(e.CurrentTime);
             });
         }
 
@@ -162,6 +201,213 @@ namespace SongRequestDesktopV2Rewrite
             var c1 = ToColor(k1);
             var c2 = ToColor(k2 == k1 ? top[Math.Min(2, top.Count - 1)] : k2);
             return (c1, c2);
+        }
+
+        private void ApplyFullscreenSetting()
+        {
+            var fullscreen = ConfigService.Instance.Current.PresentationFullscreen;
+            if (fullscreen)
+            {
+                WindowStyle = WindowStyle.None;
+                WindowState = WindowState.Maximized;
+                ResizeMode = ResizeMode.NoResize;
+            }
+            else
+            {
+                WindowStyle = WindowStyle.SingleBorderWindow;
+                WindowState = WindowState.Normal;
+                ResizeMode = ResizeMode.CanResize;
+            }
+        }
+
+        private void ShowNothingPlayingState()
+        {
+            var playerPanel = FindName("PlayerPanel") as Border;
+            var nothingPlayingPanel = FindName("NothingPlayingPanel") as Border;
+
+            if (playerPanel != null) playerPanel.Visibility = Visibility.Collapsed;
+            if (nothingPlayingPanel != null) nothingPlayingPanel.Visibility = Visibility.Visible;
+
+            // Clear lyrics
+            _currentSyncedLines.Clear();
+            _lastSong = null;
+            _currentLyricIndex = -1;
+
+            var timedLyricsStack = FindName("TimedLyricsStack") as StackPanel;
+            var marqueeText = FindName("MarqueeText") as TextBlock;
+
+            if (timedLyricsStack != null) timedLyricsStack.Children.Clear();
+            if (marqueeText != null) marqueeText.Text = "";
+        }
+
+        private async System.Threading.Tasks.Task FetchAndDisplayLyricsAsync(Song song)
+        {
+            if (song == null) return;
+
+            try
+            {
+                var result = await _lyricsService.GetLyricsAsync(song.Artist, song.Title, song.Duration);
+
+                // Update UI on dispatcher thread
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (result.Found)
+                    {
+                        if (result.HasSynced)
+                        {
+                            // Display synced lyrics
+                            _currentSyncedLines = result.ParseSyncedLines();
+                            DisplaySyncedLyrics();
+                        }
+                        else if (!string.IsNullOrWhiteSpace(result.PlainLyrics))
+                        {
+                            // Display plain lyrics as marquee
+                            DisplayPlainLyrics(result.PlainLyrics);
+                        }
+                        else
+                        {
+                            // No lyrics available
+                            DisplayNoLyrics();
+                        }
+                    }
+                    else
+                    {
+                        // Lyrics not found
+                        DisplayNoLyrics();
+                    }
+                });
+            }
+            catch
+            {
+                // On error, show no lyrics message
+                await Dispatcher.InvokeAsync(DisplayNoLyrics);
+            }
+        }
+
+        private void DisplaySyncedLyrics()
+        {
+            var timedLyricsStack = FindName("TimedLyricsStack") as StackPanel;
+            var marqueeText = FindName("MarqueeText") as TextBlock;
+
+            if (timedLyricsStack == null) return;
+
+            // Clear previous lyrics
+            timedLyricsStack.Children.Clear();
+            if (marqueeText != null) marqueeText.Text = "";
+
+            // Add each line as a TextBlock
+            foreach (var line in _currentSyncedLines)
+            {
+                var tb = new TextBlock
+                {
+                    Text = line.Text,
+                    FontSize = 20,
+                    Foreground = new SolidColorBrush(Color.FromRgb(170, 170, 170)),
+                    Margin = new Thickness(0, 8, 0, 8),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                timedLyricsStack.Children.Add(tb);
+            }
+
+            _currentLyricIndex = -1;
+        }
+
+        private void DisplayPlainLyrics(string plainLyrics)
+        {
+            var timedLyricsStack = FindName("TimedLyricsStack") as StackPanel;
+            var marqueeText = FindName("MarqueeText") as TextBlock;
+
+            // Clear synced lyrics
+            _currentSyncedLines.Clear();
+            if (timedLyricsStack != null) timedLyricsStack.Children.Clear();
+
+            // Display plain lyrics in marquee
+            if (marqueeText != null)
+            {
+                // Replace newlines with separator for marquee display
+                var marqueeDisplay = plainLyrics.Replace("\n", " • ").Replace("\r", "");
+                marqueeText.Text = marqueeDisplay;
+            }
+        }
+
+        private void DisplayNoLyrics()
+        {
+            var timedLyricsStack = FindName("TimedLyricsStack") as StackPanel;
+            var marqueeText = FindName("MarqueeText") as TextBlock;
+
+            _currentSyncedLines.Clear();
+            if (timedLyricsStack != null)
+            {
+                timedLyricsStack.Children.Clear();
+                var tb = new TextBlock
+                {
+                    Text = "No lyrics available for this song",
+                    FontSize = 18,
+                    Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
+                    Margin = new Thickness(0, 8, 0, 8),
+                    TextAlignment = TextAlignment.Center
+                };
+                timedLyricsStack.Children.Add(tb);
+            }
+
+            if (marqueeText != null) marqueeText.Text = "";
+        }
+
+        private void UpdateLyricsDisplay(TimeSpan currentTime)
+        {
+            if (_currentSyncedLines.Count == 0) return;
+
+            var timedLyricsStack = FindName("TimedLyricsStack") as StackPanel;
+            var timedLyricsScroll = FindName("TimedLyricsScroll") as ScrollViewer;
+
+            if (timedLyricsStack == null) return;
+
+            // Find the current line based on time
+            int newIndex = -1;
+            for (int i = 0; i < _currentSyncedLines.Count; i++)
+            {
+                if (currentTime >= _currentSyncedLines[i].Time)
+                {
+                    newIndex = i;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            // Update highlighting if index changed
+            if (newIndex != _currentLyricIndex && newIndex >= 0 && newIndex < timedLyricsStack.Children.Count)
+            {
+                // Remove old highlight
+                if (_currentLyricIndex >= 0 && _currentLyricIndex < timedLyricsStack.Children.Count)
+                {
+                    var oldTb = timedLyricsStack.Children[_currentLyricIndex] as TextBlock;
+                    if (oldTb != null)
+                    {
+                        oldTb.Foreground = new SolidColorBrush(Color.FromRgb(170, 170, 170));
+                        oldTb.FontWeight = FontWeights.Normal;
+                        oldTb.FontSize = 20;
+                    }
+                }
+
+                // Add new highlight
+                var newTb = timedLyricsStack.Children[newIndex] as TextBlock;
+                if (newTb != null)
+                {
+                    newTb.Foreground = Brushes.White;
+                    newTb.FontWeight = FontWeights.Bold;
+                    newTb.FontSize = 24;
+
+                    // Auto-scroll to the current line
+                    if (timedLyricsScroll != null)
+                    {
+                        newTb.BringIntoView();
+                    }
+                }
+
+                _currentLyricIndex = newIndex;
+            }
         }
     }
 }
