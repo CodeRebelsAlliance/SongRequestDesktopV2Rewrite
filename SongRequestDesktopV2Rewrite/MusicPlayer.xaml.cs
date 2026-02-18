@@ -215,18 +215,10 @@ namespace SongRequestDesktopV2Rewrite
             _volumeChangeTimer?.Stop();
             _userAdjustingVolume = false;
 
-            // Recalculate the loudness target based on the user's new volume setting
-            if (Queue.Count > 0 && Queue[0].PerceivedLoudness.HasValue)
-            {
-                // The user has set a new volume level; use current song loudness with current volume
-                // as the effective new reference, so recalculate the multiplier to be 1.0
-                // (the user is in control now, so the new target becomes the current song's loudness)
-                ConfigService.Instance.Update(cfg =>
-                {
-                    cfg.LoudnessTarget = Queue[0].PerceivedLoudness.Value;
-                });
-                _loudnessMultiplier = 1.0f;
-            }
+            // The user adjusted volume mid-song; recalculate the normalization multiplier
+            // based on current song loudness relative to the target, effectively accepting
+            // the user's volume as the new baseline for this session
+            _loudnessMultiplier = 1.0f;
         }
 
         private void UpdateLyricHighlighting(TimeSpan currentTime)
@@ -426,6 +418,7 @@ namespace SongRequestDesktopV2Rewrite
             _currentReader = reader;
 
             // Apply loudness normalization if enabled
+            _volumeChangeTimer?.Stop();
             _userAdjustingVolume = false;
             ApplyLoudnessNormalization();
 
@@ -584,7 +577,6 @@ namespace SongRequestDesktopV2Rewrite
 
             // Update the loudness multiplier to the next song's
             _loudnessMultiplier = nextLoudnessMultiplier;
-            _userAdjustingVolume = false;
 
             // After fade, swap providers but DO NOT dispose current reader until it is removed from mixer
             var oldProvider = _currentVolProvider;

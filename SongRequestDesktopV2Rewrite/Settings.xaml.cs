@@ -16,6 +16,17 @@ namespace SongRequestDesktopV2Rewrite
         public Settings()
         {
             InitializeComponent();
+
+            var loudnessSlider = GetControl<Slider>("LoudnessTargetSlider");
+            var loudnessLabel = GetControl<TextBlock>("LoudnessTargetLabel");
+            if (loudnessSlider != null)
+            {
+                loudnessSlider.ValueChanged += (s, e) =>
+                {
+                    if (loudnessLabel != null) loudnessLabel.Text = loudnessSlider.Value.ToString("F1");
+                };
+            }
+
             LoadCurrentConfig();
         }
 
@@ -44,14 +55,7 @@ namespace SongRequestDesktopV2Rewrite
             if (addressBox != null) addressBox.Text = cfg.Address;
             if (sortingBox != null) sortingBox.Text = cfg.DefaultSorting;
             if (loudnessCheck != null) loudnessCheck.IsChecked = cfg.LoudnessNormalization;
-            if (loudnessSlider != null)
-            {
-                loudnessSlider.Value = cfg.LoudnessTarget;
-                loudnessSlider.ValueChanged += (s, e) =>
-                {
-                    if (loudnessLabel != null) loudnessLabel.Text = loudnessSlider.Value.ToString("F1");
-                };
-            }
+            if (loudnessSlider != null) loudnessSlider.Value = cfg.LoudnessTarget;
             if (loudnessLabel != null) loudnessLabel.Text = cfg.LoudnessTarget.ToString("F1");
         }
 
