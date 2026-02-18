@@ -36,6 +36,11 @@ namespace SongRequestDesktopV2Rewrite
         private bool _isUserSeeking = false;
         private WaveFormat _format;
 
+        // Loudness normalization
+        private float _loudnessMultiplier = 1.0f;
+        private DispatcherTimer _volumeChangeTimer;
+        private bool _userAdjustingVolume = false;
+
         // flags
         private bool _isCrossfading = false;
 
@@ -60,7 +65,26 @@ namespace SongRequestDesktopV2Rewrite
 
             QueueList.ItemsSource = Queue;
 
-            VolumeSlider.ValueChanged += (s, e) => { _volume = (float)VolumeSlider.Value; if (_currentVolProvider != null) _currentVolProvider.Volume = _volume; };
+            VolumeSlider.ValueChanged += (s, e) =>
+            {
+                _volume = (float)VolumeSlider.Value;
+                if (_currentVolProvider != null) _currentVolProvider.Volume = _volume * _loudnessMultiplier;
+
+                // If loudness normalization is on, detect user adjustment and recalculate target after inactivity
+                if (ConfigService.Instance.Current.LoudnessNormalization && _currentReader != null)
+                {
+                    _userAdjustingVolume = true;
+                    _loudnessMultiplier = 1.0f; // temporarily disable normalization multiplier
+
+                    if (_volumeChangeTimer == null)
+                    {
+                        _volumeChangeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                        _volumeChangeTimer.Tick += VolumeChangeTimer_Tick;
+                    }
+                    _volumeChangeTimer.Stop();
+                    _volumeChangeTimer.Start();
+                }
+            };
 
             _positionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
             _positionTimer.Tick += PositionTimer_Tick;
@@ -183,6 +207,25 @@ namespace SongRequestDesktopV2Rewrite
                     // update lyric highlighting and autoscroll
                     UpdateLyricHighlighting(_currentReader.CurrentTime);
                 }
+            }
+        }
+
+        private void VolumeChangeTimer_Tick(object? sender, EventArgs e)
+        {
+            _volumeChangeTimer?.Stop();
+            _userAdjustingVolume = false;
+
+            // Recalculate the loudness target based on the user's new volume setting
+            if (Queue.Count > 0 && Queue[0].PerceivedLoudness.HasValue)
+            {
+                // The user has set a new volume level; use current song loudness with current volume
+                // as the effective new reference, so recalculate the multiplier to be 1.0
+                // (the user is in control now, so the new target becomes the current song's loudness)
+                ConfigService.Instance.Update(cfg =>
+                {
+                    cfg.LoudnessTarget = Queue[0].PerceivedLoudness.Value;
+                });
+                _loudnessMultiplier = 1.0f;
             }
         }
 
@@ -382,9 +425,13 @@ namespace SongRequestDesktopV2Rewrite
             _mixer = new MixingSampleProvider(_format) { ReadFully = true };
             _currentReader = reader;
 
+            // Apply loudness normalization if enabled
+            _userAdjustingVolume = false;
+            ApplyLoudnessNormalization();
+
             // create a volume wrapper for the reader and keep reference
             var sp = GetSampleProviderCompatible(reader);
-            _currentVolProvider = new VolumeSampleProvider(sp) { Volume = _volume };
+            _currentVolProvider = new VolumeSampleProvider(sp) { Volume = _volume * _loudnessMultiplier };
             _mixer.AddMixerInput(_currentVolProvider);
 
             _outputDevice = new WaveOutEvent();
@@ -500,6 +547,14 @@ namespace SongRequestDesktopV2Rewrite
             // Do not set reader.Volume - control volume via VolumeSampleProvider to avoid silent output
             _nextReader = new AudioFileReader(nextSong.songPath);
 
+            // Calculate the loudness multiplier for the next song
+            float nextLoudnessMultiplier = 1.0f;
+            var cfg = ConfigService.Instance.Current;
+            if (cfg.LoudnessNormalization && !_userAdjustingVolume)
+            {
+                nextLoudnessMultiplier = LoudnessService.GetNormalizationMultiplier(nextSong.PerceivedLoudness, cfg.LoudnessTarget);
+            }
+
             // prepare next vol provider
             var nextSp = GetSampleProviderCompatible(_nextReader);
             _nextVolProvider = new VolumeSampleProvider(nextSp) { Volume = 0f };
@@ -511,6 +566,8 @@ namespace SongRequestDesktopV2Rewrite
             }
             _mixer.AddMixerInput(_nextVolProvider);
 
+            float currentLoudnessMultiplier = _loudnessMultiplier;
+
             double cross = CrossfadeSlider.Value;
             if (cross <= 0) cross = 4;
 
@@ -520,10 +577,14 @@ namespace SongRequestDesktopV2Rewrite
             {
                 float t = (i + 1f) / steps;
                 // ramp up next, ramp down current using the volume providers
-                try { _nextVolProvider.Volume = _volume * t; } catch { }
-                try { if (_currentVolProvider != null) _currentVolProvider.Volume = _volume * (1f - t); } catch { }
+                try { _nextVolProvider.Volume = _volume * nextLoudnessMultiplier * t; } catch { }
+                try { if (_currentVolProvider != null) _currentVolProvider.Volume = _volume * currentLoudnessMultiplier * (1f - t); } catch { }
                 await Task.Delay(delay);
             }
+
+            // Update the loudness multiplier to the next song's
+            _loudnessMultiplier = nextLoudnessMultiplier;
+            _userAdjustingVolume = false;
 
             // After fade, swap providers but DO NOT dispose current reader until it is removed from mixer
             var oldProvider = _currentVolProvider;
@@ -586,6 +647,26 @@ namespace SongRequestDesktopV2Rewrite
 
             _currentVolProvider = null;
             _nextVolProvider = null;
+        }
+
+        private void ApplyLoudnessNormalization()
+        {
+            var cfg = ConfigService.Instance.Current;
+            if (!cfg.LoudnessNormalization || _userAdjustingVolume)
+            {
+                _loudnessMultiplier = 1.0f;
+                return;
+            }
+
+            // Find the current song's loudness
+            var currentSong = Queue.Count > 0 ? Queue[0] : null;
+            if (currentSong?.PerceivedLoudness == null)
+            {
+                _loudnessMultiplier = 1.0f;
+                return;
+            }
+
+            _loudnessMultiplier = LoudnessService.GetNormalizationMultiplier(currentSong.PerceivedLoudness, cfg.LoudnessTarget);
         }
 
         private void OutputDevice_PlaybackStopped(object? sender, StoppedEventArgs e)
@@ -728,6 +809,9 @@ namespace SongRequestDesktopV2Rewrite
                         var song = new Song(title, artist, img, duration, file);
                         Queue.Add(song);
                         AnimateListItem(song);
+
+                        // Calculate loudness asynchronously for normalization
+                        _ = CalculateAndSetLoudness(song);
                     }
                     catch (Exception ex)
                     {
@@ -792,6 +876,9 @@ namespace SongRequestDesktopV2Rewrite
                         var song = new Song(title, artist, img, duration, file);
                         if (insertIndex <= Queue.Count) { Queue.Insert(insertIndex, song); insertIndex++; AnimateListItem(song); }
                         else { Queue.Add(song); AnimateListItem(song); }
+
+                        // Calculate loudness asynchronously for normalization
+                        _ = CalculateAndSetLoudness(song);
                     }
                     catch (Exception ex)
                     {
@@ -1037,6 +1124,9 @@ namespace SongRequestDesktopV2Rewrite
                 Queue.Add(s);
                 ComputeQueueTimings();
                 AnimateListItem(s);
+
+                // Calculate loudness asynchronously for normalization
+                _ = CalculateAndSetLoudness(s);
             }
             catch (Exception ex)
             {
@@ -1059,10 +1149,28 @@ namespace SongRequestDesktopV2Rewrite
                 s.length = string.Format("{0:mm}:{0:ss}", s.Duration);
                 if (Queue.Count > 1) { Queue.Insert(1, s); AnimateListItem(s); } else { Queue.Add(s); AnimateListItem(s); }
                 ComputeQueueTimings();
+
+                // Calculate loudness asynchronously for normalization
+                _ = CalculateAndSetLoudness(s);
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Unable to load file: " + ex.Message);
+            }
+        }
+
+        private async Task CalculateAndSetLoudness(Song song)
+        {
+            if (song == null || string.IsNullOrEmpty(song.songPath)) return;
+
+            try
+            {
+                var loudness = await LoudnessService.CalculateLoudnessAsync(song.songPath);
+                song.PerceivedLoudness = loudness;
+            }
+            catch
+            {
+                // Loudness calculation failed; song will play without normalization
             }
         }
     }

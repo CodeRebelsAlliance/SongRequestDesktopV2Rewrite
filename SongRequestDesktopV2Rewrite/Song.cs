@@ -16,6 +16,9 @@ namespace SongRequestDesktopV2Rewrite
         public TimeSpan EstimatedStart { get; set; }
         public string EstimatedStartDisplay { get; set; }
 
+        // Perceived loudness in LUFS for normalization
+        public double? PerceivedLoudness { get; set; }
+
         public Song(string title, string artist, Image thumbnail, string length, string songPath)
         {
             Title = title;
