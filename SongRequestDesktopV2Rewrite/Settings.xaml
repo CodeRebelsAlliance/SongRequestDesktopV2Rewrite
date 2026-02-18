@@ -157,15 +157,6 @@
                         <TextBlock Text="Default Sorting"/>
                         <TextBox x:Name="DefaultSortingBox" Width="200" Style="{StaticResource RoundedTextBox}"/>
                     </StackPanel>
-
-                    <StackPanel Orientation="Vertical" Margin="12,0,0,0">
-                        <CheckBox x:Name="LoudnessNormCheckBox" Content="Loudness Normalization" Foreground="White" VerticalContentAlignment="Center"/>
-                        <TextBlock Text="Target Loudness (LUFS)" Margin="0,6,0,0"/>
-                        <StackPanel Orientation="Horizontal">
-                            <Slider x:Name="LoudnessTargetSlider" Minimum="-30" Maximum="-5" Value="-14" Width="140" SmallChange="0.5" TickFrequency="1" IsSnapToTickEnabled="False"/>
-                            <TextBlock x:Name="LoudnessTargetLabel" Text="-14.0" Foreground="White" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </StackPanel>
                 </StackPanel>
 
                 <!-- Middle area: address, token and console controls -->

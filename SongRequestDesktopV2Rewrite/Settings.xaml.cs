@@ -16,17 +16,6 @@ namespace SongRequestDesktopV2Rewrite
         public Settings()
         {
             InitializeComponent();
-
-            var loudnessSlider = GetControl<Slider>("LoudnessTargetSlider");
-            var loudnessLabel = GetControl<TextBlock>("LoudnessTargetLabel");
-            if (loudnessSlider != null)
-            {
-                loudnessSlider.ValueChanged += (s, e) =>
-                {
-                    if (loudnessLabel != null) loudnessLabel.Text = loudnessSlider.Value.ToString("F1");
-                };
-            }
-
             LoadCurrentConfig();
         }
 
@@ -45,18 +34,12 @@ namespace SongRequestDesktopV2Rewrite
             var tokenBox = GetControl<TextBox>("TokenBox");
             var addressBox = GetControl<TextBox>("AddressBox");
             var sortingBox = GetControl<TextBox>("DefaultSortingBox");
-            var loudnessCheck = GetControl<System.Windows.Controls.CheckBox>("LoudnessNormCheckBox");
-            var loudnessSlider = GetControl<Slider>("LoudnessTargetSlider");
-            var loudnessLabel = GetControl<TextBlock>("LoudnessTargetLabel");
 
             if (fetchingBox != null) fetchingBox.Text = cfg.FetchingTimer.ToString();
             if (threadsBox != null) threadsBox.Text = cfg.Threads.ToString();
             if (tokenBox != null) tokenBox.Text = cfg.BearerToken;
             if (addressBox != null) addressBox.Text = cfg.Address;
             if (sortingBox != null) sortingBox.Text = cfg.DefaultSorting;
-            if (loudnessCheck != null) loudnessCheck.IsChecked = cfg.LoudnessNormalization;
-            if (loudnessSlider != null) loudnessSlider.Value = cfg.LoudnessTarget;
-            if (loudnessLabel != null) loudnessLabel.Text = cfg.LoudnessTarget.ToString("F1");
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -66,8 +49,6 @@ namespace SongRequestDesktopV2Rewrite
             var tokenBox = GetControl<TextBox>("TokenBox");
             var addressBox = GetControl<TextBox>("AddressBox");
             var sortingBox = GetControl<TextBox>("DefaultSortingBox");
-            var loudnessCheck = GetControl<System.Windows.Controls.CheckBox>("LoudnessNormCheckBox");
-            var loudnessSlider = GetControl<Slider>("LoudnessTargetSlider");
             var statusTb = GetControl<TextBlock>("StatusText");
 
             try
@@ -82,8 +63,6 @@ namespace SongRequestDesktopV2Rewrite
                     cfg.BearerToken = tokenBox?.Text ?? string.Empty;
                     cfg.Address = addressBox?.Text ?? string.Empty;
                     cfg.DefaultSorting = sortingBox?.Text ?? string.Empty;
-                    cfg.LoudnessNormalization = loudnessCheck?.IsChecked ?? false;
-                    cfg.LoudnessTarget = loudnessSlider?.Value ?? -14.0;
                 });
 
                 if (statusTb != null)
