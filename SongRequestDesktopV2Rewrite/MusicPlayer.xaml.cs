@@ -87,8 +87,16 @@ namespace SongRequestDesktopV2Rewrite
 
         private void NewPresentation()
         {
-            Presentation pres = new Presentation(this);
-            pres.Show();
+            try
+            {
+                Presentation pres = new Presentation(this);
+                pres.Show();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to open Presentation window: {ex.Message}\n\nPlease try again or restart the application.", 
+                    "Presentation Window Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void ComputeQueueTimings()
