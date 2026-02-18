@@ -29,20 +29,6 @@
         <Storyboard x:Key="PulseHighlight" RepeatBehavior="Forever" AutoReverse="True">
             <ColorAnimation Storyboard.TargetName="TimedHighlightLine" Storyboard.TargetProperty="(TextBlock.Background).(SolidColorBrush.Color)" To="#33FFFFFF" Duration="0:0:0.8"/>
         </Storyboard>
-
-        <!-- Queue item fade-in animation style -->
-        <Style TargetType="Border" x:Key="QueueItemBorder">
-            <Setter Property="Opacity" Value="0"/>
-            <Style.Triggers>
-                <EventTrigger RoutedEvent="Loaded">
-                    <BeginStoryboard>
-                        <Storyboard>
-                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.5"/>
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
-            </Style.Triggers>
-        </Style>
     </Window.Resources>
 
     <Grid Margin="16">
@@ -50,15 +36,6 @@
             <ColumnDefinition Width="2*"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
-
-        <!-- Nothing Playing State (Hidden by default) -->
-        <Border x:Name="NothingPlayingPanel" Grid.Column="0" Grid.ColumnSpan="2" Style="{StaticResource CardBorder}" Background="#0A0A0A" Visibility="Collapsed">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="♪" FontSize="120" Foreground="#333" HorizontalAlignment="Center" Margin="0,0,0,20"/>
-                <TextBlock Text="Nothing Playing Right Now" FontSize="42" FontWeight="Bold" Foreground="#666" HorizontalAlignment="Center"/>
-                <TextBlock Text="Add songs to the queue to get started" FontSize="24" Foreground="#444" HorizontalAlignment="Center" Margin="0,12,0,0"/>
-            </StackPanel>
-        </Border>
 
         <!-- Left: Now playing & lyrics -->
         <Border x:Name="PlayerPanel" Grid.Column="0" Style="{StaticResource CardBorder}" Background="Black">
@@ -116,7 +93,11 @@
                         <Border Grid.Row="0" Background="#070707" CornerRadius="8" Padding="10" Margin="0,0,0,8" >
                             <ScrollViewer x:Name="TimedLyricsScroll" VerticalScrollBarVisibility="Hidden">
                                 <StackPanel x:Name="TimedLyricsStack" VerticalAlignment="Top">
-                                    <!-- Lyrics will be populated dynamically -->
+                                    <!-- Example lines; consumers can populate at runtime -->
+                                    <TextBlock Text="[00:00] First line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
+                                    <TextBlock x:Name="TimedHighlightLine" Text="[00:10] Second line (highlighted)" FontSize="18" Foreground="White" Margin="0,6" Background="#00111111" />
+                                    <TextBlock Text="[00:20] Third line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
+                                    <TextBlock Text="[00:30] Fourth line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
                                 </StackPanel>
                             </ScrollViewer>
                         </Border>
@@ -125,6 +106,7 @@
                         <Border Grid.Row="1" Background="#0B0B0B" CornerRadius="8" Padding="8" >
                             <Grid ClipToBounds="True">
                                 <TextBlock x:Name="MarqueeText" FontSize="18" Foreground="#DDDDDD">
+                                    This is a non-timed lyrics marquee — the text will scroll across for public display.
                                     <TextBlock.RenderTransform>
                                         <TranslateTransform x:Name="MarqueeTranslate" X="0" />
                                     </TextBlock.RenderTransform>
@@ -151,14 +133,14 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Width="240" Margin="6" Background="#0F0F0F" CornerRadius="8" Padding="8" Style="{StaticResource QueueItemBorder}">
+                            <Border Width="240" Margin="6" Background="#0F0F0F" CornerRadius="8" Padding="8">
                                 <StackPanel>
                                     <Border Height="80" CornerRadius="6" Background="#111" HorizontalAlignment="Stretch">
-                                        <Image Source="{Binding thumbnail.Source}" Stretch="UniformToFill" />
+                                        <Image Source="/SRshortLogo.png" Stretch="UniformToFill" />
                                     </Border>
-                                    <TextBlock Text="{Binding Title}" Foreground="White" FontWeight="SemiBold" Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Text="{Binding Artist}" Foreground="#BBBBBB" FontSize="12"/>
-                                    <TextBlock Text="{Binding EstimatedStartDisplay, StringFormat='ETA: {0}'}" Foreground="#999" FontSize="12" Margin="0,6,0,0"/>
+                                    <TextBlock Text="Title Example" Foreground="White" FontWeight="SemiBold" Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="Artist" Foreground="#BBBBBB" FontSize="12"/>
+                                    <TextBlock Text="ETA: 02:34" Foreground="#999" FontSize="12" Margin="0,6,0,0"/>
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
