@@ -445,5 +445,31 @@ namespace SongRequestDesktopV2Rewrite
                 _currentLyricIndex = newIndex;
             }
         }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            base.OnClosed(e);
+
+            // Clean up event subscriptions to prevent memory leaks
+            try
+            {
+                if (_musicPlayer != null)
+                {
+                    _musicPlayer.NowPlayingTick -= MusicPlayer_NowPlayingTick;
+                    _musicPlayer.QueueChanged -= MusicPlayer_QueueChanged;
+                }
+
+                // Stop the timer
+                if (_timer != null)
+                {
+                    _timer.Stop();
+                    _timer = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error during Presentation window cleanup: {ex.Message}");
+            }
+        }
     }
 }
