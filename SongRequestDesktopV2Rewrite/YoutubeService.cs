@@ -16,7 +16,7 @@ using System.Threading.Tasks;
 
 namespace SongRequestDesktopV2Rewrite
 {
-    class YoutubeService
+    public class YoutubeService
     {
         private readonly YoutubeClient _youtubeClient;
         private readonly HttpClient _httpClient;
@@ -317,5 +317,32 @@ namespace SongRequestDesktopV2Rewrite
             var video = await _youtubeClient.Videos.GetAsync(videoUrl);
             return video.Thumbnails.GetWithHighestResolution().Url;
         }
+
+        public async Task<List<SearchResult>> SearchAsync(string query, int maxResults = 10)
+        {
+            try
+            {
+                var searchResults = await _youtubeClient.Search.GetVideosAsync(query).CollectAsync(maxResults);
+                return searchResults.Select(video => new SearchResult
+                {
+                    VideoId = video.Id,
+                    Title = video.Title,
+                    Author = video.Author.ChannelTitle,
+                    Duration = video.Duration
+                }).ToList();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Search failed: {ex.Message}");
+            }
+        }
+    }
+
+    public class SearchResult
+    {
+        public string VideoId { get; set; }
+        public string Title { get; set; }
+        public string Author { get; set; }
+        public TimeSpan? Duration { get; set; }
     }
 }

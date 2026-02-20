@@ -6,123 +6,128 @@
         xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
         mc:Ignorable="d"
         Title="SongRequest V2"
-        Width="780" Height="480"
+        Width="600" Height="550"
         WindowStartupLocation="CenterScreen"
         Background="#0f0f10"
         Foreground="White"
-        FontFamily="Segoe UI" Topmost="True" Icon="/SRshortLogo.png" ResizeMode="NoResize">
+        FontFamily="Segoe UI"
+        ResizeMode="NoResize"
+        Icon="/SRshortLogo.png">
 
     <Window.Resources>
-        <SolidColorBrush x:Key="PanelBackground" Color="#202020"/>
-        <SolidColorBrush x:Key="ControlBorder" Color="#303030"/>
-        <Style x:Key="CardBorder" TargetType="Border">
-            <Setter Property="CornerRadius" Value="12"/>
-            <Setter Property="Background" Value="{StaticResource PanelBackground}"/>
-            <Setter Property="Padding" Value="12"/>
-            <Setter Property="Effect">
-                <Setter.Value>
-                    <DropShadowEffect Color="#000000" BlurRadius="12" ShadowDepth="4" Opacity="0.35"/>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="RenderTransform">
-                <Setter.Value>
-                    <TranslateTransform Y="8"/>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="Opacity" Value="0"/>
-        </Style>
-
-        <Style x:Key="RoundedButton" TargetType="Button">
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Background" Value="#2C2C2C"/>
-            <Setter Property="Padding" Value="10,6"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#333333"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="RenderTransform">
-                                    <Setter.Value>
-                                        <ScaleTransform ScaleX="0.98" ScaleY="0.98"/>
-                                    </Setter.Value>
-                                </Setter>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- Fade in animation -->
+        <Storyboard x:Key="FadeInStoryboard">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" 
+                           From="0" To="1" Duration="0:0:0.5"/>
+        </Storyboard>
     </Window.Resources>
 
     <Window.Triggers>
         <EventTrigger RoutedEvent="Window.Loaded">
-            <BeginStoryboard>
-                <Storyboard>
-                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.36"/>
-                    <DoubleAnimation Storyboard.TargetName="MainCard" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" To="0" Duration="0:0:0.36" BeginTime="0:0:0.08" />
-                    <DoubleAnimation Storyboard.TargetName="MainCard" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.36" BeginTime="0:0:0.08" />
-                </Storyboard>
-            </BeginStoryboard>
+            <BeginStoryboard Storyboard="{StaticResource FadeInStoryboard}"/>
         </EventTrigger>
     </Window.Triggers>
 
-    <Grid Margin="12">
-        <Border x:Name="MainCard" Style="{StaticResource CardBorder}" Background="{StaticResource PanelBackground}" Padding="16">
-            <Border.RenderTransform>
-                <TranslateTransform Y="12"/>
-            </Border.RenderTransform>
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
+    <Border Background="#0f0f10" CornerRadius="15" BorderBrush="#2C2C2C" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect Color="Black" BlurRadius="20" ShadowDepth="0" Opacity="0.5"/>
+        </Border.Effect>
 
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
-                    <Image Source="/SRshortLogo.png" Width="36" Height="36" Margin="0,0,8,0"/>
-                    <TextBlock Text="Technik AG" FontFamily="Segoe UI Black" FontSize="26" VerticalAlignment="Center"/>
+        <Grid Margin="40">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="60"/>
+            </Grid.RowDefinitions>
+
+            <!-- Content Area -->
+            <StackPanel Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- Logo -->
+                <Viewbox Width="480" Height="180" Margin="0,0,0,30">
+                    <Image Source="/SRLoader.gif" 
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           Stretch="Uniform"/>
+                </Viewbox>
+
+                <!-- Title -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
+                    <TextBlock Text="Technik-AG " 
+                               FontFamily="Segoe UI Black" 
+                               FontSize="36" 
+                               Foreground="#E0E0E0"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="Song" 
+                               FontFamily="Segoe UI Black" 
+                               FontSize="36" 
+                               Foreground="#FFD700"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="Request" 
+                               FontFamily="Segoe UI Black" 
+                               FontSize="36" 
+                               Foreground="#FFA500"
+                               VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <Grid Grid.Row="1" Margin="0,12,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="360"/>
-                    </Grid.ColumnDefinitions>
+                <!-- Version -->
+                <TextBlock x:Name="VersionText"
+                           Text="Version 2.0"
+                           FontSize="14"
+                           Foreground="#808080"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,30"/>
 
-                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                        <TextBlock Text="Logging in automatically..." FontSize="20" Margin="0,4"/>
+                <!-- Status Text -->
+                <TextBlock x:Name="StatusText"
+                           Text="Initializing..."
+                           FontSize="16"
+                           Foreground="#AAAAAA"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,15"/>
+            </StackPanel>
 
-                        <Border Background="#151515" CornerRadius="8" Padding="12" Margin="0,12,0,0" BorderBrush="{StaticResource ControlBorder}" BorderThickness="1">
-                            <StackPanel>
-                                <TextBlock Text="Admin password" Foreground="#BBBBBB" FontSize="12"/>
-                                <PasswordBox Name="PasswordBox_TechnikPassword" Height="36" MaxLength="12" Background="#0f0f10" Foreground="White" Visibility="Collapsed"/>
-                            </StackPanel>
-                        </Border>
+            <!-- Copyright -->
+            <TextBlock Grid.Row="1"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Bottom"
+                       Margin="0,0,0,15">
+                <Run Text="© 2026 CodeRebelsAlliance (leMineGaming and Contributors)" 
+                     Foreground="#666666"
+                     FontSize="12"/>
+            </TextBlock>
 
-                        <Border Background="#151515" CornerRadius="8" Padding="12" Margin="0,12,0,0" BorderBrush="{StaticResource ControlBorder}" BorderThickness="1">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <PasswordBox Name="PasswordBox_SecretKey" Width="320" Height="36" MaxLength="12" Background="#0f0f10" Foreground="White" IsEnabled="False" Visibility="Collapsed"/>
-                                <Button Name="Button_ChooseFile" Content="Choose File" Width="120" Height="36" Margin="8,0,0,0" Style="{StaticResource RoundedButton}" Visibility="Collapsed"/>
-                            </StackPanel>
-                        </Border>
+            <!-- Loading Bar -->
+            <Border Grid.Row="2" 
+                    Background="#1a1a1a" 
+                    CornerRadius="8" 
+                    Height="12"
+                    BorderBrush="#2C2C2C"
+                    BorderThickness="1"
+                    VerticalAlignment="Bottom">
+                <Grid ClipToBounds="True">
+                    <!-- Progress Fill -->
+                    <Border x:Name="ProgressFill"
+                            Background="#5B8DEF"
+                            CornerRadius="7"
+                            HorizontalAlignment="Left"
+                            Width="0">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#5B8DEF" BlurRadius="10" ShadowDepth="0" Opacity="0.6"/>
+                        </Border.Effect>
+                    </Border>
 
-                        <CheckBox Name="CheckBox_UseDefaultKey" Content="Use default key file" Margin="0,12,0,0" IsChecked="True" IsEnabled="False" Visibility="Collapsed"/>
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="1" VerticalAlignment="Top" HorizontalAlignment="Right">
-                        <Button Content="Start" Width="160" Height="44" Style="{StaticResource RoundedButton}" Margin="0,0,0,8"/>
-                        <Button Content="Settings" Width="160" Height="44" Style="{StaticResource RoundedButton}"/>
-                    </StackPanel>
+                    <!-- Shimmer Effect -->
+                    <Rectangle x:Name="Shimmer"
+                               Fill="White"
+                               Opacity="0.2"
+                               HorizontalAlignment="Left"
+                               Width="80"
+                               Margin="-80,0,0,0">
+                        <Rectangle.RenderTransform>
+                            <TranslateTransform x:Name="ShimmerTransform"/>
+                        </Rectangle.RenderTransform>
+                    </Rectangle>
                 </Grid>
-            </Grid>
-        </Border>
-    </Grid>
+            </Border>
+        </Grid>
+    </Border>
 </Window>

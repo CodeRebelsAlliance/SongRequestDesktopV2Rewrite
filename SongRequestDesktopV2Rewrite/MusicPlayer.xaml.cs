@@ -326,12 +326,52 @@ namespace SongRequestDesktopV2Rewrite
                             _ = AdvanceToNextImmediate();
                         }
                     }
+                    else if (Queue.Count == 1)
+                    {
+                        // Only one song left - check if it's ending
+                        var remaining = (_currentReader.TotalTime - _currentReader.CurrentTime).TotalSeconds;
+                        if (remaining <= 0.15)
+                        {
+                            // Last song ended - stop playback completely
+                            StopPlayback();
+                            PlayPauseButton.Content = "▶";
+
+                            // Clear UI
+                            ProgressSlider.Value = 0;
+                            ElapsedText.Text = "00:00";
+                            RemainingText.Text = "00:00";
+
+                            // Clear Now Playing info
+                            NowTitle.Text = "";
+                            NowArtist.Text = "";
+                            NowLength.Text = "";
+                            NowThumbnail.Source = null;
+
+                            // Clear lyrics
+                            var lyricsPanel = FindName("LyricsStackPanel") as StackPanel;
+                            if (lyricsPanel != null) lyricsPanel.Children.Clear();
+                            _currentSyncedLines.Clear();
+                            _currentHighlighted = null;
+
+                            // Notify presentation that nothing is playing
+                            try
+                            {
+                                NowPlayingTick?.Invoke(this, new NowPlayingEventArgs
+                                {
+                                    Current = null,
+                                    CurrentTime = TimeSpan.Zero,
+                                    TotalTime = TimeSpan.Zero
+                                });
+                            }
+                            catch { }
+                        }
+                    }
 
                     // raise tick event for external displays
                     try
                     {
                         var current = Queue.Count > 0 ? Queue[0] : null;
-                        if (current != null)
+                        if (current != null && _currentReader != null)
                         {
                             NowPlayingTick?.Invoke(this, new NowPlayingEventArgs
                             {
@@ -341,10 +381,13 @@ namespace SongRequestDesktopV2Rewrite
                             });
                         }
                     }
-                    catch { }
+                    catch(Exception ex)
+                    {
+                        MessageBox.Show("Error " + ex.Message);
+                    }
 
-                    // update lyric highlighting and autoscroll
-                    UpdateLyricHighlighting(_currentReader.CurrentTime);
+                    
+                    if(_currentReader != null) UpdateLyricHighlighting(_currentReader.CurrentTime);
                 }
             }
         }
@@ -353,7 +396,7 @@ namespace SongRequestDesktopV2Rewrite
         {
             var lyricsPanel = FindName("LyricsStackPanel") as StackPanel;
             var lyricsScroll = FindName("LyricsScrollViewer") as ScrollViewer;
-            if (lyricsPanel == null || lyricsScroll == null) return;
+            if (lyricsPanel == null || lyricsScroll == null || _currentReader == null) return;            
 
             int index = -1;
             if (_currentSyncedLines != null && _currentSyncedLines.Count > 0)
@@ -828,6 +871,8 @@ namespace SongRequestDesktopV2Rewrite
 
             _currentVolProvider = null;
             _nextVolProvider = null;
+            _mixer = null;
+            _capturingProvider = null;
 
             // Hide audio info tags
             var fileTypeTag = FindName("FileTypeTag") as Border;

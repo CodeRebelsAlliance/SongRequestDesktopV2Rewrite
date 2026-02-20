@@ -290,8 +290,8 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="6,0">
-                    <Button x:Name="SubmitUrlButton" Content="Submit to Database" Width="180" Height="30" Margin="4,0"
-                            Click="SubmitUrlButton_Click" IsEnabled="True" Style="{StaticResource AccentButton}"/>
+                    <Button x:Name="SubmitSongButton" Content="➕ Submit Song" Width="140" Height="30" Margin="4,0"
+                            Click="SubmitSongButton_Click" Style="{StaticResource AccentButton}"/>
                     <Button x:Name="FetchDataButton" Content="Fetch Data" Width="100" Height="30" Margin="4,0"
                             Click="FetchDataButton_Click" Style="{StaticResource AccentButton}"/>
                     <Button x:Name="SettingsButton" Content="Settings" Width="100" Height="30" Margin="4,0"
@@ -302,9 +302,8 @@
                             Click="MusicPlayerButton_Click" Style="{StaticResource SuccessButton}"/>
                 </StackPanel>
 
-                <!-- URL textbox fills the remaining space -->
-                <TextBox x:Name="UrlTextBox" Height="40" FontSize="18" Margin="4,0"
-                         VerticalAlignment="Center" Style="{StaticResource RoundedTextBox}" MinWidth="380"/>
+                <!-- Empty space in center (URL TextBox removed) -->
+                <Border DockPanel.Dock="Left" Background="Transparent" MinWidth="200"/>
             </DockPanel>
         </Border>
 

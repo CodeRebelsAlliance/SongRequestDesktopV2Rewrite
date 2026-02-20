@@ -54,11 +54,6 @@ namespace SongRequestDesktopV2Rewrite
             UIHelpers.SetIsLoading(VideoListHost, false);
 
             _musicPlayer = new MusicPlayer();
-            UrlTextBox.TextChanged += UrlTextBoxOnTextChanged;
-            void UrlTextBoxOnTextChanged(object sender, TextChangedEventArgs e)
-            {
-                SubmitUrlButton.IsEnabled = UrlTextBox.Text.Length > 0;
-            }
 
             // Setup periodic refresh timer using config value
             _refreshTimer = new DispatcherTimer
@@ -96,14 +91,28 @@ namespace SongRequestDesktopV2Rewrite
             catch { }
         }
 
-        private async void SubmitUrlButton_Click(object sender, EventArgs e)
+        private async void SubmitSongButton_Click(object sender, EventArgs e)
         {
-            string videoID = YoutubeService.ExtractVideoId(UrlTextBox.Text);
-            if (videoID != null && videoID.Length == 11)
+            try
             {
-                await SendOtherRequest("add", videoID);
-                FetchData();
-                UrlTextBox.Text = "";
+                var dialog = new SubmitSongDialog(_youTubeService, secID)
+                {
+                    Owner = this
+                };
+
+                if (dialog.ShowDialog() == true)
+                {
+                    // Song was successfully submitted
+                    AppendConsoleText($"✅ Song submitted: {dialog.SubmittedVideoId}");
+
+                    // Refresh the data to show the new song
+                    await FetchData();
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendConsoleText($"❌ Error opening submit dialog: {ex.Message}");
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

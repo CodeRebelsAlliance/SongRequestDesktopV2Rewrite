@@ -1,0 +1,220 @@
+<Window x:Class="SongRequestDesktopV2Rewrite.SubmitSongDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
+        Title="Submit Song" Height="500" Width="700"
+        WindowStartupLocation="CenterOwner"
+        Background="#121212"
+        Foreground="White"
+        ResizeMode="NoResize"
+        WindowStyle="SingleBorderWindow"
+        FocusManager.FocusedElement="{Binding ElementName=UrlTextBox}">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="PanelBackground" Color="#202020"/>
+        <SolidColorBrush x:Key="AccentButtonBackground" Color="#FF5B8DEF"/>
+        <SolidColorBrush x:Key="AccentButtonHover" Color="#FF7AD1FF"/>
+        <SolidColorBrush x:Key="SecondaryButtonBackground" Color="#505050"/>
+        <SolidColorBrush x:Key="SecondaryButtonHover" Color="#6A6A6A"/>
+
+        <Style TargetType="Button" x:Key="ModernButton">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="15,10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox" x:Key="ModernTextBox">
+            <Setter Property="Background" Value="#2C2C2C"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#404040"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="CaretBrush" Value="#FFFFFF"/>
+            <Setter Property="SelectionBrush" Value="#5B8DEF"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#FF5B8DEF"/>
+                    <Setter Property="BorderThickness" Value="3"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="#5A5A5A"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="20"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <TextBlock Grid.Row="0" Text="Submit a Song" 
+                   FontSize="24" FontWeight="Bold" 
+                   HorizontalAlignment="Center"
+                   Foreground="White"/>
+
+        <!-- Mode Selection -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0" Content="📎 Submit URL" 
+                    x:Name="UrlModeButton"
+                    Height="50" 
+                    Background="{StaticResource AccentButtonBackground}"
+                    Style="{StaticResource ModernButton}"
+                    Click="UrlModeButton_Click"/>
+
+            <Button Grid.Column="2" Content="🔍 Search Song" 
+                    x:Name="SearchModeButton"
+                    Height="50"
+                    Background="{StaticResource SecondaryButtonBackground}"
+                    Style="{StaticResource ModernButton}"
+                    Click="SearchModeButton_Click"/>
+        </Grid>
+
+        <!-- Content Area -->
+        <Border Grid.Row="3" Background="{StaticResource PanelBackground}"
+                CornerRadius="8" Padding="20" Margin="0,20,0,0">
+            <Grid>
+                <!-- URL Mode Content -->
+                <StackPanel x:Name="UrlModePanel" Visibility="Visible">
+                    <TextBlock Text="Enter YouTube URL or Video ID:" 
+                               FontSize="14" Margin="0,0,0,10"
+                               Foreground="#CCCCCC"/>
+                    <TextBox x:Name="UrlTextBox" 
+                             Style="{StaticResource ModernTextBox}"
+                             Height="40"
+                             IsEnabled="True"
+                             IsReadOnly="False"
+                             Focusable="True"
+                             TabIndex="1"
+                             KeyDown="Input_KeyDown"
+                             TextChanged="UrlTextBox_TextChanged"/>
+                    <TextBlock Text="Example: https://www.youtube.com/watch?v=dQw4w9WgXcQ" 
+                               FontSize="12" Margin="0,8,0,0"
+                               Foreground="#808080"/>
+
+                    <TextBlock Text="Optional Message:" 
+                               FontSize="14" Margin="0,20,0,10"
+                               Foreground="#CCCCCC"/>
+                    <TextBox x:Name="MessageTextBox" 
+                             Style="{StaticResource ModernTextBox}"
+                             Height="40"
+                             IsEnabled="True"
+                             IsReadOnly="False"
+                             Focusable="True"
+                             TabIndex="2"
+                             KeyDown="Input_KeyDown"/>
+                </StackPanel>
+
+                <!-- Search Mode Content -->
+                <StackPanel x:Name="SearchModePanel" Visibility="Collapsed">
+                    <TextBlock Text="Search for a song:" 
+                               FontSize="14" Margin="0,0,0,10"
+                               Foreground="#CCCCCC"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="10"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox x:Name="SearchTextBox" 
+                                 Grid.Column="0"
+                                 Style="{StaticResource ModernTextBox}"
+                                 Height="40"
+                                 IsEnabled="True"
+                                 IsReadOnly="False"
+                                 Focusable="True"
+                                 TabIndex="1"
+                                 KeyDown="SearchTextBox_KeyDown"/>
+
+                        <Button Grid.Column="2"
+                                x:Name="SearchButton"
+                                Content="🔍 Search"
+                                Height="40"
+                                Width="100"
+                                Background="{StaticResource AccentButtonBackground}"
+                                Style="{StaticResource ModernButton}"
+                                Click="SearchButton_Click"/>
+                    </Grid>
+                    <TextBlock Text="Enter artist, song name, or keywords" 
+                               FontSize="12" Margin="0,8,0,0"
+                               Foreground="#808080"/>
+
+                    <!-- Search Results -->
+                    <ScrollViewer x:Name="SearchResultsScroll" 
+                                  MaxHeight="200" 
+                                  Margin="0,15,0,0"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Visibility="Collapsed">
+                        <StackPanel x:Name="SearchResultsPanel"/>
+                    </ScrollViewer>
+
+                    <TextBlock x:Name="SearchStatusText" 
+                               Text="" 
+                               FontSize="12" 
+                               Margin="0,10,0,0"
+                               Foreground="#FFA500"
+                               TextAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="4" Margin="0,20,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0" Content="Cancel" 
+                    Height="40"
+                    Background="{StaticResource SecondaryButtonBackground}"
+                    Style="{StaticResource ModernButton}"
+                    Click="CancelButton_Click"/>
+
+            <Button Grid.Column="2" Content="Submit" 
+                    x:Name="SubmitButton"
+                    Height="40"
+                    Background="{StaticResource AccentButtonBackground}"
+                    Style="{StaticResource ModernButton}"
+                    Click="SubmitButton_Click"
+                    IsEnabled="False"/>
+        </Grid>
+    </Grid>
+</Window>
