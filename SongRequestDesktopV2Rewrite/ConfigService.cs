@@ -14,6 +14,11 @@ namespace SongRequestDesktopV2Rewrite
         private string _bearerToken = "Bearer Multicore2024SR";
         private string _address = "http://127.0.0.1:5000";
         private string _defaultSorting = "none";
+        private bool _presentationFullscreen = false;
+        private string _requestUrl = "https://example.com/request";
+        private bool _normalizeVolume = false;
+        private float _defaultVolume = -1f; // -1 means not set
+        private bool _normalizationActive = false;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -45,6 +50,36 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _defaultSorting;
             set => SetField(ref _defaultSorting, value);
+        }
+
+        public bool PresentationFullscreen
+        {
+            get => _presentationFullscreen;
+            set => SetField(ref _presentationFullscreen, value);
+        }
+
+        public string RequestUrl
+        {
+            get => _requestUrl;
+            set => SetField(ref _requestUrl, value);
+        }
+
+        public bool NormalizeVolume
+        {
+            get => _normalizeVolume;
+            set => SetField(ref _normalizeVolume, value);
+        }
+
+        public float DefaultVolume
+        {
+            get => _defaultVolume;
+            set => SetField(ref _defaultVolume, value);
+        }
+
+        public bool NormalizationActive
+        {
+            get => _normalizationActive;
+            set => SetField(ref _normalizationActive, value);
         }
 
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -130,6 +165,7 @@ namespace SongRequestDesktopV2Rewrite
                     if (string.IsNullOrWhiteSpace(cfg.BearerToken)) { cfg.BearerToken = "DefaultToken"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.Address)) { cfg.Address = "http://127.0.0.1:5000"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.DefaultSorting)) { cfg.DefaultSorting = "none"; patched = true; }
+                    if (string.IsNullOrWhiteSpace(cfg.RequestUrl)) { cfg.RequestUrl = "https://example.com/request"; patched = true; }
 
                     if (patched)
                     {

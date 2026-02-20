@@ -27,11 +27,46 @@ namespace SongRequestDesktopV2Rewrite
         {
             await Task.Delay(2000);
 
+            // Check for updates before showing Authentication
+            await CheckForUpdatesAsync();
+
             var authForm = new Authentication();
             authForm.CookiesRetrieved += AuthForm_CookiesRetrieved;
             authForm.Show();
             shown = true;
             Hide();
+        }
+
+        private async Task CheckForUpdatesAsync()
+        {
+            try
+            {
+                var updateInfo = await UpdateService.CheckForUpdatesAsync();
+
+                if (updateInfo.UpdateAvailable)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        var updatePrompt = new UpdatePrompt(
+                            updateInfo.DownloadUrl,
+                            updateInfo.LatestVersion,
+                            updateInfo.CurrentVersion,
+                            updateInfo.ReleaseNotes)
+                        {
+                            Owner = this
+                        };
+
+                        updatePrompt.ShowDialog();
+                        // If user chose to install, the app will be shut down by the updater
+                        // If user chose "Remind Me Later", we continue normally
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                // Silently fail - don't block app startup if update check fails
+                System.Diagnostics.Debug.WriteLine($"Update check error: {ex.Message}");
+            }
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)

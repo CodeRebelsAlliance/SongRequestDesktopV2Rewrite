@@ -34,19 +34,19 @@
                 </TextBlock>
 
                 <Separator Margin="6"/>
-
-                <TextBlock Text="Badges" FontWeight="SemiBold" FontSize="13" Foreground="White" Margin="0,6,0,6"/>
-                <WrapPanel x:Name="BadgesPanel" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,0,6">
-                    <Image Width="160" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/v/release/leMineGaming/SongRequestDesktopV2Rewrite?label=release&amp;style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/releases"/>
-                    <Image Width="160" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/license/leMineGaming/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/blob/main/LICENSE"/>
-                    <Image Width="140" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/stars/leMineGaming/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/stargazers"/>
-                    <Image Width="140" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/issues/leMineGaming/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/issues"/>
-                </WrapPanel>
-
                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                     <Button x:Name="CheckUpdatesButton" Content="Check for updates" Width="150" Height="32" Click="CheckUpdatesButton_Click" Background="#FF5B8DEF" Foreground="White"/>
                     <TextBlock x:Name="UpdateStatus" Text="" Foreground="#CCCCCC" VerticalAlignment="Center" Margin="12,0,0,0" />
                 </StackPanel>
+                <TextBlock Text="Badges" FontWeight="SemiBold" FontSize="13" Foreground="White" Margin="0,6,0,6"/>
+                <WrapPanel x:Name="BadgesPanel" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,0,6">
+                    <Image Width="160" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/v/release/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?label=release&amp;style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/releases"/>
+                    <Image Width="160" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/license/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/blob/main/LICENSE"/>
+                    <Image Width="140" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/stars/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/stargazers"/>
+                    <Image Width="140" Height="20" Margin="4" Cursor="Hand" Source="https://img.shields.io/github/issues/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?style=flat" MouseDown="Badge_MouseDown" Tag="https://github.com/leMineGaming/SongRequestDesktopV2Rewrite/issues"/>
+                </WrapPanel>
+
+                
             </StackPanel>
         </Border>
 

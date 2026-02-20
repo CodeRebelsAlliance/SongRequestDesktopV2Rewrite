@@ -160,6 +160,7 @@ namespace SongRequestDesktopV2Rewrite
             var newFetchedYtids = new HashSet<string>();
             var newFetchedBLYtids = new HashSet<string>();
             var semaphore = new SemaphoreSlim(ConcurrentTaskNumber);
+            bool fetchSuccess = true;
 
             try
             {
@@ -208,11 +209,19 @@ namespace SongRequestDesktopV2Rewrite
                 }).ToList();
 
                 await Task.WhenAll(fetchTasks);
-                AppendConsoleText("Fetched Database successfully!");
+                AppendConsoleText("Fetched Database successfully!", Brushes.LightGreen);
             }
             catch (Exception ex)
             {
-                AppendConsoleText("Error while fetching database: " + ex.Message);
+                AppendConsoleText("Error while fetching database: " + ex.Message, Brushes.OrangeRed);
+                fetchSuccess = false;
+                UpdateStatus("Offline", new SolidColorBrush(Color.FromRgb(244, 87, 87)));
+
+                // Check for 401 Unauthorized
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    ShowAuthenticationPrompt();
+                }
             }
 
             try
@@ -238,11 +247,25 @@ namespace SongRequestDesktopV2Rewrite
                 }).ToList();
 
                 await Task.WhenAll(fetchBlacklistTasks);
-                AppendConsoleText("Fetched Blacklist successfully!");
+                AppendConsoleText("Fetched Blacklist successfully!", Brushes.LightGreen);
             }
             catch (Exception ex)
             {
-                AppendConsoleText("Error while fetching Blacklist: " + ex.Message);
+                AppendConsoleText("Error while fetching Blacklist: " + ex.Message, Brushes.OrangeRed);
+                fetchSuccess = false;
+                UpdateStatus("Offline", new SolidColorBrush(Color.FromRgb(244, 87, 87)));
+
+                // Check for 401 Unauthorized
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    ShowAuthenticationPrompt();
+                }
+            }
+
+            // Update status to Online if all fetches succeeded
+            if (fetchSuccess)
+            {
+                UpdateStatus("Online", new SolidColorBrush(Color.FromRgb(76, 175, 80)));
             }
 
             // Remove panels not present anymore
@@ -571,9 +594,15 @@ namespace SongRequestDesktopV2Rewrite
             }
             catch (Exception ex)
             {
-                AppendConsoleText("Error while handling: " + ex.Message);
+                AppendConsoleText("Error while handling: " + ex.Message, Brushes.OrangeRed);
                 // basic error handling
                 videoPanel.Background = Brushes.DarkRed;
+
+                // Check for YouTube 403 rate limit
+                if (ex.Message.Contains("403") || ex.Message.Contains("Forbidden") || ex.Message.Contains("rate limit"))
+                {
+                    ShowYouTubeLimitPrompt();
+                }
             }
 
             // end
@@ -588,12 +617,78 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
-        private void AppendConsoleText(string text)
+        private void AppendConsoleText(string text, SolidColorBrush color = null)
         {
             Dispatcher.Invoke(() =>
             {
-                ConsoleTextBox.AppendText(text + "\n");
+                if (ConsoleTextBox?.Document == null) return;
+
+                var paragraph = new Paragraph(new Run(text))
+                {
+                    Margin = new Thickness(0),
+                    Foreground = color ?? Brushes.White
+                };
+
+                ConsoleTextBox.Document.Blocks.Add(paragraph);
                 ConsoleTextBox.ScrollToEnd();
+            });
+        }
+
+        private void UpdateStatus(string status, SolidColorBrush color)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                var statusText = FindName("StatusText") as TextBlock;
+                var statusIndicator = FindName("StatusIndicator") as Ellipse;
+
+                if (statusText != null)
+                {
+                    statusText.Text = status;
+                    statusText.Foreground = color;
+                }
+
+                if (statusIndicator != null)
+                {
+                    statusIndicator.Fill = color;
+                }
+            });
+        }
+
+        private void ShowAuthenticationPrompt()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    var authPrompt = new AuthPrompt
+                    {
+                        Owner = this
+                    };
+                    authPrompt.ShowDialog();
+                }
+                catch (Exception ex)
+                {
+                    AppendConsoleText($"Failed to show authentication prompt: {ex.Message}", Brushes.OrangeRed);
+                }
+            });
+        }
+
+        private void ShowYouTubeLimitPrompt()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    var ytLimitPrompt = new YoutubeLimitPrompt
+                    {
+                        Owner = this
+                    };
+                    ytLimitPrompt.ShowDialog();
+                }
+                catch (Exception ex)
+                {
+                    AppendConsoleText($"Failed to show YouTube limit prompt: {ex.Message}", Brushes.OrangeRed);
+                }
             });
         }
 

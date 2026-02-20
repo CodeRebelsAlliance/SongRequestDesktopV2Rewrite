@@ -394,16 +394,22 @@
         <Border x:Name="BottomCardBorder" Grid.Row="2" Margin="6, 2" Style="{StaticResource CardBorder}">
             <DockPanel LastChildFill="True" VerticalAlignment="Center" Margin="6, 0">
                 <!-- Left: console text area -->
-                <TextBox x:Name="ConsoleTextBox" Background="#202020" Foreground="White" FontFamily="Consolas"
-                         TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" IsReadOnly="True" BorderThickness="0"
-                         DockPanel.Dock="Left" Width="1100" Margin="0,0,8,0"/>
+                <RichTextBox x:Name="ConsoleTextBox" Background="#202020" FontFamily="Consolas"
+                         VerticalScrollBarVisibility="Auto" IsReadOnly="True" BorderThickness="0"
+                         DockPanel.Dock="Left" Width="1100" Margin="0,0,8,0">
+                    <FlowDocument>
+                        <Paragraph>
+                            <Run Foreground="White" Text="Console initialized."/>
+                        </Paragraph>
+                    </FlowDocument>
+                </RichTextBox>
 
                 <!-- Right: internet status + clock -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" DockPanel.Dock="Right">
-                    <!-- Internet status (static for now) -->
+                    <!-- Internet status (dynamic) -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
-                        <Ellipse Width="16" Height="16" Fill="#FF4CAF50" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBlock Text="Online" FontSize="16" FontWeight="Bold" Foreground="#FF4CAF50" VerticalAlignment="Center"/>
+                        <Ellipse x:Name="StatusIndicator" Width="16" Height="16" Fill="#FFFFA500" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="StatusText" Text="Connecting" FontSize="16" FontWeight="Bold" Foreground="#FFFFA500" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <!-- Clock -->

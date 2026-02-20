@@ -18,6 +18,8 @@
         <SolidColorBrush x:Key="DangerButtonHover" Color="#FFFF7B7B"/>
         <SolidColorBrush x:Key="SuccessButtonBackground" Color="#FF4CAF50"/>
         <SolidColorBrush x:Key="SuccessButtonHover" Color="#FF66D17C"/>
+        <SolidColorBrush x:Key="WarningButtonBackground" Color="#FFFFB020"/>
+        <SolidColorBrush x:Key="WarningButtonHover" Color="#FFFFC658"/>
         <SolidColorBrush x:Key="SecondaryButtonBackground" Color="#505050"/>
         <SolidColorBrush x:Key="SecondaryButtonHover" Color="#6A6A6A"/>
 
@@ -90,6 +92,18 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="WarningButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+            <Setter Property="Background" Value="{StaticResource WarningButtonBackground}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource WarningButtonBackground}"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource WarningButtonHover}"/>
+                    <Setter Property="BorderBrush" Value="{StaticResource WarningButtonHover}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
             <Setter Property="Background" Value="{StaticResource SecondaryButtonBackground}"/>
             <Setter Property="BorderBrush" Value="{StaticResource SecondaryButtonBackground}"/>
@@ -157,6 +171,24 @@
                         <TextBlock Text="Default Sorting"/>
                         <TextBox x:Name="DefaultSortingBox" Width="200" Style="{StaticResource RoundedTextBox}"/>
                     </StackPanel>
+
+                    <StackPanel Orientation="Vertical" Margin="12,0,0,0">
+                        <TextBlock Text="Presentation Mode"/>
+                        <CheckBox x:Name="PresentationFullscreenCheckBox" Content="Fullscreen" Foreground="White" VerticalAlignment="Center" Margin="0,6,0,0"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Vertical" Margin="12,0,0,0">
+                        <TextBlock Text="Audio Settings"/>
+                        <CheckBox x:Name="NormalizeVolumeCheckBox" Content="Normalize Volume" Foreground="White" VerticalAlignment="Center" Margin="0,6,0,0"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Vertical" Margin="12,0,0,0">
+                        <TextBlock Text="Server Status"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <CheckBox x:Name="SendinAllowedCheckBox" Content="Sending Allowed" Foreground="White" VerticalAlignment="Center" IsEnabled="False"/>
+                            <Button x:Name="ToggleSendinButton" Content="Toggle" Width="80" Height="28" Margin="8,0,0,0" Style="{StaticResource WarningButton}" Click="ToggleSendinButton_Click"/>
+                        </StackPanel>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- Middle area: address, token and console controls -->
@@ -172,6 +204,9 @@
 
                         <TextBlock Text="Bearer Token OR JWT Authentication" Margin="0,8,0,0"/>
                         <TextBox x:Name="TokenBox" Style="{StaticResource RoundedTextBox}"/>
+
+                        <TextBlock Text="Presentation Request URL (QR Code)" Margin="0,8,0,0"/>
+                        <TextBox x:Name="RequestUrlBox" Style="{StaticResource RoundedTextBox}" Text="https://example.com/request"/>
 
                         <WrapPanel Margin="0,12,0,0" HorizontalAlignment="Left">
                             <Button x:Name="SaveButton" Content="Save" Width="110" Margin="6,0" Style="{StaticResource SuccessButton}" Click="SaveButton_Click"/>

@@ -8,13 +8,15 @@ namespace SongRequestDesktopV2Rewrite
 {
     public partial class About : Window
     {
+        public static string version = "2.2";
+        
         public About()
         {
             InitializeComponent();
             // set version text from assembly (use FindName to avoid generated field mismatch)
             try
             {
-                var v = Assembly.GetEntryAssembly()?.GetName().Version;
+                var v = About.version;
                 var vt = this.FindName("VersionText") as System.Windows.Controls.TextBlock;
                 if (vt != null && v != null) vt.Text = "Version " + v.ToString();
             }
@@ -30,17 +32,32 @@ namespace SongRequestDesktopV2Rewrite
         {
             var statusTb = this.FindName("UpdateStatus") as System.Windows.Controls.TextBlock;
             if (statusTb != null) statusTb.Text = "Checking...";
+
             try
             {
-                // Simple check: query GitHub releases latest tag via API
-                var client = new System.Net.Http.HttpClient();
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("SongRequestApp");
-                var url = "https://api.github.com/repos/CodeRebelsAlliance/SongRequestDesktopV2Rewrite/releases/latest";
-                var resp = await client.GetStringAsync(url);
-                dynamic json = Newtonsoft.Json.JsonConvert.DeserializeObject(resp);
-                string latestTag = json.tag_name;
-                var vLocal = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.0.0";
-                if (statusTb != null) statusTb.Text = $"Latest: {latestTag} — Local: {vLocal}";
+                var updateInfo = await UpdateService.CheckForUpdatesAsync();
+
+                if (updateInfo.UpdateAvailable)
+                {
+                    if (statusTb != null) 
+                        statusTb.Text = $"Update available: {updateInfo.LatestVersion} (Current: {updateInfo.CurrentVersion})";
+
+                    // Show update prompt
+                    var updatePrompt = new UpdatePrompt(
+                        updateInfo.DownloadUrl,
+                        updateInfo.LatestVersion,
+                        updateInfo.CurrentVersion,
+                        updateInfo.ReleaseNotes)
+                    {
+                        Owner = this
+                    };
+                    updatePrompt.ShowDialog();
+                }
+                else
+                {
+                    if (statusTb != null) 
+                        statusTb.Text = $"You're up to date! (Version {updateInfo.CurrentVersion})";
+                }
             }
             catch (Exception ex)
             {

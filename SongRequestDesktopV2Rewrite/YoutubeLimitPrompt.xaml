@@ -1,0 +1,151 @@
+<Window x:Class="SongRequestDesktopV2Rewrite.YoutubeLimitPrompt"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
+        mc:Ignorable="d"
+        Title="YouTube Rate Limit" 
+        Height="260" 
+        Width="520" 
+        Background="#121212" 
+        Foreground="White" 
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ResizeMode="NoResize">
+    <Window.Resources>
+        <SolidColorBrush x:Key="PanelBackground" Color="#202020"/>
+        <SolidColorBrush x:Key="AccentButtonBackground" Color="#FF5B8DEF"/>
+        <SolidColorBrush x:Key="AccentButtonHover" Color="#FF7AD1FF"/>
+        <SolidColorBrush x:Key="DangerButtonBackground" Color="#FFE45757"/>
+        <SolidColorBrush x:Key="DangerButtonHover" Color="#FFFF7B7B"/>
+        <SolidColorBrush x:Key="WarningButtonBackground" Color="#FFFFB020"/>
+        <SolidColorBrush x:Key="WarningButtonHover" Color="#FFFFC658"/>
+
+        <Style TargetType="Button" x:Key="RoundedButton">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="#2C2C2C"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="10">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.02" ScaleY="1.02"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+            <Setter Property="Background" Value="{StaticResource AccentButtonBackground}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AccentButtonHover}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+            <Setter Property="Background" Value="{StaticResource DangerButtonBackground}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource DangerButtonHover}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="WarningButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+            <Setter Property="Background" Value="{StaticResource WarningButtonBackground}"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource WarningButtonHover}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="{StaticResource PanelBackground}" CornerRadius="15" BorderBrush="#404040" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="20" ShadowDepth="0" Opacity="0.6"/>
+        </Border.Effect>
+
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header with icon and title -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
+                <Ellipse Width="48" Height="48" Fill="#FFFFB020" Margin="0,0,15,0">
+                    <Ellipse.Effect>
+                        <DropShadowEffect Color="#FFFFB020" BlurRadius="15" ShadowDepth="0" Opacity="0.6"/>
+                    </Ellipse.Effect>
+                </Ellipse>
+                <TextBlock Text="⚠️" FontSize="28" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="-62,4,15,0"/>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="YouTube Rate Limit" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock Text="Access Denied (403)" FontSize="12" Foreground="#999" Margin="0,2,0,0"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Message -->
+            <StackPanel Grid.Row="1" Margin="0,0,0,20">
+                <TextBlock Text="YouTube has rate limited your requests." 
+                           FontSize="14" 
+                           Foreground="#CCCCCC" 
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,10"/>
+                <TextBlock Text="This usually happens when downloading too many videos. To continue, you need to:" 
+                           FontSize="14" 
+                           Foreground="#CCCCCC" 
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,8"/>
+                <TextBlock Text="• Switch to a different Google account" 
+                           FontSize="13" 
+                           Foreground="#AAAAAA" 
+                           Margin="15,0,0,4"/>
+                <TextBlock Text="• Use a different computer/network" 
+                           FontSize="13" 
+                           Foreground="#AAAAAA" 
+                           Margin="15,0,0,4"/>
+                <TextBlock Text="• Wait for the rate limit to reset (~1-24 hours)" 
+                           FontSize="13" 
+                           Foreground="#AAAAAA" 
+                           Margin="15,0,0,0"/>
+            </StackPanel>
+
+            <!-- Buttons -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CloseButton" 
+                        Content="Close" 
+                        Width="100" 
+                        Margin="0,0,10,0" 
+                        Style="{StaticResource DangerButton}" 
+                        Click="CloseButton_Click"/>
+                <Button x:Name="ClearAndRestartButton" 
+                        Content="Clear Login &amp; Restart" 
+                        Width="180" 
+                        Style="{StaticResource WarningButton}" 
+                        Click="ClearAndRestartButton_Click"
+                        ToolTip="Clear YouTube login credentials and restart the application"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

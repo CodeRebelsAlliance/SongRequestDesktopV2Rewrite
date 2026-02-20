@@ -21,17 +21,30 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CefSharp.Wpf.NETCore" Version="141.0.110" />
+    <PackageReference Include="CefSharp.Wpf.NETCore" Version="144.0.120" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="TagLibSharp" Version="2.2.0" />
-    <PackageReference Include="YoutubeExplode" Version="6.5.6" />
-    <PackageReference Include="YoutubeExplode.Converter" Version="6.5.6" />
+    <PackageReference Include="QRCoder" Version="1.7.0" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="YoutubeExplode" Version="6.5.7" />
+    <PackageReference Include="YoutubeExplode.Converter" Version="6.5.7" />
   </ItemGroup>
 
   <ItemGroup>
     <Resource Include="SRLoader.gif" />
     <Resource Include="SRshortLogo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="chromiumembeddedframework.runtime.win-arm64" Version="144.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="chromiumembeddedframework.runtime.win-x64" Version="144.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="chromiumembeddedframework.runtime.win-x86" Version="144.0.12" />
   </ItemGroup>
 
 </Project>

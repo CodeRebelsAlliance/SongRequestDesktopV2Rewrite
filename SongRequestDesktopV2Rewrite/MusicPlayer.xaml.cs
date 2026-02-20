@@ -38,6 +38,12 @@ namespace SongRequestDesktopV2Rewrite
 
         // flags
         private bool _isCrossfading = false;
+        private bool _isUserAdjustingVolume = false; // Track if user is manually changing volume
+        private double _targetLoudness = -14.0; // Target loudness in LUFS
+
+        // Audio capture for Music Share
+        private CapturingSampleProvider? _capturingProvider;
+        public event EventHandler<float[]>? AudioSamplesCaptured;
 
         // Events for external presentation display
         public event EventHandler<NowPlayingEventArgs> NowPlayingTick;
@@ -53,6 +59,7 @@ namespace SongRequestDesktopV2Rewrite
         private LyricsService _lyricsService = new LyricsService();
         private List<(TimeSpan Time, string Text)> _currentSyncedLines = new List<(TimeSpan, string)>();
         private TextBlock _currentHighlighted = null;
+        private MusicShare? _musicShareWindow = null;
 
         public MusicPlayer()
         {
@@ -60,7 +67,7 @@ namespace SongRequestDesktopV2Rewrite
 
             QueueList.ItemsSource = Queue;
 
-            VolumeSlider.ValueChanged += (s, e) => { _volume = (float)VolumeSlider.Value; if (_currentVolProvider != null) _currentVolProvider.Volume = _volume; };
+            VolumeSlider.ValueChanged += VolumeSlider_ValueChanged;
 
             _positionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
             _positionTimer.Tick += PositionTimer_Tick;
@@ -83,6 +90,162 @@ namespace SongRequestDesktopV2Rewrite
 
             // when queue changes, recompute ETA / playback times
             Queue.CollectionChanged += (s, e) => { ComputeQueueTimings(); QueueChanged?.Invoke(this, EventArgs.Empty); };
+
+            // Setup normalize volume button visibility
+            UpdateNormalizeVolumeButtonVisibility();
+            UpdateNormalizationStatus();
+
+            ConfigService.Instance.Current.PropertyChanged += Config_PropertyChanged;
+        }
+
+        private void Config_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (e.PropertyName == nameof(Config.NormalizeVolume))
+                {
+                    UpdateNormalizeVolumeButtonVisibility();
+                    UpdateNormalizationStatus();
+
+                    // If normalization is turned off in settings, deactivate it
+                    var cfg = ConfigService.Instance.Current;
+                    if (cfg != null && !cfg.NormalizeVolume)
+                    {
+                        cfg.NormalizationActive = false;
+                    }
+                }
+                else if (e.PropertyName == nameof(Config.NormalizationActive))
+                {
+                    UpdateNormalizationStatus();
+
+                    // If normalization was just activated/deactivated during playback, adjust volume immediately
+                    var cfg = ConfigService.Instance.Current;
+                    if (cfg != null && _currentReader != null && Queue.Count > 0)
+                    {
+                        float targetVolume;
+                        if (cfg.NormalizationActive && cfg.NormalizeVolume && cfg.DefaultVolume >= 0)
+                        {
+                            // Calculate and apply normalized volume
+                            targetVolume = CalculateNormalizedVolume(Queue[0], cfg.DefaultVolume);
+                            System.Diagnostics.Debug.WriteLine($"Normalization activated - adjusting volume to {targetVolume:F2}");
+                        }
+                        else
+                        {
+                            // Use current slider value
+                            targetVolume = (float)VolumeSlider.Value;
+                            System.Diagnostics.Debug.WriteLine($"Normalization deactivated - keeping current volume {targetVolume:F2}");
+                        }
+
+                        // Smoothly transition to new volume
+                        _ = SmoothVolumeTransition(_currentVolProvider?.Volume ?? _volume, targetVolume, 500);
+                    }
+                }
+                else if (e.PropertyName == nameof(Config.DefaultVolume))
+                {
+                    UpdateNormalizationStatus();
+                }
+            });
+        }
+
+        private async Task SmoothVolumeTransition(float fromVolume, float toVolume, int durationMs)
+        {
+            if (_currentVolProvider == null) return;
+
+            int steps = 20;
+            int delay = durationMs / steps;
+
+            _isUserAdjustingVolume = true;
+
+            for (int i = 0; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                float volume = fromVolume + (toVolume - fromVolume) * t;
+
+                try 
+                { 
+                    _currentVolProvider.Volume = volume;
+
+                    // Update slider to match
+                    await Dispatcher.InvokeAsync(() => VolumeSlider.Value = volume);
+                } 
+                catch { }
+
+                if (i < steps) await Task.Delay(delay);
+            }
+
+            _volume = toVolume;
+            _isUserAdjustingVolume = false;
+        }
+
+        private void UpdateNormalizeVolumeButtonVisibility()
+        {
+            var button = FindName("SetDefaultVolumeButton") as Button;
+            if (button != null)
+            {
+                button.Visibility = ConfigService.Instance.Current?.NormalizeVolume == true 
+                    ? Visibility.Visible 
+                    : Visibility.Collapsed;
+            }
+        }
+
+        private void UpdateAudioInfoTags(string filePath)
+        {
+            var fileTypeTag = FindName("FileTypeTag") as Border;
+            var fileTypeText = FindName("FileTypeText") as TextBlock;
+            var bitrateTag = FindName("BitrateTag") as Border;
+            var bitrateText = FindName("BitrateText") as TextBlock;
+
+            if (fileTypeTag == null || fileTypeText == null || bitrateTag == null || bitrateText == null)
+                return;
+
+            try
+            {
+                // Get file extension
+                string extension = System.IO.Path.GetExtension(filePath).TrimStart('.').ToUpper();
+                fileTypeText.Text = extension;
+                fileTypeTag.Visibility = Visibility.Visible;
+
+                // Get bitrate using TagLib
+                using (var file = TagLib.File.Create(filePath))
+                {
+                    int bitrate = file.Properties.AudioBitrate;
+                    bitrateText.Text = $"{bitrate} kbps";
+                    bitrateTag.Visibility = Visibility.Visible;
+
+                    // Reset text color to white by default
+                    bitrateText.Foreground = new SolidColorBrush(Colors.White);
+
+                    // Color-code based on quality
+                    // 0-100 kbps: red
+                    // 101-199 kbps: yellow
+                    // 200-500 kbps: green
+                    // >500 kbps: blue
+                    if (bitrate <= 100)
+                    {
+                        bitrateTag.Background = new SolidColorBrush(Color.FromRgb(229, 57, 53)); // Red
+                    }
+                    else if (bitrate <= 199)
+                    {
+                        bitrateTag.Background = new SolidColorBrush(Color.FromRgb(255, 193, 7)); // Yellow/Amber
+                        bitrateText.Foreground = new SolidColorBrush(Colors.Black); // Better contrast on yellow
+                    }
+                    else if (bitrate <= 500)
+                    {
+                        bitrateTag.Background = new SolidColorBrush(Color.FromRgb(76, 175, 80)); // Green
+                    }
+                    else
+                    {
+                        bitrateTag.Background = new SolidColorBrush(Color.FromRgb(33, 150, 243)); // Blue
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // If we can't read metadata, hide the tags
+                System.Diagnostics.Debug.WriteLine($"Failed to read audio info: {ex.Message}");
+                fileTypeTag.Visibility = Visibility.Collapsed;
+                bitrateTag.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void NewPresentation()
@@ -322,6 +485,9 @@ namespace SongRequestDesktopV2Rewrite
                     if (Queue[0].thumbnail?.Source != null) NowThumbnail.Source = Queue[0].thumbnail.Source as BitmapSource;
 
                     TryApplyThumbnailGradient(Queue[0].thumbnail?.Source as BitmapSource);
+
+                    // Update audio info tags for the new current song
+                    UpdateAudioInfoTags(Queue[0].songPath);
                 }
 
                 if (Queue.Count > 0) _ = FetchAndDisplayLyricsFor(Queue[0]);
@@ -348,13 +514,25 @@ namespace SongRequestDesktopV2Rewrite
             var nextSong = Queue[1];
             try
             {
-                // Stop and start next
+                // Calculate loudness for next song if needed
+                if (nextSong.PerceivedLoudness < 0)
+                {
+                    await Task.Run(() => CalculateSongLoudness(nextSong));
+                }
+
+                // Calculate normalized volume BEFORE starting playback
+                float targetVolume = CalculateNormalizedVolume(nextSong, _volume);
+
+                // Stop current playback
                 StopPlayback();
+
+                // Remove previous song from queue FIRST
+                if (Queue.Count > 0) Queue.RemoveAt(0);
+
+                // Now start playback - Queue[0] is the song we want to play
                 var reader = new AudioFileReader(nextSong.songPath);
                 StartPlaybackWithMixer(reader);
 
-                // remove previous
-                if (Queue.Count > 0) Queue.RemoveAt(0);
                 if (Queue.Count > 0)
                 {
                     NowTitle.Text = Queue[0].Title;
@@ -363,6 +541,9 @@ namespace SongRequestDesktopV2Rewrite
                     if (Queue[0].thumbnail?.Source != null) NowThumbnail.Source = Queue[0].thumbnail.Source as BitmapSource;
 
                     TryApplyThumbnailGradient(Queue[0].thumbnail?.Source as BitmapSource);
+
+                    // Update audio info tags after queue update
+                    UpdateAudioInfoTags(Queue[0].songPath);
                 }
 
                 if (Queue.Count > 0) _ = FetchAndDisplayLyricsFor(Queue[0]);
@@ -382,17 +563,49 @@ namespace SongRequestDesktopV2Rewrite
             _mixer = new MixingSampleProvider(_format) { ReadFully = true };
             _currentReader = reader;
 
+            // Calculate normalized volume if applicable
+            float targetVolume = _volume;
+            if (Queue.Count > 0)
+            {
+                // Calculate loudness if not already done
+                if (Queue[0].PerceivedLoudness < 0)
+                {
+                    Task.Run(() => CalculateSongLoudness(Queue[0]));
+                }
+
+                targetVolume = CalculateNormalizedVolume(Queue[0], _volume);
+
+                // Update slider without triggering normalization disable
+                _isUserAdjustingVolume = true;
+                Dispatcher.Invoke(() => VolumeSlider.Value = targetVolume);
+                _isUserAdjustingVolume = false;
+            }
+
             // create a volume wrapper for the reader and keep reference
             var sp = GetSampleProviderCompatible(reader);
-            _currentVolProvider = new VolumeSampleProvider(sp) { Volume = _volume };
+            _currentVolProvider = new VolumeSampleProvider(sp) { Volume = targetVolume };
+
             _mixer.AddMixerInput(_currentVolProvider);
+
+            // Initialize capturing provider ONCE to wrap the mixer output
+            // This captures ALL audio (current song, crossfades, etc.) at a single point
+            if (_capturingProvider == null)
+            {
+                _capturingProvider = new CapturingSampleProvider(_mixer);
+                _capturingProvider.SamplesCaptured += (sender, samples) =>
+                {
+                    AudioSamplesCaptured?.Invoke(this, samples);
+                };
+            }
 
             _outputDevice = new WaveOutEvent();
             if (OutputDeviceCombo.SelectedIndex >= 0)
             {
                 try { _outputDevice.DeviceNumber = OutputDeviceCombo.SelectedIndex; } catch { }
             }
-            _outputDevice.Init(_mixer);
+
+            // Output device reads from capturing provider (which wraps mixer)
+            _outputDevice.Init(_capturingProvider);
             _outputDevice.PlaybackStopped += OutputDevice_PlaybackStopped;
             _outputDevice.Play();
 
@@ -401,6 +614,12 @@ namespace SongRequestDesktopV2Rewrite
             // reflect play state
             PlayPauseButton.Content = "❚❚";
             ComputeQueueTimings();
+
+            // Update audio info tags
+            if (Queue.Count > 0)
+            {
+                UpdateAudioInfoTags(Queue[0].songPath);
+            }
 
             // notify listeners about immediate now-playing change
             try
@@ -497,10 +716,21 @@ namespace SongRequestDesktopV2Rewrite
             if (_currentReader == null) return;
             if (!System.IO.File.Exists(nextSong.songPath)) return;
 
+            // Calculate loudness for next song if not done
+            if (nextSong.PerceivedLoudness < 0)
+            {
+                await Task.Run(() => CalculateSongLoudness(nextSong));
+            }
+
+            // Calculate normalized volume for next song
+            float targetNextVolume = CalculateNormalizedVolume(nextSong, _volume);
+
+            System.Diagnostics.Debug.WriteLine($"Crossfading to {nextSong.Title}: target volume = {targetNextVolume:F2}");
+
             // Do not set reader.Volume - control volume via VolumeSampleProvider to avoid silent output
             _nextReader = new AudioFileReader(nextSong.songPath);
 
-            // prepare next vol provider
+            // prepare next vol provider - start at 0 for fade in
             var nextSp = GetSampleProviderCompatible(_nextReader);
             _nextVolProvider = new VolumeSampleProvider(nextSp) { Volume = 0f };
 
@@ -509,21 +739,33 @@ namespace SongRequestDesktopV2Rewrite
                 _mixer = new MixingSampleProvider(_format) { ReadFully = true };
                 if (_currentVolProvider != null) _mixer.AddMixerInput(_currentVolProvider);
             }
+
+            // Add next track to mixer (capturing provider already wraps mixer output)
             _mixer.AddMixerInput(_nextVolProvider);
 
             double cross = CrossfadeSlider.Value;
             if (cross <= 0) cross = 4;
+
+            // Get current volume (might be normalized for current song)
+            float currentStartVolume = _currentVolProvider?.Volume ?? _volume;
 
             int steps = 40;
             int delay = Math.Max(10, (int)(cross * 1000 / steps));
             for (int i = 0; i < steps; i++)
             {
                 float t = (i + 1f) / steps;
-                // ramp up next, ramp down current using the volume providers
-                try { _nextVolProvider.Volume = _volume * t; } catch { }
-                try { if (_currentVolProvider != null) _currentVolProvider.Volume = _volume * (1f - t); } catch { }
+                // Ramp up next to its normalized volume, ramp down current from its volume
+                try { _nextVolProvider.Volume = targetNextVolume * t; } catch { }
+                try { if (_currentVolProvider != null) _currentVolProvider.Volume = currentStartVolume * (1f - t); } catch { }
                 await Task.Delay(delay);
             }
+
+            // Update slider to reflect new normalized volume (without triggering manual adjustment detection)
+            _isUserAdjustingVolume = true;
+            await Dispatcher.InvokeAsync(() => VolumeSlider.Value = targetNextVolume);
+            _isUserAdjustingVolume = false;
+
+            _volume = targetNextVolume;
 
             // After fade, swap providers but DO NOT dispose current reader until it is removed from mixer
             var oldProvider = _currentVolProvider;
@@ -586,6 +828,12 @@ namespace SongRequestDesktopV2Rewrite
 
             _currentVolProvider = null;
             _nextVolProvider = null;
+
+            // Hide audio info tags
+            var fileTypeTag = FindName("FileTypeTag") as Border;
+            var bitrateTag = FindName("BitrateTag") as Border;
+            if (fileTypeTag != null) fileTypeTag.Visibility = Visibility.Collapsed;
+            if (bitrateTag != null) bitrateTag.Visibility = Visibility.Collapsed;
         }
 
         private void OutputDevice_PlaybackStopped(object? sender, StoppedEventArgs e)
@@ -728,6 +976,13 @@ namespace SongRequestDesktopV2Rewrite
                         var song = new Song(title, artist, img, duration, file);
                         Queue.Add(song);
                         AnimateListItem(song);
+
+                        // Calculate loudness in background if normalization is enabled
+                        var cfg = ConfigService.Instance.Current;
+                        if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+                        {
+                            _ = Task.Run(() => CalculateSongLoudness(song));
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -792,6 +1047,13 @@ namespace SongRequestDesktopV2Rewrite
                         var song = new Song(title, artist, img, duration, file);
                         if (insertIndex <= Queue.Count) { Queue.Insert(insertIndex, song); insertIndex++; AnimateListItem(song); }
                         else { Queue.Add(song); AnimateListItem(song); }
+
+                        // Calculate loudness in background if normalization is enabled
+                        var cfg = ConfigService.Instance.Current;
+                        if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+                        {
+                            _ = Task.Run(() => CalculateSongLoudness(song));
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1007,6 +1269,29 @@ namespace SongRequestDesktopV2Rewrite
             NewPresentation();
         }
 
+        private void MusicShareButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Only allow one MusicShare window at a time
+            if (_musicShareWindow != null && _musicShareWindow.IsLoaded)
+            {
+                // Window already exists - bring it to front
+                _musicShareWindow.Activate();
+                _musicShareWindow.Focus();
+                return;
+            }
+
+            // Create new MusicShare window
+            _musicShareWindow = new MusicShare
+            {
+                Owner = this
+            };
+
+            // Clean up reference when window closes
+            _musicShareWindow.Closed += (s, args) => { _musicShareWindow = null; };
+
+            _musicShareWindow.Show();
+        }
+
         private void AnimateThumbnailPop()
         {
             try
@@ -1037,6 +1322,13 @@ namespace SongRequestDesktopV2Rewrite
                 Queue.Add(s);
                 ComputeQueueTimings();
                 AnimateListItem(s);
+
+                // Calculate loudness in background if normalization is enabled
+                var cfg = ConfigService.Instance.Current;
+                if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+                {
+                    _ = Task.Run(() => CalculateSongLoudness(s));
+                }
             }
             catch (Exception ex)
             {
@@ -1059,11 +1351,209 @@ namespace SongRequestDesktopV2Rewrite
                 s.length = string.Format("{0:mm}:{0:ss}", s.Duration);
                 if (Queue.Count > 1) { Queue.Insert(1, s); AnimateListItem(s); } else { Queue.Add(s); AnimateListItem(s); }
                 ComputeQueueTimings();
+
+                // Calculate loudness in background if normalization is enabled
+                var cfg = ConfigService.Instance.Current;
+                if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+                {
+                    _ = Task.Run(() => CalculateSongLoudness(s));
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Unable to load file: " + ex.Message);
             }
+        }
+
+        private void SetDefaultVolumeButton_Click(object sender, RoutedEventArgs e)
+        {
+            var cfg = ConfigService.Instance.Current;
+            if (cfg == null || !cfg.NormalizeVolume) 
+            {
+                MessageBox.Show("Volume normalization is not enabled.\nPlease enable it in Settings first.", 
+                    "Normalization Disabled", 
+                    MessageBoxButton.OK, 
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            // Save current volume as default
+            float currentVolume = (float)VolumeSlider.Value;
+            cfg.DefaultVolume = currentVolume;
+            _targetLoudness = -14.0; // Standard loudness target (LUFS)
+
+            // Activate normalization (this will trigger Config_PropertyChanged which handles volume adjustment)
+            cfg.NormalizationActive = true;
+
+            // Update status display
+            UpdateNormalizationStatus();
+
+            // Calculate loudness for all songs in queue
+            _ = CalculateLoudnessForQueueAsync();
+
+            // If currently playing, recalculate and apply normalized volume for current song
+            if (_currentReader != null && Queue.Count > 0)
+            {
+                if (Queue[0].PerceivedLoudness < 0)
+                {
+                    _ = Task.Run(() => CalculateSongLoudness(Queue[0]));
+                }
+            }
+
+            MessageBox.Show($"Default volume set to {(currentVolume * 100):F0}%\nNormalization is now active.\n\nSongs will be automatically adjusted to maintain consistent loudness.", 
+                "Volume Normalization Active", 
+                MessageBoxButton.OK, 
+                MessageBoxImage.Information);
+        }
+
+        private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            _volume = (float)VolumeSlider.Value;
+
+            // Update current playback volume
+            if (_currentVolProvider != null) 
+                _currentVolProvider.Volume = _volume;
+
+            var cfg = ConfigService.Instance.Current;
+
+            // If normalization is active and user manually changes volume, disable it
+            if (cfg != null && cfg.NormalizationActive && !_isUserAdjustingVolume)
+            {
+                // User is manually adjusting - disable normalization
+                cfg.NormalizationActive = false;
+                UpdateNormalizationStatus();
+
+                System.Diagnostics.Debug.WriteLine("User manually adjusted volume - normalization disabled");
+            }
+        }
+
+        private void UpdateNormalizationStatus()
+        {
+            var normTag = FindName("NormalizationTag") as Border;
+            var normText = FindName("NormalizationText") as TextBlock;
+            var cfg = ConfigService.Instance.Current;
+
+            if (normTag == null || normText == null || cfg == null) return;
+
+            if (!cfg.NormalizeVolume || cfg.DefaultVolume < 0)
+            {
+                // Normalization not configured
+                normTag.Visibility = Visibility.Collapsed;
+            }
+            else if (cfg.NormalizationActive)
+            {
+                // Active - green
+                normTag.Visibility = Visibility.Visible;
+                normTag.Background = new SolidColorBrush(Color.FromRgb(76, 175, 80)); // Green
+                normText.Text = "NORM ON";
+                normText.Foreground = new SolidColorBrush(Colors.White);
+            }
+            else if (cfg.DefaultVolume >= 0)
+            {
+                // Configured but inactive (user changed volume) - yellow
+                normTag.Visibility = Visibility.Visible;
+                normTag.Background = new SolidColorBrush(Color.FromRgb(255, 193, 7)); // Yellow/Amber
+                normText.Text = "NORM OFF";
+                normText.Foreground = new SolidColorBrush(Colors.Black);
+            }
+        }
+
+        private async Task CalculateLoudnessForQueueAsync()
+        {
+            foreach (var song in Queue)
+            {
+                if (song.PerceivedLoudness < 0) // Not calculated yet
+                {
+                    await Task.Run(() => CalculateSongLoudness(song));
+                }
+            }
+        }
+
+        private void CalculateSongLoudness(Song song)
+        {
+            try
+            {
+                if (!System.IO.File.Exists(song.songPath))
+                    return;
+
+                using (var reader = new AudioFileReader(song.songPath))
+                {
+                    // Calculate RMS (Root Mean Square) loudness
+                    // This is a simplified loudness calculation
+                    // For production, consider using a proper LUFS library
+
+                    float[] buffer = new float[reader.WaveFormat.SampleRate * reader.WaveFormat.Channels];
+                    double sumSquares = 0;
+                    long totalSamples = 0;
+                    int samplesRead;
+
+                    // Sample throughout the file (every 10 seconds to avoid reading entire file)
+                    int sampleInterval = reader.WaveFormat.SampleRate * reader.WaveFormat.Channels * 10;
+
+                    while ((samplesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        for (int i = 0; i < samplesRead; i++)
+                        {
+                            sumSquares += buffer[i] * buffer[i];
+                        }
+                        totalSamples += samplesRead;
+
+                        // Skip ahead to next sample point
+                        if (reader.Position + sampleInterval < reader.Length)
+                        {
+                            reader.Position += sampleInterval;
+                        }
+                    }
+
+                    if (totalSamples > 0)
+                    {
+                        double rms = Math.Sqrt(sumSquares / totalSamples);
+                        // Convert RMS to approximate LUFS (-23 LUFS is very quiet, -14 LUFS is standard streaming)
+                        double lufs = 20 * Math.Log10(rms + 0.0000001) - 0.691; // -0.691 is a calibration factor
+                        song.PerceivedLoudness = lufs;
+
+                        System.Diagnostics.Debug.WriteLine($"Calculated loudness for {song.Title}: {lufs:F1} LUFS");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to calculate loudness for {song.Title}: {ex.Message}");
+                song.PerceivedLoudness = _targetLoudness; // Use target as fallback
+            }
+        }
+
+        private float CalculateNormalizedVolume(Song song, float baseVolume)
+        {
+            var cfg = ConfigService.Instance.Current;
+
+            if (cfg == null || !cfg.NormalizeVolume || !cfg.NormalizationActive || 
+                cfg.DefaultVolume < 0 || song.PerceivedLoudness < -50)
+            {
+                return baseVolume;
+            }
+
+            // Calculate volume adjustment needed
+            double loudnessDiff = _targetLoudness - song.PerceivedLoudness;
+
+            // Convert to linear gain (dB to linear)
+            float gainAdjustment = (float)Math.Pow(10, loudnessDiff / 20.0);
+
+            // Apply to default volume
+            float normalizedVolume = cfg.DefaultVolume * gainAdjustment;
+
+            // Clamp to valid range
+            normalizedVolume = Math.Clamp(normalizedVolume, 0.0f, 1.0f);
+
+            System.Diagnostics.Debug.WriteLine($"Normalized volume for {song.Title}: {normalizedVolume:F2} (base: {baseVolume:F2}, loudness: {song.PerceivedLoudness:F1} LUFS)");
+
+            return normalizedVolume;
+        }
+
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            e.Cancel = true;
+            Hide();
         }
     }
 }

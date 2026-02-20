@@ -34,12 +34,21 @@ namespace SongRequestDesktopV2Rewrite
             var tokenBox = GetControl<TextBox>("TokenBox");
             var addressBox = GetControl<TextBox>("AddressBox");
             var sortingBox = GetControl<TextBox>("DefaultSortingBox");
+            var requestUrlBox = GetControl<TextBox>("RequestUrlBox");
+            var fullscreenCheckBox = GetControl<CheckBox>("PresentationFullscreenCheckBox");
+            var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
 
             if (fetchingBox != null) fetchingBox.Text = cfg.FetchingTimer.ToString();
             if (threadsBox != null) threadsBox.Text = cfg.Threads.ToString();
             if (tokenBox != null) tokenBox.Text = cfg.BearerToken;
             if (addressBox != null) addressBox.Text = cfg.Address;
             if (sortingBox != null) sortingBox.Text = cfg.DefaultSorting;
+            if (requestUrlBox != null) requestUrlBox.Text = cfg.RequestUrl;
+            if (fullscreenCheckBox != null) fullscreenCheckBox.IsChecked = cfg.PresentationFullscreen;
+            if (normalizeVolumeCheckBox != null) normalizeVolumeCheckBox.IsChecked = cfg.NormalizeVolume;
+
+            // Fetch server-side sendin allowed status
+            _ = FetchSendinAllowedStatusAsync();
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -49,6 +58,9 @@ namespace SongRequestDesktopV2Rewrite
             var tokenBox = GetControl<TextBox>("TokenBox");
             var addressBox = GetControl<TextBox>("AddressBox");
             var sortingBox = GetControl<TextBox>("DefaultSortingBox");
+            var requestUrlBox = GetControl<TextBox>("RequestUrlBox");
+            var fullscreenCheckBox = GetControl<CheckBox>("PresentationFullscreenCheckBox");
+            var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
             var statusTb = GetControl<TextBlock>("StatusText");
 
             try
@@ -63,6 +75,15 @@ namespace SongRequestDesktopV2Rewrite
                     cfg.BearerToken = tokenBox?.Text ?? string.Empty;
                     cfg.Address = addressBox?.Text ?? string.Empty;
                     cfg.DefaultSorting = sortingBox?.Text ?? string.Empty;
+                    cfg.RequestUrl = requestUrlBox?.Text ?? "https://example.com/request";
+                    cfg.PresentationFullscreen = fullscreenCheckBox?.IsChecked ?? false;
+                    cfg.NormalizeVolume = normalizeVolumeCheckBox?.IsChecked ?? false;
+
+                    // If normalization is turned off, deactivate it
+                    if (!cfg.NormalizeVolume)
+                    {
+                        cfg.NormalizationActive = false;
+                    }
                 });
 
                 if (statusTb != null)
@@ -106,10 +127,10 @@ namespace SongRequestDesktopV2Rewrite
             {
                 if (w is YoutubeForm yf)
                 {
-                    var tb = yf.FindName("ConsoleTextBox") as TextBox;
-                    if (tb != null)
+                    var rtb = yf.FindName("ConsoleTextBox") as System.Windows.Controls.RichTextBox;
+                    if (rtb != null && rtb.Document != null)
                     {
-                        tb.Clear();
+                        rtb.Document.Blocks.Clear();
                         if (statusTb != null)
                         {
                             statusTb.Text = "Console cleared.";
@@ -137,11 +158,16 @@ namespace SongRequestDesktopV2Rewrite
             {
                 if (w is YoutubeForm yf)
                 {
-                    var tb = yf.FindName("ConsoleTextBox") as TextBox;
-                    if (tb != null)
+                    var rtb = yf.FindName("ConsoleTextBox") as System.Windows.Controls.RichTextBox;
+                    if (rtb != null && rtb.Document != null)
                     {
-                        tb.AppendText(text + "\n");
-                        tb.ScrollToEnd();
+                        var paragraph = new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run(text))
+                        {
+                            Margin = new Thickness(0),
+                            Foreground = Brushes.White
+                        };
+                        rtb.Document.Blocks.Add(paragraph);
+                        rtb.ScrollToEnd();
                         if (statusTb != null)
                         {
                             statusTb.Text = "Appended to console.";
@@ -177,10 +203,17 @@ namespace SongRequestDesktopV2Rewrite
             {
                 if (w is YoutubeForm yf)
                 {
-                    var tb = yf.FindName("ConsoleTextBox") as TextBox;
-                    if (tb != null)
+                    var rtb = yf.FindName("ConsoleTextBox") as System.Windows.Controls.RichTextBox;
+                    if (rtb != null && rtb.Document != null)
                     {
-                        tb.Foreground = brush;
+                        // Apply color to all existing paragraphs
+                        foreach (var block in rtb.Document.Blocks)
+                        {
+                            if (block is System.Windows.Documents.Paragraph para)
+                            {
+                                para.Foreground = brush;
+                            }
+                        }
                         if (statusTb != null)
                         {
                             statusTb.Text = "Console color applied.";
@@ -215,6 +248,84 @@ namespace SongRequestDesktopV2Rewrite
                     statusTb.Text = "Failed to open browser: " + ex.Message;
                     statusTb.Foreground = Brushes.OrangeRed;
                 }
+            }
+        }
+
+        private async System.Threading.Tasks.Task FetchSendinAllowedStatusAsync()
+        {
+            var statusTb = GetControl<TextBlock>("StatusText");
+            var sendinCheckBox = GetControl<CheckBox>("SendinAllowedCheckBox");
+
+            try
+            {
+                var cfg = ConfigService.Instance.Current;
+                if (cfg == null) return;
+
+                var fts = new FetchingService(cfg.BearerToken);
+                var result = await fts.SendRequest("get-sendin-allowed");
+
+                // Parse the result - it's a list with a single boolean
+                var jsonArray = Newtonsoft.Json.Linq.JArray.Parse(result);
+                if (jsonArray.Count > 0)
+                {
+                    bool sendinAllowed = jsonArray[0].ToObject<bool>();
+                    if (sendinCheckBox != null)
+                    {
+                        sendinCheckBox.IsChecked = sendinAllowed;
+                    }
+
+                    if (statusTb != null)
+                    {
+                        statusTb.Text = $"Server status: Sending {(sendinAllowed ? "Allowed" : "Disabled")}";
+                        statusTb.Foreground = sendinAllowed ? Brushes.LightGreen : Brushes.OrangeRed;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (statusTb != null)
+                {
+                    statusTb.Text = "Failed to fetch sendin status: " + ex.Message;
+                    statusTb.Foreground = Brushes.OrangeRed;
+                }
+            }
+        }
+
+        private async void ToggleSendinButton_Click(object sender, RoutedEventArgs e)
+        {
+            var statusTb = GetControl<TextBlock>("StatusText");
+            var toggleButton = GetControl<Button>("ToggleSendinButton");
+
+            try
+            {
+                if (toggleButton != null) toggleButton.IsEnabled = false;
+
+                var cfg = ConfigService.Instance.Current;
+                if (cfg == null) return;
+
+                var fts = new FetchingService(cfg.BearerToken);
+                var result = await fts.SendRequest("toggle");
+
+                // Refresh the status after toggle
+                await FetchSendinAllowedStatusAsync();
+
+                if (statusTb != null)
+                {
+                    statusTb.Text = "Toggled sendin status successfully";
+                    statusTb.Foreground = Brushes.LightGreen;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (statusTb != null)
+                {
+                    statusTb.Text = "Failed to toggle sendin status: " + ex.Message;
+                    statusTb.Foreground = Brushes.OrangeRed;
+                }
+            }
+            finally
+            {
+                if (toggleButton != null) toggleButton.IsEnabled = true;
             }
         }
     }

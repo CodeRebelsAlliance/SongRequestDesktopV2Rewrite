@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
         mc:Ignorable="d"
-        Title="Presentation" Height="720" Width="1280" Background="#101010" WindowStartupLocation="CenterScreen">
+        Title="Presentation - SongRequest" Height="720" Width="1280" Background="#101010" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <SolidColorBrush x:Key="PanelBackground" Color="#202020"/>
         <SolidColorBrush x:Key="MutedText" Color="#9A9A9A"/>
@@ -25,130 +25,221 @@
             <DoubleAnimation Storyboard.TargetName="MarqueeTranslate" Storyboard.TargetProperty="X" From="600" To="-1200" Duration="0:0:18" />
         </Storyboard>
 
-        <!-- Subtle pulse for highlighted timed-lyrics line -->
-        <Storyboard x:Key="PulseHighlight" RepeatBehavior="Forever" AutoReverse="True">
-            <ColorAnimation Storyboard.TargetName="TimedHighlightLine" Storyboard.TargetProperty="(TextBlock.Background).(SolidColorBrush.Color)" To="#33FFFFFF" Duration="0:0:0.8"/>
+        <!-- Queue item fade-in animation style -->
+        <Style TargetType="Border" x:Key="QueueItemBorder">
+            <Setter Property="Opacity" Value="0"/>
+            <Style.Triggers>
+                <EventTrigger RoutedEvent="Loaded">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.5"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Fade-in/out animations for panel transitions -->
+        <Storyboard x:Key="FadeIn">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.5">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
+
+        <Storyboard x:Key="FadeOut">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0" Duration="0:0:0.4">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseIn"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
+
+        <!-- Slide-in animation for Next Up panel (from right) -->
+        <Storyboard x:Key="SlideInFromRight">
+            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" 
+                             From="50" To="0" Duration="0:0:0.4">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.4"/>
+        </Storyboard>
+
+        <!-- Slide-out animation for Next Up panel (to right) -->
+        <Storyboard x:Key="SlideOutToRight">
+            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" 
+                             From="0" To="50" Duration="0:0:0.3">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseIn"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0" Duration="0:0:0.3"/>
         </Storyboard>
     </Window.Resources>
 
     <Grid Margin="16">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="2*"/>
             <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
 
+        <!-- Nothing Playing State (Hidden by default) - Only covers left panel -->
+        <Border x:Name="NothingPlayingPanel" Grid.Column="0" Style="{StaticResource CardBorder}" Background="#0A0A0A" Visibility="Collapsed" Opacity="0">
+            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" Margin="20">
+                <StackPanel Width="600" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <!-- App Logo -->
+                    <Image Source="/SRLoader.gif" Width="400" Height="180" Stretch="Uniform" HorizontalAlignment="Center" Margin="0,0,0,20"/>
+
+                    <!-- Title -->
+                    <TextBlock Text="Request Songs" FontSize="48" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" Margin="0,0,0,30"/>
+
+                    <!-- QR Code with minimal padding -->
+                    <Border Background="White" CornerRadius="12" Padding="10" HorizontalAlignment="Center" Margin="0,0,0,15">
+                        <Image x:Name="QRCodeImage" Width="300" Height="300" Stretch="Uniform"/>
+                    </Border>
+
+                    <!-- URL Text -->
+                    <TextBlock x:Name="RequestUrlText" Text="Scan to request songs" FontSize="20" Foreground="#999" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+                </StackPanel>
+            </Viewbox>
+        </Border>
+
         <!-- Left: Now playing & lyrics -->
-        <Border x:Name="PlayerPanel" Grid.Column="0" Style="{StaticResource CardBorder}" Background="Black">
-            <Grid>
+        <Border x:Name="PlayerPanel" Grid.Column="0" Style="{StaticResource CardBorder}" Background="Black" Opacity="0">
+            <Grid x:Name="PlayerContentGrid">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition x:Name="ThumbnailRow" Height="Auto"/>
+                    <RowDefinition x:Name="InfoRow" Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- Thumbnail with 16:9 area and two-color gradient background for the panel -->
-                <Border Grid.Row="0" CornerRadius="10" Height="270" Margin="6" Padding="10">
-                    <Grid>
-                        <Grid.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#162238" Offset="0"/>
-                                <GradientStop Color="#28385A" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Grid.Background>
+                <!-- Thumbnail area with optional title/artist beside it -->
+                <Grid x:Name="ThumbnailArea" Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="ThumbCol" Width="Auto"/>
+                        <ColumnDefinition x:Name="InfoCol" Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                        <!-- Thumbnail centered and constrained to 16:9 -->
-                        <Viewbox Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- Thumbnail with 16:9 area -->
+                    <Border x:Name="ThumbnailBorder" Grid.Column="0" CornerRadius="10" Height="270" Margin="6" Padding="10">
+                        <Viewbox Stretch="Uniform" HorizontalAlignment="Left" VerticalAlignment="Center">
                             <Grid Width="480" Height="270">
                                 <Border CornerRadius="8" Background="#111" >
-                                    <Image x:Name="PresentationThumbnail" Stretch="UniformToFill"/>
+                                    <Image x:Name="PresentationThumbnail" Stretch="Uniform"/>
                                 </Border>
                             </Grid>
                         </Viewbox>
-                    </Grid>
-                </Border>
+                    </Border>
 
-                <!-- Title / artist -->
-                <StackPanel Grid.Row="1" Orientation="Vertical" Margin="12,6" HorizontalAlignment="Left">
-                    <TextBlock x:Name="PresentationTitle" Text="Song Title" FontSize="36" FontWeight="Bold" Foreground="White" TextTrimming="CharacterEllipsis" MaxWidth="920" />
-                    <TextBlock x:Name="PresentationArtist" Text="Artist Name" FontSize="20" Foreground="{StaticResource MutedText}" Margin="0,6,0,0" />
-                </StackPanel>
+                    <!-- Title / artist - can be beside thumbnail or below -->
+                    <StackPanel x:Name="InfoStackPanel" Grid.Column="1" Grid.Row="0" Orientation="Vertical" Margin="12,15" HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <Border Background="#CC000000" CornerRadius="8" Padding="12,6" HorizontalAlignment="Left">
+                            <TextBlock x:Name="PresentationTitle" Text="Song Title" FontSize="40" FontWeight="Bold" Foreground="White" TextTrimming="CharacterEllipsis" MaxWidth="920" />
+                        </Border>
+                        <Border Background="#BB000000" CornerRadius="6" Padding="10,4" HorizontalAlignment="Left" Margin="0,8,0,0">
+                            <TextBlock x:Name="PresentationArtist" Text="Artist Name" FontSize="30" Foreground="{StaticResource MutedText}" />
+                        </Border>
+                    </StackPanel>
+                </Grid>
 
-                <!-- Progress + numbers -->
-                <StackPanel Grid.Row="2" Orientation="Vertical" Margin="12" VerticalAlignment="Top">
-                    <Slider x:Name="PresentationProgress" Minimum="0" Maximum="1" Value="0" Height="8" IsEnabled="False" IsHitTestVisible="False" Background="#2A2A2A"/>
-                    <DockPanel Margin="0,8,0,0">
-                        <TextBlock x:Name="PresentationElapsed" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Left" FontSize="16" />
-                        <TextBlock x:Name="PresentationRemaining" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Right" FontSize="16" TextAlignment="Right" />
+                <!-- Progress + numbers + Lyrics -->
+                <Grid Grid.Row="2" Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition x:Name="MarqueeRow" Height="80"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Progress slider -->
+                    <Slider x:Name="PresentationProgress" Grid.Row="0" Minimum="0" Maximum="1" Value="0" Height="18" IsEnabled="False" IsHitTestVisible="False" Background="#2A2A2A"/>
+
+                    <!-- Elapsed/Remaining times with translucent backgrounds -->
+                    <DockPanel Grid.Row="1" Margin="0,4,0,0">
+                        <Border Background="#AA000000" CornerRadius="6" Padding="8,4" DockPanel.Dock="Left">
+                            <TextBlock x:Name="PresentationElapsed" Text="00:00" Foreground="#AAAAAA" FontSize="20" />
+                        </Border>
+                        <Border Background="#AA000000" CornerRadius="6" Padding="8,4" DockPanel.Dock="Right">
+                            <TextBlock x:Name="PresentationRemaining" Text="00:00" Foreground="#AAAAAA" FontSize="20" TextAlignment="Right" />
+                        </Border>
                     </DockPanel>
 
-                    <!-- Lyrics display area: timed (left) and non-timed marquee (right) stacked vertically -->
-                    <Grid Margin="0,18,0,0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="3*" />
-                            <RowDefinition Height="80" />
-                        </Grid.RowDefinitions>
+                    <!-- Timed lyrics: scrollable list with animated highlight and translucent background -->
+                    <Border x:Name="TimedLyricsBorder" Grid.Row="2" Background="#B0000000" CornerRadius="8" Padding="10" Margin="0,10,0,-5" Visibility="Collapsed">
+                        <ScrollViewer x:Name="TimedLyricsScroll" VerticalScrollBarVisibility="Hidden">
+                            <StackPanel x:Name="TimedLyricsStack" VerticalAlignment="Top">
+                                <!-- Lyrics will be populated dynamically -->
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
 
-                        <!-- Timed lyrics: scrollable list with animated highlight on the 'current' line -->
-                        <Border Grid.Row="0" Background="#070707" CornerRadius="8" Padding="10" Margin="0,0,0,8" >
-                            <ScrollViewer x:Name="TimedLyricsScroll" VerticalScrollBarVisibility="Hidden">
-                                <StackPanel x:Name="TimedLyricsStack" VerticalAlignment="Top">
-                                    <!-- Example lines; consumers can populate at runtime -->
-                                    <TextBlock Text="[00:00] First line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
-                                    <TextBlock x:Name="TimedHighlightLine" Text="[00:10] Second line (highlighted)" FontSize="18" Foreground="White" Margin="0,6" Background="#00111111" />
-                                    <TextBlock Text="[00:20] Third line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
-                                    <TextBlock Text="[00:30] Fourth line of lyrics" FontSize="18" Foreground="#CCCCCC" Margin="0,6" />
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Border>
+                    <!-- Non-timed marquee lyrics with translucent background -->
+                    <Border x:Name="MarqueeLyricsBorder" Grid.Row="3" Background="#B0000000" CornerRadius="8" Padding="8" Visibility="Collapsed">
+                        <Grid ClipToBounds="True">
+                            <TextBlock x:Name="MarqueeText" FontSize="18" Foreground="#DDDDDD">
+                                <TextBlock.RenderTransform>
+                                    <TranslateTransform x:Name="MarqueeTranslate" X="0" />
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                        </Grid>
+                    </Border>
+                </Grid>
 
-                        <!-- Non-timed marquee lyrics -->
-                        <Border Grid.Row="1" Background="#0B0B0B" CornerRadius="8" Padding="8" >
-                            <Grid ClipToBounds="True">
-                                <TextBlock x:Name="MarqueeText" FontSize="18" Foreground="#DDDDDD">
-                                    This is a non-timed lyrics marquee — the text will scroll across for public display.
-                                    <TextBlock.RenderTransform>
-                                        <TranslateTransform x:Name="MarqueeTranslate" X="0" />
-                                    </TextBlock.RenderTransform>
-                                </TextBlock>
-                            </Grid>
-                        </Border>
-                    </Grid>
-                </StackPanel>
-
-                <!-- Small footer label -->
-                <TextBlock Grid.Row="3" Text="Now Playing" Foreground="#777" HorizontalAlignment="Left" Margin="12,8,0,6" />
             </Grid>
         </Border>
 
-        <!-- Right: Next up (3 items horizontally) -->
-        <Border Grid.Column="1" Style="{StaticResource CardBorder}" Margin="12,0,0,0">
+        <!-- Right: Next up (3 items) - Hidden when queue is empty -->
+        <Border x:Name="NextUpPanel" Grid.Column="1" Style="{StaticResource CardBorder}" Margin="12,0,0,0" Width="380" Visibility="Collapsed" Opacity="0">
+            <Border.RenderTransform>
+                <TranslateTransform X="0"/>
+            </Border.RenderTransform>
             <StackPanel>
                 <TextBlock Text="Next Up" FontSize="20" FontWeight="Bold" Foreground="White" Margin="4" />
                 <ItemsControl x:Name="NextThreeItems" Margin="6">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" />
+                            <StackPanel Orientation="Vertical" />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Width="240" Margin="6" Background="#0F0F0F" CornerRadius="8" Padding="8">
-                                <StackPanel>
-                                    <Border Height="80" CornerRadius="6" Background="#111" HorizontalAlignment="Stretch">
-                                        <Image Source="/SRshortLogo.png" Stretch="UniformToFill" />
+                            <Border Style="{StaticResource QueueItemBorder}" Margin="0,6" Background="#0F0F0F" CornerRadius="8" Padding="8">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Thumbnail - 16:9 aspect ratio -->
+                                    <Border Grid.Row="0" Height="180" CornerRadius="6" Background="#111" HorizontalAlignment="Stretch">
+                                        <Viewbox Stretch="Uniform">
+                                            <Grid Width="160" Height="90">
+                                                <Image Source="{Binding thumbnail.Source}" Stretch="Uniform" />
+                                            </Grid>
+                                        </Viewbox>
                                     </Border>
-                                    <TextBlock Text="Title Example" Foreground="White" FontWeight="SemiBold" Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Text="Artist" Foreground="#BBBBBB" FontSize="12"/>
-                                    <TextBlock Text="ETA: 02:34" Foreground="#999" FontSize="12" Margin="0,6,0,0"/>
-                                </StackPanel>
+
+                                    <!-- Title -->
+                                    <TextBlock Grid.Row="1" Text="{Binding Title}" Foreground="White" FontWeight="Bold" FontSize="24" Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
+
+                                    <!-- Artist -->
+                                    <TextBlock Grid.Row="2" Text="{Binding Artist}" HorizontalAlignment="Left" Foreground="#BBBBBB" FontWeight="SemiBold" MaxWidth="190" TextTrimming="CharacterEllipsis" FontSize="16" Margin="0,4,0,0"/>
+
+                                    <!-- ETA -->
+                                    <TextBlock Grid.Row="2" Text="{Binding EstimatedStartDisplay, StringFormat=' {0}'}" Foreground="#fff" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" FontSize="16" Margin="0,4,0,0"/>
+                                </Grid>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
                 <TextBlock Text="" Height="8"/>
-                <TextBlock Text="(No controls on this screen)" Foreground="#666" FontSize="12" HorizontalAlignment="Center" Margin="8"/>
+                <TextBlock Text="" Foreground="#666" FontSize="12" HorizontalAlignment="Center" Margin="8"/>
             </StackPanel>
         </Border>
     </Grid>
@@ -156,7 +247,6 @@
     <Window.Triggers>
         <EventTrigger RoutedEvent="Window.Loaded">
             <BeginStoryboard Storyboard="{StaticResource MarqueeStoryboard}" />
-            <BeginStoryboard Storyboard="{StaticResource PulseHighlight}" x:Name="PulseBeg" />
         </EventTrigger>
     </Window.Triggers>
 </Window>

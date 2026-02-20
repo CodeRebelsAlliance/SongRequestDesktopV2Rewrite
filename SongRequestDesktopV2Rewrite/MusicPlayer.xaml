@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
         mc:Ignorable="d"
-        Title="Music Player - SongRequest" Height="800" Width="1500" MinWidth="1275" MinHeight="550" Icon="/SRshortLogo.png">
+        Title="Music Player - SongRequest" Height="800" Width="1500" MinWidth="1275" MinHeight="550" Icon="/SRshortLogo.png" Closing="Window_Closing">
     <Window.Resources>
 
             <!-- Accent brushes (reuse existing AccentBrush if available) -->
@@ -472,7 +472,73 @@
                                VerticalAlignment="Center" Margin="0, 0,2, 0" Foreground="Orange"/>
                     <TextBlock Text=" - Music Player" FontFamily="Segoe UI Black" FontSize="22"
                                VerticalAlignment="Center" Margin="0, 0,2, 0" Foreground="White"/>
+
+                    <!-- File Type Tag -->
+                    <Border x:Name="FileTypeTag" 
+                            Background="#505050" 
+                            CornerRadius="6" 
+                            Padding="10,4" 
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="FileTypeText" 
+                                   Text="MP3" 
+                                   FontSize="14" 
+                                   FontWeight="SemiBold"
+                                   Foreground="White"/>
+                    </Border>
+
+                    <!-- Bitrate Tag with color-coding -->
+                    <Border x:Name="BitrateTag" 
+                            Background="#4CAF50" 
+                            CornerRadius="6" 
+                            Padding="10,4" 
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="BitrateText" 
+                                   Text="320 kbps" 
+                                   FontSize="14" 
+                                   FontWeight="SemiBold"
+                                   Foreground="White"/>
+                    </Border>
+
+                    <!-- Normalization Status Tag -->
+                    <Border x:Name="NormalizationTag" 
+                            Background="#808080" 
+                            CornerRadius="6" 
+                            Padding="10,4" 
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="NormalizationText" 
+                                   Text="NORM OFF" 
+                                   FontSize="14" 
+                                   FontWeight="SemiBold"
+                                   Foreground="White"/>
+                    </Border>
                 </StackPanel>
+
+                <!-- Set Default Volume button (visible only when normalize is enabled) -->
+                <Button x:Name="SetDefaultVolumeButton" 
+                        Content="Set Default Volume" 
+                        Width="160" 
+                        Height="30"
+                        DockPanel.Dock="Right"
+                        Margin="0,0,8,0"
+                        Style="{StaticResource WarningButton}" 
+                        Click="SetDefaultVolumeButton_Click"
+                        Visibility="Collapsed"/>
+
+                <!-- Music Share button -->
+                <Button x:Name="MusicShareButton" 
+                        Content="Music Share" 
+                        Width="120" 
+                        Height="30"
+                        DockPanel.Dock="Right"
+                        Margin="0,0,8,0"
+                        Style="{StaticResource AccentButton}" 
+                        Click="MusicShareButton_Click"/>
             </DockPanel>
         </Border>
         <Grid x:Name="InnerGrid" Background="#101010" Row="1">
