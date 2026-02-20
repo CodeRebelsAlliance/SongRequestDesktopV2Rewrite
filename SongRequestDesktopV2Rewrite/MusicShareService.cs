@@ -51,9 +51,14 @@ namespace SongRequestDesktopV2Rewrite
         public MusicShareService()
         {
             var cfg = ConfigService.Instance.Current;
+            var baseAddress = cfg?.Address ?? "https://redstefan.software/songrequests";
+            // Ensure trailing slash for proper relative URL resolution
+            if (!baseAddress.EndsWith("/"))
+                baseAddress += "/";
+
             _httpClient = new HttpClient
             {
-                BaseAddress = new Uri(cfg?.Address ?? "https://redstefan.software/songrequests"),
+                BaseAddress = new Uri(baseAddress),
                 Timeout = TimeSpan.FromSeconds(30)
             };
 
@@ -85,7 +90,7 @@ namespace SongRequestDesktopV2Rewrite
                 _sessionId = GenerateSessionId();
                 
                 // Register session with server
-                var response = await _httpClient.PostAsJsonAsync("/api/share/start", new
+                var response = await _httpClient.PostAsJsonAsync("api/share/start", new
                 {
                     sessionId = _sessionId
                 });
@@ -116,8 +121,8 @@ namespace SongRequestDesktopV2Rewrite
             try
             {
                 metadata.Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                
-                var response = await _httpClient.PostAsJsonAsync($"/api/share/{_sessionId}/metadata", metadata, 
+
+                var response = await _httpClient.PostAsJsonAsync($"api/share/{_sessionId}/metadata", metadata, 
                     _cancellationTokenSource?.Token ?? CancellationToken.None);
                 
                 response.EnsureSuccessStatusCode();
@@ -169,7 +174,7 @@ namespace SongRequestDesktopV2Rewrite
                     SequenceNumber = _sequenceNumber++
                 };
 
-                var response = await _httpClient.PostAsJsonAsync($"/api/share/{_sessionId}/audio", chunk,
+                var response = await _httpClient.PostAsJsonAsync($"api/share/{_sessionId}/audio", chunk,
                     _cancellationTokenSource?.Token ?? CancellationToken.None);
 
                 response.EnsureSuccessStatusCode();
@@ -195,8 +200,8 @@ namespace SongRequestDesktopV2Rewrite
             try
             {
                 _cancellationTokenSource?.Cancel();
-                
-                await _httpClient.PostAsync($"/api/share/{_sessionId}/stop", null);
+
+                await _httpClient.PostAsync($"api/share/{_sessionId}/stop", null);
                 
                 _sessionId = null;
                 _sequenceNumber = 0;
@@ -238,7 +243,7 @@ namespace SongRequestDesktopV2Rewrite
             try
             {
                 // Verify session exists
-                var response = await _httpClient.GetAsync($"/api/share/{sessionId}/status");
+                var response = await _httpClient.GetAsync($"api/share/{sessionId}/status");
                 response.EnsureSuccessStatusCode();
                 
                 _cancellationTokenSource = new CancellationTokenSource();
@@ -266,7 +271,7 @@ namespace SongRequestDesktopV2Rewrite
             {
                 try
                 {
-                    var response = await _httpClient.GetAsync($"/api/share/{_sessionId}/metadata", cancellationToken);
+                    var response = await _httpClient.GetAsync($"api/share/{_sessionId}/metadata", cancellationToken);
                     
                     if (response.IsSuccessStatusCode)
                     {
@@ -305,7 +310,7 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     pollCount++;
                     var response = await _httpClient.GetAsync(
-                        $"/api/share/{_sessionId}/audio?since={lastSequence}", 
+                        $"api/share/{_sessionId}/audio?since={lastSequence}", 
                         cancellationToken);
 
                     if (response.IsSuccessStatusCode)
