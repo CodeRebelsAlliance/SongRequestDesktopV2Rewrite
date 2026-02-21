@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
         mc:Ignorable="d"
-        Title="Settings - SongRequest" Height="520" Width="900" Background="#121212" Foreground="White" WindowStartupLocation="CenterOwner">
+        Title="Settings - SongRequest" Height="520" Width="1050" Background="#121212" Foreground="White" WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <!-- Minimal set of shared brushes and styles copied from YoutubeForm to keep styling consistent -->
