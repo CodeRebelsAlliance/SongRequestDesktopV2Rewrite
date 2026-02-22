@@ -386,6 +386,10 @@ namespace SongRequestDesktopV2Rewrite
                 StartReceiveButton.IsEnabled = false;
 
                 var sessionId = ShareIdInput.Text;
+
+                // Set audio reception flag based on checkbox
+                _shareService.ReceiveAudio = ReceiveAudioCheckBox.IsChecked ?? true;
+
                 await _shareService.StartReceivingAsync(sessionId);
 
                 // Update UI
@@ -393,6 +397,9 @@ namespace SongRequestDesktopV2Rewrite
                 ReceiveStatusBorder.Visibility = Visibility.Visible;
                 StartReceiveButton.Content = "Stop Receiving";
                 StartReceiveButton.IsEnabled = true;
+
+                // Disable checkbox while receiving
+                ReceiveAudioCheckBox.IsEnabled = false;
 
                 // Disable sharing mode
                 StartShareButton.IsEnabled = false;
@@ -408,8 +415,16 @@ namespace SongRequestDesktopV2Rewrite
                 _statsUpdateTimer.Tick += ReceiveStatsUpdateTimer_Tick;
                 _statsUpdateTimer.Start();
 
-                // Initialize audio playback
-                InitializeAudioPlayback();
+                // Initialize audio playback ONLY if audio is enabled
+                if (_shareService.ReceiveAudio)
+                {
+                    InitializeAudioPlayback();
+                    System.Diagnostics.Debug.WriteLine("🔊 Audio playback initialized");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("🔇 Audio playback disabled (metadata only mode)");
+                }
             }
             catch (Exception ex)
             {
@@ -438,6 +453,10 @@ namespace SongRequestDesktopV2Rewrite
                 ReceiveStatusBorder.Visibility = Visibility.Collapsed;
                 StartReceiveButton.Content = "Start Receiving";
                 StartReceiveButton.IsEnabled = ShareIdInput.Text.Length == 6;
+
+                // Re-enable checkbox
+                ReceiveAudioCheckBox.IsEnabled = true;
+
                 StartShareButton.IsEnabled = true;
 
                 _isReceiving = false;
@@ -501,7 +520,10 @@ namespace SongRequestDesktopV2Rewrite
             {
                 var elapsed = DateTime.Now - _sessionStartTime;
                 var bufferLevel = _shareService.GetBufferLevel();
-                ReceiveStatsText.Text = $"Playing • {elapsed:mm\\:ss} elapsed • Buffer: {bufferLevel} chunks";
+
+                // Show audio status in stats
+                string audioStatus = _shareService.ReceiveAudio ? $"Buffer: {bufferLevel} chunks" : "Metadata Only";
+                ReceiveStatsText.Text = $"Playing • {elapsed:mm\\:ss} elapsed • {audioStatus}";
             }
         }
 
@@ -558,6 +580,12 @@ namespace SongRequestDesktopV2Rewrite
 
         private void ShareService_AudioChunkReceived(object? sender, AudioChunk chunk)
         {
+            // Skip audio processing if audio reception is disabled
+            if (!_shareService.ReceiveAudio)
+            {
+                return;
+            }
+
             Dispatcher.Invoke(() =>
             {
                 try

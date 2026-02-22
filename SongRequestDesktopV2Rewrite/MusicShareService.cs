@@ -33,6 +33,14 @@ namespace SongRequestDesktopV2Rewrite
         public event EventHandler<AudioChunk>? AudioChunkReceived;
         public event EventHandler<int>? BufferLevelChanged;
 
+        // Audio reception control
+        private bool _receiveAudio = true;
+        public bool ReceiveAudio
+        {
+            get => _receiveAudio;
+            set => _receiveAudio = value;
+        }
+
         public ShareStatus Status
         {
             get => _status;
@@ -248,11 +256,21 @@ namespace SongRequestDesktopV2Rewrite
                 
                 _cancellationTokenSource = new CancellationTokenSource();
                 Status = ShareStatus.Connected;
-                
-                // Start polling for updates
+
+                // Start polling for metadata (always)
                 _ = Task.Run(() => PollMetadataAsync(_cancellationTokenSource.Token));
-                _ = Task.Run(() => PollAudioAsync(_cancellationTokenSource.Token));
-                
+
+                // Start polling for audio only if enabled
+                if (_receiveAudio)
+                {
+                    _ = Task.Run(() => PollAudioAsync(_cancellationTokenSource.Token));
+                    System.Diagnostics.Debug.WriteLine("🔊 Audio reception enabled");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("🔇 Audio reception disabled (metadata only)");
+                }
+
             }
             catch (Exception ex)
             {

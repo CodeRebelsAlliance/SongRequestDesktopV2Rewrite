@@ -245,6 +245,12 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Audio Receive Toggle -->
+                        <CheckBox x:Name="ReceiveAudioCheckBox" Content="🔊 Receive Audio" 
+                                  IsChecked="True" Foreground="White" FontSize="14" 
+                                  HorizontalAlignment="Center" Margin="0,15,0,0"
+                                  ToolTip="When checked, you will hear the shared music. When unchecked, only metadata (song info, lyrics) will be received."/>
+
                         <!-- Start/Stop Receive Button -->
                         <Button x:Name="StartReceiveButton" Content="Start Receiving" Width="200" Height="40" 
                                 Margin="0,20,0,0" Style="{StaticResource AccentButton}" 
