@@ -315,12 +315,15 @@ namespace SongRequestDesktopV2Rewrite
         }
 
         /// <summary>
-        /// Poll for audio chunks
+        /// Poll for audio chunks - using slower polling for larger chunks
         /// </summary>
         private async Task PollAudioAsync(CancellationToken cancellationToken)
         {
             int lastSequence = -1;
             int pollCount = 0;
+            const int POLL_INTERVAL_MS = 400; // Poll every 400ms for larger chunks
+
+            System.Diagnostics.Debug.WriteLine($"🎧 Audio polling started with {POLL_INTERVAL_MS}ms interval (slower, larger chunks mode)");
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -337,11 +340,11 @@ namespace SongRequestDesktopV2Rewrite
                         if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
                         {
                             // No new chunks yet, continue polling
-                            if (pollCount % 50 == 0) // Log every 5 seconds
+                            if (pollCount % 25 == 0) // Log every ~10 seconds (25 * 400ms)
                             {
                                 System.Diagnostics.Debug.WriteLine($"🔄 Audio poll #{pollCount}: No new chunks (204), last seq={lastSequence}");
                             }
-                            await Task.Delay(100, cancellationToken);
+                            await Task.Delay(POLL_INTERVAL_MS, cancellationToken);
                             continue;
                         }
 
@@ -349,7 +352,7 @@ namespace SongRequestDesktopV2Rewrite
 
                         if (chunks != null && chunks.Length > 0)
                         {
-                            System.Diagnostics.Debug.WriteLine($"📥 Received {chunks.Length} audio chunks (seq {chunks[0].SequenceNumber}-{chunks[^1].SequenceNumber})");
+                            System.Diagnostics.Debug.WriteLine($"📥 Received {chunks.Length} LARGE audio chunk(s) (seq {chunks[0].SequenceNumber}-{chunks[^1].SequenceNumber})");
 
                             foreach (var chunk in chunks)
                             {
@@ -360,7 +363,7 @@ namespace SongRequestDesktopV2Rewrite
 
                             BufferLevelChanged?.Invoke(this, _audioBuffer.Count);
 
-                            if (_audioBuffer.Count > 5) // Enough buffer
+                            if (_audioBuffer.Count > 3) // Enough buffer (fewer large chunks needed)
                             {
                                 if (Status != ShareStatus.Streaming)
                                 {
@@ -368,7 +371,7 @@ namespace SongRequestDesktopV2Rewrite
                                     Status = ShareStatus.Streaming;
                                 }
                             }
-                            else if (_audioBuffer.Count <= 2)
+                            else if (_audioBuffer.Count <= 1)
                             {
                                 if (Status != ShareStatus.Buffering)
                                 {
@@ -379,7 +382,7 @@ namespace SongRequestDesktopV2Rewrite
                         }
                         else
                         {
-                            if (pollCount % 50 == 0)
+                            if (pollCount % 25 == 0)
                             {
                                 System.Diagnostics.Debug.WriteLine($"🔄 Audio poll #{pollCount}: Empty response (200 OK), last seq={lastSequence}");
                             }
@@ -390,7 +393,7 @@ namespace SongRequestDesktopV2Rewrite
                         System.Diagnostics.Debug.WriteLine($"❌ Audio poll failed: {response.StatusCode}");
                     }
 
-                    await Task.Delay(100, cancellationToken); // Poll frequently for low latency
+                    await Task.Delay(POLL_INTERVAL_MS, cancellationToken); // Slower polling for larger chunks
                 }
                 catch (OperationCanceledException)
                 {

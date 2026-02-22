@@ -44,6 +44,10 @@ namespace SongRequestDesktopV2Rewrite
         private int _bytesSent = 0;
         private int _bytesReceived = 0;
 
+        // Audio buffering for slower, larger chunk sending
+        private System.Collections.Generic.List<float> _accumulatedSamples = new();
+        private const int TARGET_SAMPLES_PER_SEND = 44100; // ~0.5 seconds of stereo audio at 44.1kHz
+
         public MusicShare()
         {
             InitializeComponent();
@@ -198,48 +202,50 @@ namespace SongRequestDesktopV2Rewrite
                 float[] samplesCopy = new float[samples.Length];
                 Array.Copy(samples, samplesCopy, samples.Length);
 
-                // Debug: Log first batch to verify samples are valid
-                if (_bytesSent == 0 && samplesCopy.Length >= 4)
-                {
-                    System.Diagnostics.Debug.WriteLine($"🎤 SENDER: First captured samples: [{samplesCopy[0].ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}, {samplesCopy[1].ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}, {samplesCopy[2].ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}, {samplesCopy[3].ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}]");
+                // Accumulate samples in buffer
+                _accumulatedSamples.AddRange(samplesCopy);
 
-                    // Verify samples are in valid range
-                    bool allValid = true;
-                    for (int i = 0; i < Math.Min(100, samplesCopy.Length); i++)
+                // Send when we have accumulated enough samples (larger, slower chunks)
+                if (_accumulatedSamples.Count >= TARGET_SAMPLES_PER_SEND)
+                {
+                    // Take exactly TARGET_SAMPLES_PER_SEND samples and send them
+                    float[] chunkToSend = new float[TARGET_SAMPLES_PER_SEND];
+                    _accumulatedSamples.CopyTo(0, chunkToSend, 0, TARGET_SAMPLES_PER_SEND);
+                    _accumulatedSamples.RemoveRange(0, TARGET_SAMPLES_PER_SEND);
+
+                    // Debug: Log first chunk to verify samples are valid
+                    if (_bytesSent == 0 && chunkToSend.Length >= 4)
                     {
-                        if (Math.Abs(samplesCopy[i]) > 10.0)
+                        System.Diagnostics.Debug.WriteLine($"🎤 SENDER: First LARGE chunk - {chunkToSend.Length} samples ({chunkToSend.Length / 44100.0:F3}s of stereo audio)");
+                        System.Diagnostics.Debug.WriteLine($"🎤 First samples: [{chunkToSend[0].ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}, {chunkToSend[1].ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}, {chunkToSend[2].ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}, {chunkToSend[3].ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}]");
+
+                        // Verify samples are in valid range
+                        bool allValid = true;
+                        for (int i = 0; i < Math.Min(100, chunkToSend.Length); i++)
                         {
-                            allValid = false;
-                            System.Diagnostics.Debug.WriteLine($"⚠️ SENDER WARNING: Sample {i} is {samplesCopy[i]:F6} (outside valid range)");
-                            break;
+                            if (Math.Abs(chunkToSend[i]) > 10.0)
+                            {
+                                allValid = false;
+                                System.Diagnostics.Debug.WriteLine($"⚠️ SENDER WARNING: Sample {i} is {chunkToSend[i]:F6} (outside valid range)");
+                                break;
+                            }
+                        }
+
+                        if (allValid)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"✓ SENDER: All samples in valid range");
                         }
                     }
 
-                    if (allValid)
+                    // Send the large chunk
+                    await _shareService.SendAudioChunkAsync(chunkToSend, 44100, 2);
+                    _bytesSent += chunkToSend.Length * sizeof(float);
+
+                    // Log periodically
+                    if (_bytesSent % (1024 * 1024) < (TARGET_SAMPLES_PER_SEND * sizeof(float)))
                     {
-                        System.Diagnostics.Debug.WriteLine($"✓ SENDER: All samples in valid range");
+                        System.Diagnostics.Debug.WriteLine($"📤 Sent large chunk: {chunkToSend.Length} samples, total {_bytesSent / 1024}KB sent");
                     }
-                }
-
-                // Send audio chunks (4096 samples at a time as specified)
-                const int chunkSize = 4096;
-                int chunksThisBatch = 0;
-
-                for (int i = 0; i < samplesCopy.Length; i += chunkSize)
-                {
-                    int count = Math.Min(chunkSize, samplesCopy.Length - i);
-                    float[] chunk = new float[count];
-                    Array.Copy(samplesCopy, i, chunk, 0, count);
-
-                    await _shareService.SendAudioChunkAsync(chunk, 44100, 2);
-                    _bytesSent += count * sizeof(float);
-                    chunksThisBatch++;
-                }
-
-                // Log periodically (every ~10 batches = every second)
-                if (_bytesSent / (1024 * 176) % 10 == 0)
-                {
-                    System.Diagnostics.Debug.WriteLine($"🎤 Sent {chunksThisBatch} chunks this batch, total {_bytesSent / 1024}KB sent");
                 }
             }
             catch (Exception ex)
@@ -268,6 +274,9 @@ namespace SongRequestDesktopV2Rewrite
                 _cachedLyrics = null;
                 _cachedHasSyncedLyrics = false;
                 _cachedThumbnail = null;
+
+                // Clear accumulated samples buffer
+                _accumulatedSamples.Clear();
 
                 // Reset UI
                 ShareIdBorder.Visibility = Visibility.Collapsed;
@@ -372,7 +381,7 @@ namespace SongRequestDesktopV2Rewrite
             if (_isSharing)
             {
                 var elapsed = DateTime.Now - _sessionStartTime;
-                ShareStatsText.Text = $"Streaming • {elapsed:mm\\:ss} elapsed • {_bytesSent / 1024}KB sent";
+                ShareStatsText.Text = $"Streaming [Large Chunks] • {elapsed:mm\\:ss} elapsed • {_bytesSent / 1024}KB sent";
             }
         }
 
@@ -575,7 +584,7 @@ namespace SongRequestDesktopV2Rewrite
                 var bufferLevel = _shareService.GetBufferLevel();
 
                 // Show audio status in stats
-                string audioStatus = _shareService.ReceiveAudio ? $"Buffer: {bufferLevel} chunks" : "Metadata Only";
+                string audioStatus = _shareService.ReceiveAudio ? $"Buffer: {bufferLevel} large chunks" : "Metadata Only";
                 ReceiveStatsText.Text = $"Playing • {elapsed:mm\\:ss} elapsed • {audioStatus}";
             }
         }
