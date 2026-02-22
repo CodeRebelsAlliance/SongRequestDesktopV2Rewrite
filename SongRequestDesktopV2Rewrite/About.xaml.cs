@@ -8,7 +8,7 @@ namespace SongRequestDesktopV2Rewrite
 {
     public partial class About : Window
     {
-        public static string version = "2.4";
+        public static string version = "2.6";
         
         public About()
         {

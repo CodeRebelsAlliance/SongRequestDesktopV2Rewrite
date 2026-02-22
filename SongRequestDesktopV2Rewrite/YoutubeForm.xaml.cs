@@ -41,9 +41,11 @@ namespace SongRequestDesktopV2Rewrite
         public HashSet<string> fetchedBlacklist = new HashSet<string>();
         private Dictionary<string, VideoData> fetchedVideoData = new Dictionary<string, VideoData>();
         public int refresh_seconds => ConfigService.Instance.Current.FetchingTimer;
+        public static AppManager _appManager;
         public YoutubeForm(IReadOnlyList<System.Net.Cookie> cookies)
         {
             InitializeComponent();
+            
             _youTubeService = new YoutubeService(cookies);
             // start clock
             _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -54,6 +56,7 @@ namespace SongRequestDesktopV2Rewrite
             UIHelpers.SetIsLoading(VideoListHost, false);
 
             _musicPlayer = new MusicPlayer();
+            _appManager = new AppManager(this, _musicPlayer);
 
             // Setup periodic refresh timer using config value
             _refreshTimer = new DispatcherTimer
