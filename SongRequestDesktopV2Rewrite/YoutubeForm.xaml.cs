@@ -42,6 +42,8 @@ namespace SongRequestDesktopV2Rewrite
         private Dictionary<string, VideoData> fetchedVideoData = new Dictionary<string, VideoData>();
         public int refresh_seconds => ConfigService.Instance.Current.FetchingTimer;
         public static AppManager _appManager;
+        private SoundboardWindow? _soundboardWindow;
+
         public YoutubeForm(IReadOnlyList<System.Net.Cookie> cookies)
         {
             InitializeComponent();
@@ -149,6 +151,29 @@ namespace SongRequestDesktopV2Rewrite
         private async void MusicPlayerButton_Click(object sender, RoutedEventArgs e)
         {
             _musicPlayer.Show();
+        }
+
+        private void SoundboardButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Only allow one Soundboard window at a time
+            if (_soundboardWindow != null && !_soundboardWindow.IsClosed())
+            {
+                // Window already exists - bring it to front
+                _soundboardWindow.Activate();
+                _soundboardWindow.Focus();
+                return;
+            }
+
+            // Create new Soundboard window
+            _soundboardWindow = new SoundboardWindow
+            {
+                Owner = this
+            };
+
+            // Clean up reference when window closes
+            _soundboardWindow.Closed += (s, args) => { _soundboardWindow = null; };
+
+            _soundboardWindow.Show();
         }
 
         private void SortButton_Click(object sender, EventArgs e)

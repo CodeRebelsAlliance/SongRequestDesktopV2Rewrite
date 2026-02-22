@@ -300,6 +300,8 @@
                             Click="SwitchListButton_Click" Style="{StaticResource SecondaryButton}"/>
                     <Button x:Name="MusicPlayerButton" Content="Music Player" Width="100" Height="30" Margin="4,0"
                             Click="MusicPlayerButton_Click" Style="{StaticResource SuccessButton}"/>
+                    <Button x:Name="SoundboardButton" Content="🎵 Soundboard" Width="120" Height="30" Margin="4,0"
+                            Click="SoundboardButton_Click" Style="{StaticResource WarningButton}"/>
                 </StackPanel>
 
                 <!-- Empty space in center (URL TextBox removed) -->
