@@ -596,8 +596,27 @@ namespace SongRequestDesktopV2Rewrite
             {
                 System.Diagnostics.Debug.WriteLine($"   Button: {button.Content}, IsEmpty: {context.Data.IsEmpty}");
 
-                // Only show effect for empty buttons with audio files
-                if (context.Data.IsEmpty && e.Data.GetDataPresent(DataFormats.FileDrop))
+                // Only show effect for empty buttons
+                if (!context.Data.IsEmpty)
+                {
+                    System.Diagnostics.Debug.WriteLine("   ✗ Button not empty");
+                    e.Effects = DragDropEffects.None;
+                    e.Handled = true;
+                    return;
+                }
+
+                // Check for song request drag (from YoutubeForm)
+                if (e.Data.GetDataPresent("SongRequestDrag"))
+                {
+                    System.Diagnostics.Debug.WriteLine("   ✓ Song request drag detected - showing green effect");
+                    e.Effects = DragDropEffects.Copy;
+                    SetDragOverEffect(button, true);
+                    e.Handled = true;
+                    return;
+                }
+
+                // Check for file drop (from Explorer)
+                if (e.Data.GetDataPresent(DataFormats.FileDrop))
                 {
                     var files = (string[])e.Data.GetData(DataFormats.FileDrop);
                     if (files != null && files.Length > 0)
@@ -620,7 +639,7 @@ namespace SongRequestDesktopV2Rewrite
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"   ✗ Button not empty or no file drop");
+                    System.Diagnostics.Debug.WriteLine($"   ✗ No valid drag data");
                 }
             }
 
@@ -633,7 +652,23 @@ namespace SongRequestDesktopV2Rewrite
             if (sender is Button button && button.Tag is ButtonContext context)
             {
                 // Only allow drop on empty buttons
-                if (context.Data.IsEmpty && e.Data.GetDataPresent(DataFormats.FileDrop))
+                if (!context.Data.IsEmpty)
+                {
+                    e.Effects = DragDropEffects.None;
+                    e.Handled = true;
+                    return;
+                }
+
+                // Check for song request drag
+                if (e.Data.GetDataPresent("SongRequestDrag"))
+                {
+                    e.Effects = DragDropEffects.Copy;
+                    e.Handled = true;
+                    return;
+                }
+
+                // Check for file drop
+                if (e.Data.GetDataPresent(DataFormats.FileDrop))
                 {
                     var files = (string[])e.Data.GetData(DataFormats.FileDrop);
                     if (files != null && files.Length > 0 && IsAudioFile(files[0]))
@@ -672,6 +707,28 @@ namespace SongRequestDesktopV2Rewrite
                     return;
                 }
 
+                // Check for song request drag (from YoutubeForm)
+                if (e.Data.GetDataPresent("SongRequestDrag"))
+                {
+                    var dragData = e.Data.GetData("SongRequestDrag") as YoutubeForm.DragSongData;
+                    if (dragData != null)
+                    {
+                        try
+                        {
+                            await ProcessSongRequestDropAsync(dragData, context);
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show($"Error adding song to soundboard:\n{ex.Message}", 
+                                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                            System.Diagnostics.Debug.WriteLine($"❌ Error processing song drop: {ex.Message}");
+                        }
+                    }
+                    e.Handled = true;
+                    return;
+                }
+
+                // Check for file drop (from Explorer)
                 if (e.Data.GetDataPresent(DataFormats.FileDrop))
                 {
                     var files = (string[])e.Data.GetData(DataFormats.FileDrop);
@@ -827,6 +884,109 @@ namespace SongRequestDesktopV2Rewrite
             UpdatePageInfo();
 
             System.Diagnostics.Debug.WriteLine($"✓ Sound added: {nameWithoutExt} ({duration:F2}s) at position ({context.Row}, {context.Col})");
+        }
+
+        private async System.Threading.Tasks.Task ProcessSongRequestDropAsync(YoutubeForm.DragSongData dragData, ButtonContext context)
+        {
+            if (string.IsNullOrEmpty(dragData.FilePath) || !File.Exists(dragData.FilePath))
+            {
+                MessageBox.Show("Audio file not found for this song request.", 
+                    "File Not Found", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // Generate filename from title (sanitize for filesystem)
+            var safeTitle = SanitizeFileName(dragData.Title);
+            var sourceExtension = Path.GetExtension(dragData.FilePath);
+            var fileName = safeTitle + sourceExtension;
+
+            var soundboardFolder = SoundboardConfiguration.GetSoundboardFolder();
+            var destFilePath = Path.Combine(soundboardFolder, fileName);
+
+            // Check if file already exists
+            if (File.Exists(destFilePath))
+            {
+                var result = MessageBox.Show(
+                    $"A file named '{fileName}' already exists in the soundboard folder.\nDo you want to use it anyway?",
+                    "File Exists",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result != MessageBoxResult.Yes)
+                {
+                    return;
+                }
+            }
+            else
+            {
+                // Copy file to soundboard folder
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    File.Copy(dragData.FilePath, destFilePath, false);
+                });
+
+                System.Diagnostics.Debug.WriteLine($"✓ Copied song request audio to: {destFilePath}");
+            }
+
+            // Get audio duration
+            double duration = 0;
+            try
+            {
+                using (var audioFile = new AudioFileReader(destFilePath))
+                {
+                    duration = audioFile.TotalTime.TotalSeconds;
+                }
+                System.Diagnostics.Debug.WriteLine($"✓ Audio duration: {duration:F2} seconds");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"⚠ Could not read audio duration: {ex.Message}");
+            }
+
+            // Update button data with song title
+            context.Data.Name = TruncateTitle(dragData.Title, 30); // Truncate long titles
+            context.Data.SoundFile = fileName;
+            context.Data.Length = duration;
+            context.Data.IsEnabled = true;
+
+            // Save to page
+            var currentPage = _config.GetCurrentPage();
+            currentPage.SetButton(context.Row, context.Col, context.Data);
+
+            // Save configuration
+            _config.Save();
+
+            // Refresh grid to show updated button
+            InitializeSoundboardGrid();
+            UpdatePageInfo();
+
+            System.Diagnostics.Debug.WriteLine($"✓ Song request added: {context.Data.Name} ({duration:F2}s) at position ({context.Row}, {context.Col})");
+        }
+
+        private string SanitizeFileName(string fileName)
+        {
+            // Remove invalid filename characters
+            var invalid = Path.GetInvalidFileNameChars();
+            var sanitized = string.Join("_", fileName.Split(invalid));
+
+            // Limit length
+            if (sanitized.Length > 100)
+            {
+                sanitized = sanitized.Substring(0, 100);
+            }
+
+            return sanitized;
+        }
+
+        private string TruncateTitle(string title, int maxLength)
+        {
+            if (string.IsNullOrEmpty(title))
+                return "Untitled";
+
+            if (title.Length <= maxLength)
+                return title;
+
+            return title.Substring(0, maxLength - 3) + "...";
         }
 
         #endregion

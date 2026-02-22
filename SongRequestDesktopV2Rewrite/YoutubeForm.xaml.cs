@@ -187,6 +187,14 @@ namespace SongRequestDesktopV2Rewrite
             public bool IsApproved { get; set; }
         }
 
+        // Data structure for dragging songs to soundboard
+        public class DragSongData
+        {
+            public string VideoId { get; set; }
+            public string Title { get; set; }
+            public string FilePath { get; set; }
+        }
+
         // FetchData: ported to WPF
         private async Task FetchData()
         {
@@ -458,8 +466,52 @@ namespace SongRequestDesktopV2Rewrite
 
             rightStack.Children.Add(buttonPanel);
 
-            var statusText = new TextBlock { Text = isApproved.HasValue && isApproved.Value ? "Approved" : "Added", FontWeight = FontWeights.Bold, Background = isApproved.HasValue && isApproved.Value ? Brushes.DarkGreen : Brushes.Gold, Foreground = Brushes.Black, Padding = new Thickness(8), Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Right };
-            rightStack.Children.Add(statusText);
+            // Status text with drag icon
+            var statusRow = new StackPanel 
+            { 
+                Orientation = Orientation.Horizontal, 
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 10, 0, 0)
+            };
+
+            // Drag icon (grippy icon for dragging to soundboard)
+            var dragIcon = new TextBlock
+            {
+                Text = "⋮⋮",
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(91, 141, 239)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 8, 0),
+                ToolTip = "Drag to Soundboard"
+            };
+
+            // Store video data for drag
+            dragIcon.Tag = new DragSongData
+            {
+                VideoId = YoutubeService.ExtractVideoId(videoUrl),
+                Title = "Loading...", // Will be updated later
+                FilePath = "" // Will be updated later
+            };
+
+            // Make drag icon draggable
+            dragIcon.MouseDown += DragIcon_MouseDown;
+
+            statusRow.Children.Add(dragIcon);
+
+            var statusText = new TextBlock 
+            { 
+                Text = isApproved.HasValue && isApproved.Value ? "Approved" : "Added", 
+                FontWeight = FontWeights.Bold, 
+                Background = isApproved.HasValue && isApproved.Value ? Brushes.DarkGreen : Brushes.Gold, 
+                Foreground = Brushes.Black, 
+                Padding = new Thickness(8), 
+                HorizontalAlignment = HorizontalAlignment.Right 
+            };
+            statusRow.Children.Add(statusText);
+
+            rightStack.Children.Add(statusRow);
 
             grid.Children.Add(rightStack);
 
@@ -496,6 +548,13 @@ namespace SongRequestDesktopV2Rewrite
                     creatorG = creator;
                     lengthG = length.ToString(@"hh\:mm\:ss");
 
+                    // Update drag icon data
+                    if (dragIcon.Tag is DragSongData dragData)
+                    {
+                        dragData.Title = title;
+                        dragData.FilePath = mp3FilePath;
+                    }
+
                     string thumbnailUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
                     var bmp = await LoadBitmapImageFromUrl(thumbnailUrl);
                     if (bmp != null) thumbnail.Source = bmp;
@@ -519,6 +578,13 @@ namespace SongRequestDesktopV2Rewrite
                     titleG = title;
                     creatorG = creator;
                     lengthG = length.ToString(@"hh\:mm\:ss");
+
+                    // Update drag icon data
+                    if (dragIcon.Tag is DragSongData dragData)
+                    {
+                        dragData.Title = title;
+                        dragData.FilePath = downloadedFilePath;
+                    }
 
                     string thumbnailUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
                     var bmp = await LoadBitmapImageFromUrl(thumbnailUrl);
@@ -653,6 +719,34 @@ namespace SongRequestDesktopV2Rewrite
                 c.IsEnabled = enabled;
             }
         }
+
+        #region Drag to Soundboard
+
+        private void DragIcon_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.LeftButton == MouseButtonState.Pressed && sender is TextBlock dragIcon)
+            {
+                var dragData = dragIcon.Tag as DragSongData;
+
+                if (dragData == null || string.IsNullOrEmpty(dragData.FilePath))
+                {
+                    AppendConsoleText("⚠ Cannot drag: Audio file not yet downloaded", Brushes.Orange);
+                    return;
+                }
+
+                if (!File.Exists(dragData.FilePath))
+                {
+                    AppendConsoleText($"⚠ Cannot drag: File not found: {dragData.FilePath}", Brushes.Red);
+                    return;
+                }
+
+                // Start drag operation with custom data format
+                var data = new DataObject("SongRequestDrag", dragData);
+                DragDrop.DoDragDrop(dragIcon, data, DragDropEffects.Copy);
+            }
+        }
+
+        #endregion
 
         private void AppendConsoleText(string text, SolidColorBrush color = null)
         {
