@@ -20,6 +20,8 @@ namespace SongRequestDesktopV2Rewrite
         private Button _browseSoundButton;
         private TextBox _customColorTextBox;
         private Border _customColorPreview;
+        private Slider _volumeSlider;
+        private TextBlock _volumeLabel;
 
         // Predefined colors
         private static readonly string[] PredefinedColors =
@@ -43,6 +45,7 @@ namespace SongRequestDesktopV2Rewrite
         public bool FadeOut { get; private set; }
         public string RepeatMode { get; private set; }
         public string SoundFilePath { get; private set; }
+        public float ButtonVolume { get; private set; }
 
         public ButtonEditDialog(SoundboardButton button)
         {
@@ -60,7 +63,8 @@ namespace SongRequestDesktopV2Rewrite
             FadeIn = button.FadeIn;
             FadeOut = button.FadeOut;
             RepeatMode = button.RepeatMode;
-            
+            ButtonVolume = button.Volume;
+
             var soundboardFolder = SoundboardConfiguration.GetSoundboardFolder();
             SoundFilePath = string.IsNullOrEmpty(button.SoundFile) 
                 ? string.Empty 
@@ -332,6 +336,39 @@ namespace SongRequestDesktopV2Rewrite
 
             Grid.SetRow(_repeatModeCombo, rowIndex);
             mainGrid.Children.Add(_repeatModeCombo);
+            rowIndex += 2;
+
+            // Volume Control
+            AddLabel(mainGrid, "Volume:", rowIndex);
+            var volumePanel = new StackPanel { Orientation = Orientation.Horizontal };
+
+            _volumeSlider = new Slider
+            {
+                Minimum = 0,
+                Maximum = 100,
+                Value = ButtonVolume * 100,
+                Width = 300,
+                TickFrequency = 10,
+                IsSnapToTickEnabled = false,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _volumeSlider.ValueChanged += VolumeSlider_ValueChanged;
+            volumePanel.Children.Add(_volumeSlider);
+
+            _volumeLabel = new TextBlock
+            {
+                Text = $"{(int)(_volumeSlider.Value)}%",
+                Foreground = Brushes.White,
+                FontSize = 14,
+                Width = 50,
+                TextAlignment = TextAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0)
+            };
+            volumePanel.Children.Add(_volumeLabel);
+
+            Grid.SetRow(volumePanel, rowIndex);
+            mainGrid.Children.Add(volumePanel);
             rowIndex += 2; // Skip spacer
 
             // Bottom Buttons
@@ -511,6 +548,7 @@ namespace SongRequestDesktopV2Rewrite
             ButtonIcon = _iconTextBox.Text;
             FadeIn = _fadeInCheckBox.IsChecked ?? false;
             FadeOut = _fadeOutCheckBox.IsChecked ?? false;
+            ButtonVolume = (float)(_volumeSlider.Value / 100.0);
 
             if (_repeatModeCombo.SelectedItem is ComboBoxItem selectedItem)
             {
@@ -519,6 +557,15 @@ namespace SongRequestDesktopV2Rewrite
 
             DialogResult = true;
             Close();
+        }
+
+        private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_volumeLabel != null)
+            {
+                _volumeLabel.Text = $"{(int)e.NewValue}%";
+                ButtonVolume = (float)(e.NewValue / 100.0);
+            }
         }
     }
 }

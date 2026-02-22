@@ -307,10 +307,42 @@
                             Content="Next ▶" 
                             Width="100" 
                             Height="32"
-                            Margin="8,0,0,0"
+                            Margin="8,0,20,0"
                             Style="{StaticResource RoundedButton}" 
                             Click="NextPageButton_Click"
                             IsEnabled="False"/>
+
+                    <!-- Master Volume Control -->
+                    <TextBlock Text="🔊" 
+                               FontSize="18"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"/>
+                    <Slider x:Name="MasterVolumeSlider" 
+                            Width="150" 
+                            Minimum="0" 
+                            Maximum="100" 
+                            Value="100"
+                            VerticalAlignment="Center"
+                            ValueChanged="MasterVolumeSlider_ValueChanged"/>
+                    <TextBlock x:Name="MasterVolumeLabel" 
+                               Text="100%" 
+                               Width="45"
+                               Foreground="White"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="8,0,20,0"/>
+
+                    <!-- Audio Device Selection -->
+                    <TextBlock Text="🎧" 
+                               FontSize="18"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"/>
+                    <ComboBox x:Name="AudioDeviceCombo" 
+                              Width="200"
+                              Height="32"
+                              VerticalAlignment="Center"
+                              SelectionChanged="AudioDeviceCombo_SelectionChanged"/>
+
                     <Button x:Name="StopAllButton" 
                             Content="⏹️ Stop All" 
                             Width="110" 

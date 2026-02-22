@@ -41,6 +41,65 @@ namespace SongRequestDesktopV2Rewrite
 
             InitializeSoundboardGrid();
             UpdatePageInfo();
+            InitializeAudioDevices();
+            InitializeMasterVolume();
+        }
+
+        private void InitializeAudioDevices()
+        {
+            try
+            {
+                // Enumerate available output devices
+                AudioDeviceCombo.Items.Clear();
+
+                // Add default device
+                AudioDeviceCombo.Items.Add(new ComboBoxItem
+                {
+                    Content = "Default Audio Device",
+                    Tag = -1
+                });
+
+                // Add all available devices
+                for (int i = 0; i < WaveOut.DeviceCount; i++)
+                {
+                    var capabilities = WaveOut.GetCapabilities(i);
+                    AudioDeviceCombo.Items.Add(new ComboBoxItem
+                    {
+                        Content = capabilities.ProductName,
+                        Tag = i
+                    });
+                }
+
+                // Select saved device or default
+                int targetDevice = _config.OutputDeviceNumber;
+                foreach (ComboBoxItem item in AudioDeviceCombo.Items)
+                {
+                    if ((int)item.Tag == targetDevice)
+                    {
+                        AudioDeviceCombo.SelectedItem = item;
+                        break;
+                    }
+                }
+
+                if (AudioDeviceCombo.SelectedItem == null)
+                {
+                    AudioDeviceCombo.SelectedIndex = 0; // Default device
+                }
+
+                System.Diagnostics.Debug.WriteLine($"✓ Initialized {WaveOut.DeviceCount} audio devices");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"⚠ Error enumerating audio devices: {ex.Message}");
+                AudioDeviceCombo.Items.Add(new ComboBoxItem { Content = "Default Audio Device", Tag = -1 });
+                AudioDeviceCombo.SelectedIndex = 0;
+            }
+        }
+
+        private void InitializeMasterVolume()
+        {
+            MasterVolumeSlider.Value = _config.MasterVolume * 100;
+            MasterVolumeLabel.Text = $"{(int)MasterVolumeSlider.Value}%";
         }
 
         private void InitializeSoundboardGrid()
@@ -249,7 +308,12 @@ namespace SongRequestDesktopV2Rewrite
             try
             {
                 var audioFile = new AudioFileReader(soundFile);
-                var outputDevice = new WaveOutEvent();
+
+                // Use configured output device
+                var outputDevice = new WaveOutEvent
+                {
+                    DeviceNumber = _config.OutputDeviceNumber
+                };
 
                 outputDevice.Init(audioFile);
                 outputDevice.Play();
@@ -263,6 +327,9 @@ namespace SongRequestDesktopV2Rewrite
                     IsLooping = shouldLoop,
                     PageId = _config.GetCurrentPage().Id // Store current page ID
                 };
+
+                // Apply master and button volumes
+                ApplyVolume(playback);
 
                 // Setup progress timer
                 playback.ProgressTimer = new DispatcherTimer
@@ -306,13 +373,34 @@ namespace SongRequestDesktopV2Rewrite
 
                 _activePlaybacks.Add(playback);
 
-                System.Diagnostics.Debug.WriteLine($"▶ Started playback: {context.Data.Name} (Loop: {shouldLoop})");
+                System.Diagnostics.Debug.WriteLine($"▶ Started playback: {context.Data.Name} (Loop: {shouldLoop}, Volume: {context.Data.Volume:P0})");
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Error playing sound:\n{ex.Message}", 
                     "Playback Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 System.Diagnostics.Debug.WriteLine($"❌ Playback error: {ex.Message}");
+            }
+        }
+
+        private void ApplyVolume(PlaybackInstance playback)
+        {
+            if (playback?.AudioFile == null) return;
+
+            try
+            {
+                // Calculate final volume: button volume × master volume
+                float buttonVolume = playback.Context.Data.Volume;
+                float masterVolume = _config.MasterVolume;
+                float finalVolume = buttonVolume * masterVolume;
+
+                playback.AudioFile.Volume = Math.Clamp(finalVolume, 0f, 1f);
+
+                System.Diagnostics.Debug.WriteLine($"🔊 Volume applied: Button={buttonVolume:P0}, Master={masterVolume:P0}, Final={finalVolume:P0}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"⚠ Error applying volume: {ex.Message}");
             }
         }
 
@@ -480,6 +568,7 @@ namespace SongRequestDesktopV2Rewrite
                 context.Data.FadeIn = dialog.FadeIn;
                 context.Data.FadeOut = dialog.FadeOut;
                 context.Data.RepeatMode = dialog.RepeatMode;
+                context.Data.Volume = dialog.ButtonVolume;
                 context.Data.SoundFile = Path.GetFileName(dialog.SoundFilePath);
 
                 // Update length if file changed
@@ -1077,6 +1166,38 @@ namespace SongRequestDesktopV2Rewrite
         private void StopAllButton_Click(object sender, RoutedEventArgs e)
         {
             StopAllSounds();
+        }
+
+        private void MasterVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_config == null) return;
+
+            _config.MasterVolume = (float)(e.NewValue / 100.0);
+            MasterVolumeLabel.Text = $"{(int)e.NewValue}%";
+
+            // Apply volume to all active playbacks
+            foreach (var playback in _activePlaybacks)
+            {
+                ApplyVolume(playback);
+            }
+
+            _config.Save();
+        }
+
+        private void AudioDeviceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_config == null || AudioDeviceCombo.SelectedItem == null) return;
+
+            var selectedItem = (ComboBoxItem)AudioDeviceCombo.SelectedItem;
+            int deviceNumber = (int)selectedItem.Tag;
+
+            _config.OutputDeviceNumber = deviceNumber;
+            _config.Save();
+
+            System.Diagnostics.Debug.WriteLine($"✓ Audio device changed to: {selectedItem.Content} (#{deviceNumber})");
+
+            // Note: Existing playbacks will continue on old device
+            // New playbacks will use the new device
         }
 
         private void PageManagementButton_Click(object sender, RoutedEventArgs e)
