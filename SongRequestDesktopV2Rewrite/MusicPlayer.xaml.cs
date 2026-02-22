@@ -61,6 +61,9 @@ namespace SongRequestDesktopV2Rewrite
         private TextBlock _currentHighlighted = null;
         private MusicShare? _musicShareWindow = null;
 
+        // Visualization window
+        private VisualizationWindow? _visualizationWindow = null;
+
         public MusicPlayer()
         {
             InitializeComponent();
@@ -637,7 +640,11 @@ namespace SongRequestDesktopV2Rewrite
                 _capturingProvider = new CapturingSampleProvider(_mixer);
                 _capturingProvider.SamplesCaptured += (sender, samples) =>
                 {
+                    // Forward to Music Share
                     AudioSamplesCaptured?.Invoke(this, samples);
+
+                    // Forward to Visualization Window
+                    _visualizationWindow?.UpdateAudioSamples(samples);
                 };
             }
 
@@ -1335,6 +1342,29 @@ namespace SongRequestDesktopV2Rewrite
             _musicShareWindow.Closed += (s, args) => { _musicShareWindow = null; };
 
             _musicShareWindow.Show();
+        }
+
+        private void VisualizationButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Only allow one Visualization window at a time
+            if (_visualizationWindow != null && !_visualizationWindow.IsClosed())
+            {
+                // Window already exists - bring it to front
+                _visualizationWindow.Activate();
+                _visualizationWindow.Focus();
+                return;
+            }
+
+            // Create new Visualization window
+            _visualizationWindow = new VisualizationWindow
+            {
+                Owner = this
+            };
+
+            // Clean up reference when window closes
+            _visualizationWindow.Closed += (s, args) => { _visualizationWindow = null; };
+
+            _visualizationWindow.Show();
         }
 
         private void AnimateThumbnailPop()

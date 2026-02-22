@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -419,10 +420,25 @@ namespace SongRequestDesktopV2Rewrite
                 if (_shareService.ReceiveAudio)
                 {
                     InitializeAudioPlayback();
+
+                    // Enable volume slider
+                    var volumeSlider = FindName("VolumeSlider") as Slider;
+                    if (volumeSlider != null)
+                    {
+                        volumeSlider.IsEnabled = true;
+                    }
+
                     System.Diagnostics.Debug.WriteLine("🔊 Audio playback initialized");
                 }
                 else
                 {
+                    // Disable volume slider when audio is off
+                    var volumeSlider = FindName("VolumeSlider") as Slider;
+                    if (volumeSlider != null)
+                    {
+                        volumeSlider.IsEnabled = false;
+                    }
+
                     System.Diagnostics.Debug.WriteLine("🔇 Audio playback disabled (metadata only mode)");
                 }
             }
@@ -454,8 +470,14 @@ namespace SongRequestDesktopV2Rewrite
                 StartReceiveButton.Content = "Start Receiving";
                 StartReceiveButton.IsEnabled = ShareIdInput.Text.Length == 6;
 
-                // Re-enable checkbox
+                // Re-enable checkbox and volume slider
                 ReceiveAudioCheckBox.IsEnabled = true;
+
+                var volumeSlider = FindName("VolumeSlider") as Slider;
+                if (volumeSlider != null)
+                {
+                    volumeSlider.IsEnabled = true;
+                }
 
                 StartShareButton.IsEnabled = true;
 
@@ -492,6 +514,13 @@ namespace SongRequestDesktopV2Rewrite
 
                 _audioPlayer.Init(_playbackBuffer);
 
+                // Set initial volume from slider
+                var volumeSlider = FindName("VolumeSlider") as Slider;
+                if (volumeSlider != null)
+                {
+                    _audioPlayer.Volume = (float)volumeSlider.Value;
+                }
+
                 // Handle playback stopped (buffer starvation)
                 _audioPlayer.PlaybackStopped += AudioPlayer_PlaybackStopped;
 
@@ -512,6 +541,30 @@ namespace SongRequestDesktopV2Rewrite
             // Will be restarted when buffer has enough data
             System.Diagnostics.Debug.WriteLine("Audio playback stopped");
             _playbackStarted = false;
+        }
+
+        private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            try
+            {
+                // Update volume percentage text
+                var volumePercentText = FindName("VolumePercentText") as TextBlock;
+                if (volumePercentText != null)
+                {
+                    volumePercentText.Text = $"{(e.NewValue * 100):F0}%";
+                }
+
+                // Update audio player volume
+                if (_audioPlayer != null)
+                {
+                    _audioPlayer.Volume = (float)e.NewValue;
+                    System.Diagnostics.Debug.WriteLine($"🔊 Volume set to {(e.NewValue * 100):F0}%");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error setting volume: {ex.Message}");
+            }
         }
 
         private void ReceiveStatsUpdateTimer_Tick(object? sender, EventArgs e)

@@ -530,6 +530,16 @@
                         Click="SetDefaultVolumeButton_Click"
                         Visibility="Collapsed"/>
 
+                <!-- Visualization button -->
+                <Button x:Name="VisualizationButton" 
+                        Content="🎵 Visualizer" 
+                        Width="120" 
+                        Height="30"
+                        DockPanel.Dock="Right"
+                        Margin="0,0,8,0"
+                        Style="{StaticResource AccentButton}" 
+                        Click="VisualizationButton_Click"/>
+
                 <!-- Music Share button -->
                 <Button x:Name="MusicShareButton" 
                         Content="Music Share" 

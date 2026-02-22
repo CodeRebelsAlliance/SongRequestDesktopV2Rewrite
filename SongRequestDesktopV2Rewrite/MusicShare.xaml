@@ -242,6 +242,27 @@
                                 <Button x:Name="ShowPresentationButton" Content="📺 Show Presentation" Width="180" Height="35"
                                         Style="{StaticResource AccentButton}" Click="ShowPresentationButton_Click"
                                         Margin="0,8,0,0"/>
+
+                                <!-- Volume Control -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
+                                    <TextBlock Text="🔊" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White"/>
+                                    <Slider x:Name="VolumeSlider" 
+                                            Minimum="0" 
+                                            Maximum="1" 
+                                            Value="1.0" 
+                                            Width="150" 
+                                            VerticalAlignment="Center"
+                                            ValueChanged="VolumeSlider_ValueChanged"
+                                            ToolTip="Adjust playback volume"/>
+                                    <TextBlock x:Name="VolumePercentText" 
+                                               Text="100%" 
+                                               FontSize="14" 
+                                               Foreground="White" 
+                                               VerticalAlignment="Center" 
+                                               Width="45"
+                                               Margin="8,0,0,0"
+                                               FontWeight="SemiBold"/>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
