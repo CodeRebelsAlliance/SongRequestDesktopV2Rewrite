@@ -12,11 +12,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Artboard1%403x.png" />
     <None Remove="SRLoader.gif" />
     <None Remove="SRshortLogo.png" />
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Artboard1@3x.png" />
     <Resource Include="SRshortLogo.ico" />
   </ItemGroup>
 

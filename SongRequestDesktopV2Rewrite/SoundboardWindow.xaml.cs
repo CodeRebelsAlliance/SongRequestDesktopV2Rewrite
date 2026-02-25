@@ -7,12 +7,15 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using NAudio.Wave;
+using NAudio.Midi;
 
 namespace SongRequestDesktopV2Rewrite
 {
     public partial class SoundboardWindow : Window
     {
         private SoundboardConfiguration _config;
+        private MidiService _midiService;
+        private bool _isAssignMode = false;
 
         // Supported audio formats
         private static readonly string[] SupportedFormats = { ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma" };
@@ -39,10 +42,16 @@ namespace SongRequestDesktopV2Rewrite
             // Load configuration
             _config = SoundboardConfiguration.Load();
 
+            // Initialize MIDI service
+            _midiService = new MidiService();
+            _midiService.MidiMessageReceived += MidiService_MidiMessageReceived;
+            _midiService.ErrorOccurred += MidiService_ErrorOccurred;
+
             InitializeSoundboardGrid();
             UpdatePageInfo();
             InitializeAudioDevices();
             InitializeMasterVolume();
+            InitializeMidi();
         }
 
         private void InitializeAudioDevices()
@@ -243,12 +252,59 @@ namespace SongRequestDesktopV2Rewrite
         {
             if (sender is Button button && button.Tag is ButtonContext context)
             {
+                // Check if in assign mode
+                if (_isAssignMode)
+                {
+                    OpenMidiAssignDialog(context);
+                    return;
+                }
+
                 if (context.Data.IsEmpty)
                 {
                     System.Diagnostics.Debug.WriteLine("Cannot play empty button");
                     return;
                 }
 
+                PlaySound(button, context);
+            }
+        }
+
+        private void OpenMidiAssignDialog(ButtonContext context)
+        {
+            var dialog = new MidiAssignDialog(_midiService, context.Data.MidiMapping)
+            {
+                Owner = this
+            };
+
+            if (dialog.ShowDialog() == true && dialog.Result != null)
+            {
+                // Save MIDI mapping to button
+                context.Data.MidiMapping = dialog.Result;
+
+                // Update button in page
+                var currentPage = _config.GetCurrentPage();
+                currentPage.SetButton(context.Row, context.Col, context.Data);
+                _config.Save();
+
+                // Update feedback for all buttons (including empty button defaults)
+                UpdateAllMidiFeedback();
+
+                System.Diagnostics.Debug.WriteLine($"✓ MIDI mapped to button '{context.Data.Name}': Channel {dialog.Result.Channel}, Note {dialog.Result.Note}");
+
+                MessageBox.Show($"MIDI mapping assigned!\n\nChannel: {dialog.Result.Channel}\nNote/CC: {dialog.Result.Note}\n\nYou can now exit assign mode.", 
+                    "Assignment Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+
+            // Exit assign mode after assignment (successful or cancelled)
+            _isAssignMode = false;
+            MidiAssignModeButton.Content = "🎯 Assign";
+            MidiAssignModeButton.ClearValue(Button.BackgroundProperty);
+        }
+
+        private void TriggerButton(Button button)
+        {
+            if (button.Tag is ButtonContext context && !context.Data.IsEmpty)
+            {
                 PlaySound(button, context);
             }
         }
@@ -373,6 +429,9 @@ namespace SongRequestDesktopV2Rewrite
 
                 _activePlaybacks.Add(playback);
 
+                // Send MIDI feedback for pressed state
+                UpdateMidiFeedback(context.Data, true);
+
                 System.Diagnostics.Debug.WriteLine($"▶ Started playback: {context.Data.Name} (Loop: {shouldLoop}, Volume: {context.Data.Volume:P0})");
             }
             catch (Exception ex)
@@ -476,19 +535,26 @@ namespace SongRequestDesktopV2Rewrite
                     p.Context.Col == playback.Context.Col &&
                     p.PageId == playback.PageId).ToList(); // Same page check
 
-                if (!remainingPlaybacks.Any() && playback.Button != null)
+                // Only reset UI and MIDI if no more playbacks for this button
+                if (!remainingPlaybacks.Any())
                 {
-                    var progressBar = FindVisualChild<Border>(playback.Button, "ProgressBar");
-                    if (progressBar != null)
+                    if (playback.Button != null)
                     {
-                        progressBar.Width = 0;
+                        var progressBar = FindVisualChild<Border>(playback.Button, "ProgressBar");
+                        if (progressBar != null)
+                        {
+                            progressBar.Width = 0;
+                        }
+
+                        var statusText = FindVisualChild<TextBlock>(playback.Button, "StatusText");
+                        if (statusText != null)
+                        {
+                            statusText.Text = "Ready";
+                        }
                     }
 
-                    var statusText = FindVisualChild<TextBlock>(playback.Button, "StatusText");
-                    if (statusText != null)
-                    {
-                        statusText.Text = "Ready";
-                    }
+                    // Send MIDI feedback for unpressed state only when all playbacks stopped
+                    UpdateMidiFeedback(playback.Context.Data, false);
                 }
 
                 System.Diagnostics.Debug.WriteLine($"■ Stopped playback: {playback.Context.Data.Name}");
@@ -535,6 +601,18 @@ namespace SongRequestDesktopV2Rewrite
                 editItem.Click += (s, args) => EditButton_Click(context);
                 contextMenu.Items.Add(editItem);
 
+                // Clear MIDI Mapping menu item (only show if mapped)
+                if (context.Data.MidiMapping != null && context.Data.MidiMapping.IsConfigured)
+                {
+                    var clearMidiItem = new MenuItem
+                    {
+                        Header = "🎹 Clear MIDI Mapping",
+                        Foreground = Brushes.White
+                    };
+                    clearMidiItem.Click += (s, args) => ClearMidiMapping_Click(context);
+                    contextMenu.Items.Add(clearMidiItem);
+                }
+
                 // Delete menu item
                 var deleteItem = new MenuItem
                 {
@@ -570,6 +648,7 @@ namespace SongRequestDesktopV2Rewrite
                 context.Data.RepeatMode = dialog.RepeatMode;
                 context.Data.Volume = dialog.ButtonVolume;
                 context.Data.SoundFile = Path.GetFileName(dialog.SoundFilePath);
+                // Preserve MIDI mapping (it's already in context.Data.MidiMapping)
 
                 // Update length if file changed
                 if (!string.IsNullOrEmpty(dialog.SoundFilePath))
@@ -626,6 +705,13 @@ namespace SongRequestDesktopV2Rewrite
             context.Data.RepeatMode = "none";
             context.Data.IsEnabled = false;
 
+            // Clear MIDI mapping when deleting button
+            if (context.Data.MidiMapping != null)
+            {
+                UpdateMidiFeedback(context.Data, false); // Turn off LED
+                context.Data.MidiMapping = null;
+            }
+
             // Save to page
             var currentPage = _config.GetCurrentPage();
             currentPage.SetButton(context.Row, context.Col, context.Data);
@@ -673,6 +759,36 @@ namespace SongRequestDesktopV2Rewrite
             UpdatePageInfo();
 
             System.Diagnostics.Debug.WriteLine($"✓ Button deleted and reset to empty");
+        }
+
+        private void ClearMidiMapping_Click(ButtonContext context)
+        {
+            var result = MessageBox.Show(
+                $"Clear MIDI mapping for '{context.Data.Name}'?",
+                "Clear MIDI Mapping",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            // Turn off LED before clearing
+            UpdateMidiFeedback(context.Data, false);
+
+            // Clear mapping
+            context.Data.MidiMapping = null;
+
+            // Save to page
+            var currentPage = _config.GetCurrentPage();
+            currentPage.SetButton(context.Row, context.Col, context.Data);
+            _config.Save();
+
+            System.Diagnostics.Debug.WriteLine($"✓ MIDI mapping cleared for: {context.Data.Name}");
+
+            MessageBox.Show("MIDI mapping cleared successfully.", "MIDI Mapping", 
+                MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         #region Drag and Drop Handlers
@@ -1136,6 +1252,9 @@ namespace SongRequestDesktopV2Rewrite
                 _config.Save();
                 InitializeSoundboardGrid();
                 UpdatePageInfo();
+
+                // Update MIDI feedback for new page
+                UpdateAllMidiFeedback();
             }
         }
 
@@ -1147,6 +1266,9 @@ namespace SongRequestDesktopV2Rewrite
                 _config.Save();
                 InitializeSoundboardGrid();
                 UpdatePageInfo();
+
+                // Update MIDI feedback for new page
+                UpdateAllMidiFeedback();
             }
         }
 
@@ -1161,6 +1283,9 @@ namespace SongRequestDesktopV2Rewrite
 
             // Stop all active playbacks
             StopAllSounds();
+
+            // Cleanup MIDI
+            _midiService?.Dispose();
         }
 
         private void StopAllButton_Click(object sender, RoutedEventArgs e)
@@ -1199,6 +1324,277 @@ namespace SongRequestDesktopV2Rewrite
             // Note: Existing playbacks will continue on old device
             // New playbacks will use the new device
         }
+
+        #region MIDI Support
+
+        private void InitializeMidi()
+        {
+            // Set checkbox state from config
+            MidiEnabledCheckBox.IsChecked = _config.MidiEnabled;
+
+            // Enable MIDI if configured
+            if (_config.MidiEnabled)
+            {
+                EnableMidi();
+            }
+        }
+
+        private void EnableMidi()
+        {
+            try
+            {
+                _midiService.IsEnabled = true;
+
+                // Connect input device if configured
+                if (_config.MidiInputDevice >= 0)
+                {
+                    _midiService.ConnectInput(_config.MidiInputDevice);
+                }
+
+                // Connect output device if configured
+                if (_config.MidiOutputDevice >= 0)
+                {
+                    _midiService.ConnectOutput(_config.MidiOutputDevice);
+                }
+
+                MidiSettingsButton.IsEnabled = true;
+                MidiAssignModeButton.IsEnabled = true;
+
+                // Send initial feedback for all buttons
+                UpdateAllMidiFeedback();
+
+                System.Diagnostics.Debug.WriteLine("✓ MIDI enabled");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to enable MIDI: {ex.Message}", "MIDI Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                _config.MidiEnabled = false;
+                MidiEnabledCheckBox.IsChecked = false;
+            }
+        }
+
+        private void DisableMidi()
+        {
+            _midiService.IsEnabled = false;
+            _midiService.DisconnectDevices();
+            MidiSettingsButton.IsEnabled = false;
+            MidiAssignModeButton.IsEnabled = false;
+            System.Diagnostics.Debug.WriteLine("✓ MIDI disabled");
+        }
+
+        private void MidiEnabledCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            _config.MidiEnabled = MidiEnabledCheckBox.IsChecked ?? false;
+            _config.Save();
+
+            if (_config.MidiEnabled)
+            {
+                EnableMidi();
+            }
+            else
+            {
+                DisableMidi();
+            }
+        }
+
+        private void MidiSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new MidiSettingsDialog(_midiService, _config)
+            {
+                Owner = this
+            };
+
+            dialog.ShowDialog();
+
+            // Refresh MIDI connections after settings change
+            if (_config.MidiEnabled)
+            {
+                EnableMidi();
+            }
+        }
+
+        private void MidiAssignModeButton_Click(object sender, RoutedEventArgs e)
+        {
+            _isAssignMode = !_isAssignMode;
+
+            if (_isAssignMode)
+            {
+                MidiAssignModeButton.Content = "✓ Assigning...";
+                MidiAssignModeButton.Background = new SolidColorBrush(Color.FromRgb(255, 193, 7)); // Yellow
+                MessageBox.Show("MIDI Assign Mode Active\n\nClick on any soundboard button to assign a MIDI control to it.", 
+                    "Assign Mode", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                MidiAssignModeButton.Content = "🎯 Assign";
+                MidiAssignModeButton.ClearValue(Button.BackgroundProperty); // Reset to style
+            }
+        }
+
+        private void MidiService_MidiMessageReceived(object? sender, NAudio.Midi.MidiInMessageEventArgs e)
+        {
+            if (!_config.MidiEnabled || _isAssignMode) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    // Find button with matching MIDI mapping
+                    var currentPage = _config.GetCurrentPage();
+
+                    for (int i = 0; i < currentPage.TotalSlots; i++)
+                    {
+                        int row = i / currentPage.Columns;
+                        int col = i % currentPage.Columns;
+                        var buttonData = currentPage.GetButton(row, col);
+
+                        if (buttonData.MidiMapping != null && buttonData.MidiMapping.IsConfigured)
+                        {
+                            bool matched = false;
+
+                            if (e.MidiEvent is NoteOnEvent noteOn)
+                            {
+                                matched = buttonData.MidiMapping.MessageType == "NoteOn" &&
+                                         buttonData.MidiMapping.Channel == noteOn.Channel &&
+                                         buttonData.MidiMapping.Note == noteOn.NoteNumber &&
+                                         noteOn.Velocity > 0;
+                            }
+                            else if (e.MidiEvent is ControlChangeEvent cc)
+                            {
+                                matched = buttonData.MidiMapping.MessageType == "ControlChange" &&
+                                         buttonData.MidiMapping.Channel == cc.Channel &&
+                                         buttonData.MidiMapping.Note == (int)cc.Controller &&
+                                         cc.ControllerValue > 0;
+                            }
+
+                            if (matched)
+                            {
+                                // Trigger the button
+                                var button = FindButtonAtPosition(row, col);
+                                if (button != null && !buttonData.IsEmpty)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"🎹 MIDI triggered button: {buttonData.Name}");
+                                    TriggerButton(button);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error processing MIDI: {ex.Message}");
+                }
+            });
+        }
+
+        private void MidiService_ErrorOccurred(object? sender, string error)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                System.Diagnostics.Debug.WriteLine($"🎹 MIDI Error: {error}");
+            });
+        }
+
+        private void UpdateMidiFeedback(SoundboardButton buttonData, bool isPressed)
+        {
+            if (!_config.MidiEnabled || _midiService.OutputDeviceNumber == null) return;
+            if (buttonData.MidiMapping == null || !buttonData.MidiMapping.IsConfigured) return;
+
+            try
+            {
+                int velocity = isPressed ? buttonData.MidiMapping.VelocityPressed : buttonData.MidiMapping.VelocityUnpressed;
+
+                // Scale velocity from 0-127 to 0-255 for controllers that use extended range (like Launchpad X)
+                // Launchpad X uses velocity 0-127 for colors, but we stored 0-127 in config
+                // The velocity is used directly without scaling - Launchpad X interprets 0-127 as color palette indices
+
+                if (buttonData.MidiMapping.MessageType == "NoteOn")
+                {
+                    if (velocity > 0)
+                    {
+                        _midiService.SendNoteOn(buttonData.MidiMapping.Channel, buttonData.MidiMapping.Note, velocity);
+                    }
+                    else
+                    {
+                        _midiService.SendNoteOff(buttonData.MidiMapping.Channel, buttonData.MidiMapping.Note);
+                    }
+                }
+                else if (buttonData.MidiMapping.MessageType == "ControlChange")
+                {
+                    _midiService.SendControlChange(buttonData.MidiMapping.Channel, buttonData.MidiMapping.Note, velocity);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error sending MIDI feedback: {ex.Message}");
+            }
+        }
+
+        private void UpdateAllMidiFeedback()
+        {
+            if (!_config.MidiEnabled) return;
+
+            var currentPage = _config.GetCurrentPage();
+            var emptyVelocity = ParseVelocityFromColor(_config.EmptyButtonFeedbackColor);
+
+            for (int i = 0; i < currentPage.TotalSlots; i++)
+            {
+                int row = i / currentPage.Columns;
+                int col = i % currentPage.Columns;
+                var buttonData = currentPage.GetButton(row, col);
+
+                if (buttonData.MidiMapping != null && buttonData.MidiMapping.IsConfigured)
+                {
+                    if (buttonData.IsEmpty)
+                    {
+                        // Send empty button feedback
+                        if (buttonData.MidiMapping.MessageType == "NoteOn")
+                        {
+                            _midiService.SendNoteOn(buttonData.MidiMapping.Channel, buttonData.MidiMapping.Note, emptyVelocity);
+                        }
+                        else if (buttonData.MidiMapping.MessageType == "ControlChange")
+                        {
+                            _midiService.SendControlChange(buttonData.MidiMapping.Channel, buttonData.MidiMapping.Note, emptyVelocity);
+                        }
+                    }
+                    else
+                    {
+                        // Check if button is currently playing
+                        bool isPlaying = _activePlaybacks.Any(p => 
+                            p.Context.Row == row && p.Context.Col == col && 
+                            p.PageId == currentPage.Id);
+
+                        UpdateMidiFeedback(buttonData, isPlaying);
+                    }
+                }
+            }
+        }
+
+        private int ParseVelocityFromColor(string color)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(color) || !color.StartsWith("#"))
+                    return 10;
+
+                var hex = color.Substring(1);
+                if (hex.Length >= 2)
+                {
+                    int brightness = Convert.ToInt32(hex.Substring(0, 2), 16);
+                    return (brightness * 127) / 255;
+                }
+            }
+            catch
+            {
+                // Fallback
+            }
+
+            return 10;
+        }
+
+        #endregion
 
         private void PageManagementButton_Click(object sender, RoutedEventArgs e)
         {

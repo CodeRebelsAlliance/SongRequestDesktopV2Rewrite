@@ -22,6 +22,7 @@ namespace SongRequestDesktopV2Rewrite
         private Border _customColorPreview;
         private Slider _volumeSlider;
         private TextBlock _volumeLabel;
+        private MidiMapping? _midiMapping;
 
         // Predefined colors
         private static readonly string[] PredefinedColors =
@@ -369,6 +370,41 @@ namespace SongRequestDesktopV2Rewrite
 
             Grid.SetRow(volumePanel, rowIndex);
             mainGrid.Children.Add(volumePanel);
+            rowIndex += 2;
+
+            // MIDI Mapping Status
+            AddLabel(mainGrid, "MIDI Mapping:", rowIndex);
+            var midiStatusBorder = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(26, 26, 26)),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(91, 141, 239)),
+                BorderThickness = new Thickness(1)
+            };
+
+            var midiStatusText = new TextBlock
+            {
+                Foreground = Brushes.White,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            if (_midiMapping != null && _midiMapping.IsConfigured)
+            {
+                midiStatusText.Text = $"✓ Mapped to Channel {_midiMapping.Channel}, {_midiMapping.MessageType} {_midiMapping.Note}\n" +
+                                     $"Pressed: {_midiMapping.VelocityPressed}, Unpressed: {_midiMapping.VelocityUnpressed}";
+                midiStatusText.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80)); // Green
+            }
+            else
+            {
+                midiStatusText.Text = "Not mapped - Use 'Assign' mode in main window to map a MIDI control";
+                midiStatusText.Foreground = new SolidColorBrush(Color.FromRgb(153, 153, 153)); // Gray
+            }
+
+            midiStatusBorder.Child = midiStatusText;
+            Grid.SetRow(midiStatusBorder, rowIndex);
+            mainGrid.Children.Add(midiStatusBorder);
             rowIndex += 2; // Skip spacer
 
             // Bottom Buttons

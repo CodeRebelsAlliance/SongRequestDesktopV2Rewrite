@@ -240,6 +240,40 @@
                 <StackPanel Grid.Column="2" 
                             Orientation="Horizontal" 
                             VerticalAlignment="Center">
+                    <!-- MIDI Toggle -->
+                    <CheckBox x:Name="MidiEnabledCheckBox"
+                              Content="🎹 MIDI"
+                              Foreground="White"
+                              FontSize="12"
+                              FontWeight="SemiBold"
+                              VerticalAlignment="Center"
+                              Margin="0,0,8,0"
+                              Checked="MidiEnabledCheckBox_CheckedChanged"
+                              Unchecked="MidiEnabledCheckBox_CheckedChanged"
+                              ToolTip="Enable MIDI controller support"/>
+
+                    <!-- MIDI Settings Button -->
+                    <Button x:Name="MidiSettingsButton" 
+                            Content="🎛️" 
+                            Width="36" 
+                            Height="32"
+                            Margin="0,0,8,0"
+                            Style="{StaticResource AccentButton}" 
+                            Click="MidiSettingsButton_Click"
+                            ToolTip="MIDI device settings"
+                            IsEnabled="False"/>
+
+                    <!-- MIDI Assign Mode Button -->
+                    <Button x:Name="MidiAssignModeButton" 
+                            Content="🎯 Assign" 
+                            Width="90" 
+                            Height="32"
+                            Margin="0,0,12,0"
+                            Style="{StaticResource AccentButton}" 
+                            Click="MidiAssignModeButton_Click"
+                            ToolTip="Enter MIDI assignment mode"
+                            IsEnabled="False"/>
+
                     <Button x:Name="PageManagementButton" 
                             Content="📄 Pages" 
                             Width="100" 

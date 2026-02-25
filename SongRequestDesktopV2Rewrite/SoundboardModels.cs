@@ -95,6 +95,7 @@ namespace SongRequestDesktopV2Rewrite
         public string RepeatMode { get; set; } // "none", "loop", "repeat-n"
         public bool IsEnabled { get; set; }
         public float Volume { get; set; } // 0.0 to 1.0
+        public MidiMapping? MidiMapping { get; set; } // MIDI controller mapping
 
         public SoundboardButton()
         {
@@ -109,6 +110,7 @@ namespace SongRequestDesktopV2Rewrite
             RepeatMode = "none";
             IsEnabled = false;
             Volume = 1.0f; // Default 100%
+            MidiMapping = null;
         }
 
         public bool IsEmpty => string.IsNullOrWhiteSpace(SoundFile);
@@ -124,6 +126,12 @@ namespace SongRequestDesktopV2Rewrite
         public float MasterVolume { get; set; } // 0.0 to 1.0
         public int OutputDeviceNumber { get; set; } // -1 for default device
 
+        // MIDI configuration
+        public bool MidiEnabled { get; set; }
+        public int MidiInputDevice { get; set; } = -1;
+        public int MidiOutputDevice { get; set; } = -1;
+        public string EmptyButtonFeedbackColor { get; set; } = "#000000"; // Global color for empty buttons
+
         private const string SoundboardFolder = "soundboard";
         private const string ConfigFileName = "soundboard_config.json";
         private static readonly string DataFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
@@ -136,6 +144,10 @@ namespace SongRequestDesktopV2Rewrite
             CurrentPageIndex = 0;
             MasterVolume = 1.0f; // Default 100%
             OutputDeviceNumber = -1; // Default device
+            MidiEnabled = false;
+            MidiInputDevice = -1;
+            MidiOutputDevice = -1;
+            EmptyButtonFeedbackColor = "#000000";
         }
 
         /// <summary>
@@ -325,5 +337,38 @@ namespace SongRequestDesktopV2Rewrite
             EnsureFoldersExist();
             return SoundboardDataFolder;
         }
+    }
+
+    /// <summary>
+    /// MIDI mapping configuration for a soundboard button
+    /// </summary>
+    public class MidiMapping
+    {
+        /// <summary>
+        /// MIDI channel (1-16)
+        /// </summary>
+        public int Channel { get; set; } = 1;
+
+        /// <summary>
+        /// MIDI note number (0-127) or CC number
+        /// </summary>
+        public int Note { get; set; }
+
+        /// <summary>
+        /// Message type: NoteOn, ControlChange
+        /// </summary>
+        public string MessageType { get; set; } = "NoteOn";
+
+        /// <summary>
+        /// Velocity for pressed state feedback (0-127)
+        /// </summary>
+        public int VelocityPressed { get; set; } = 127;
+
+        /// <summary>
+        /// Velocity for unpressed state feedback (0-127)
+        /// </summary>
+        public int VelocityUnpressed { get; set; } = 0;
+
+        public bool IsConfigured => Note >= 0 && Note <= 127;
     }
 }

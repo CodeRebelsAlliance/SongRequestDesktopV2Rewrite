@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
         mc:Ignorable="d"
         Title="SongRequest V2"
-        Width="600" Height="550"
+        Width="600" Height="650"
         WindowStartupLocation="CenterScreen"
         Background="#0f0f10"
         Foreground="White"
@@ -37,7 +37,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="60"/>
+                <RowDefinition Height="45"/>
             </Grid.RowDefinitions>
 
             <!-- Content Area -->
@@ -85,8 +85,8 @@
                            Margin="0,0,0,15"/>
             </StackPanel>
 
-            <!-- Copyright -->
-            <TextBlock Grid.Row="1"
+            <Image Grid.Row="1" Source="/Artboard1@3x.png" Width="Auto" Height="100px"></Image>
+            <TextBlock Grid.Row="2"
                        HorizontalAlignment="Center"
                        VerticalAlignment="Bottom"
                        Margin="0,0,0,15">
@@ -94,6 +94,7 @@
                      Foreground="#666666"
                      FontSize="12"/>
             </TextBlock>
+            
 
             <!-- Loading Bar -->
             <Border Grid.Row="2" 
