@@ -288,6 +288,13 @@
                             Margin="0,0,8,0"
                             Style="{StaticResource AccentButton}" 
                             Click="GridSettingsButton_Click"/>
+                    <Button x:Name="KeyboardSettingsButton" 
+                            Content="⌨️ Keys" 
+                            Width="100" 
+                            Height="32"
+                            Margin="0,0,8,0"
+                            Style="{StaticResource AccentButton}" 
+                            Click="KeyboardSettingsButton_Click"/>
                     <Button x:Name="AddSoundButton" 
                             Content="➕ Add Sound" 
                             Width="120" 

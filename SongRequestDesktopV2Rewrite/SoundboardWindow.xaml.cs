@@ -47,11 +47,111 @@ namespace SongRequestDesktopV2Rewrite
             _midiService.MidiMessageReceived += MidiService_MidiMessageReceived;
             _midiService.ErrorOccurred += MidiService_ErrorOccurred;
 
+            PreviewKeyDown += SoundboardWindow_PreviewKeyDown;
+
             InitializeSoundboardGrid();
             UpdatePageInfo();
             InitializeAudioDevices();
             InitializeMasterVolume();
             InitializeMidi();
+        }
+
+        private void SoundboardWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (HandleGlobalShortcut(e))
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (HandlePerSoundShortcut(e))
+            {
+                e.Handled = true;
+            }
+        }
+
+        private bool HandleGlobalShortcut(System.Windows.Input.KeyEventArgs e)
+        {
+            var shortcuts = _config.KeyboardShortcuts;
+            if (shortcuts == null)
+            {
+                return false;
+            }
+
+            if (KeyboardShortcutHelper.IsShortcutMatch(shortcuts.StopAll, e))
+            {
+                StopAllSounds();
+                return true;
+            }
+
+            if (KeyboardShortcutHelper.IsShortcutMatch(shortcuts.VolumeUp, e))
+            {
+                MasterVolumeSlider.Value = Math.Min(MasterVolumeSlider.Maximum, MasterVolumeSlider.Value + 5);
+                return true;
+            }
+
+            if (KeyboardShortcutHelper.IsShortcutMatch(shortcuts.VolumeDown, e))
+            {
+                MasterVolumeSlider.Value = Math.Max(MasterVolumeSlider.Minimum, MasterVolumeSlider.Value - 5);
+                return true;
+            }
+
+            if (KeyboardShortcutHelper.IsShortcutMatch(shortcuts.NextPage, e))
+            {
+                if (_config.CurrentPageIndex < _config.Pages.Count - 1)
+                {
+                    _config.CurrentPageIndex++;
+                    _config.Save();
+                    InitializeSoundboardGrid();
+                    UpdatePageInfo();
+                    UpdateAllMidiFeedback();
+                }
+                return true;
+            }
+
+            if (KeyboardShortcutHelper.IsShortcutMatch(shortcuts.PreviousPage, e))
+            {
+                if (_config.CurrentPageIndex > 0)
+                {
+                    _config.CurrentPageIndex--;
+                    _config.Save();
+                    InitializeSoundboardGrid();
+                    UpdatePageInfo();
+                    UpdateAllMidiFeedback();
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool HandlePerSoundShortcut(System.Windows.Input.KeyEventArgs e)
+        {
+            var currentPage = _config.GetCurrentPage();
+
+            for (int i = 0; i < currentPage.TotalSlots; i++)
+            {
+                int row = i / currentPage.Columns;
+                int col = i % currentPage.Columns;
+
+                var buttonData = currentPage.GetButton(row, col);
+                if (buttonData.IsEmpty)
+                {
+                    continue;
+                }
+
+                if (KeyboardShortcutHelper.IsShortcutMatch(buttonData.KeyboardShortcut, e))
+                {
+                    var button = FindButtonAtPosition(row, col);
+                    if (button != null)
+                    {
+                        TriggerButton(button);
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private void InitializeAudioDevices()
@@ -365,10 +465,10 @@ namespace SongRequestDesktopV2Rewrite
             {
                 var audioFile = new AudioFileReader(soundFile);
 
-                // Use configured output device
+                var targetDeviceNumber = context.Data.CustomOutputDeviceNumber ?? _config.OutputDeviceNumber;
                 var outputDevice = new WaveOutEvent
                 {
-                    DeviceNumber = _config.OutputDeviceNumber
+                    DeviceNumber = targetDeviceNumber
                 };
 
                 outputDevice.Init(audioFile);
@@ -432,7 +532,7 @@ namespace SongRequestDesktopV2Rewrite
                 // Send MIDI feedback for pressed state
                 UpdateMidiFeedback(context.Data, true);
 
-                System.Diagnostics.Debug.WriteLine($"▶ Started playback: {context.Data.Name} (Loop: {shouldLoop}, Volume: {context.Data.Volume:P0})");
+                System.Diagnostics.Debug.WriteLine($"▶ Started playback: {context.Data.Name} (Loop: {shouldLoop}, Volume: {context.Data.Volume:P0}, Device: {targetDeviceNumber})");
             }
             catch (Exception ex)
             {
@@ -630,6 +730,20 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
+        private void KeyboardSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new KeyboardSettingsDialog(_config.KeyboardShortcuts)
+            {
+                Owner = this
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                _config.KeyboardShortcuts = dialog.Result;
+                _config.Save();
+            }
+        }
+
         private void EditButton_Click(ButtonContext context)
         {
             var dialog = new ButtonEditDialog(context.Data)
@@ -647,6 +761,14 @@ namespace SongRequestDesktopV2Rewrite
                 context.Data.FadeOut = dialog.FadeOut;
                 context.Data.RepeatMode = dialog.RepeatMode;
                 context.Data.Volume = dialog.ButtonVolume;
+                context.Data.CustomOutputDeviceNumber = dialog.CustomAudioDeviceNumber;
+                context.Data.KeyboardShortcut = string.IsNullOrWhiteSpace(dialog.ButtonShortcut.Gesture)
+                    ? null
+                    : new KeyboardShortcutConfig
+                    {
+                        Enabled = dialog.ButtonShortcut.Enabled,
+                        Gesture = dialog.ButtonShortcut.Gesture
+                    };
                 context.Data.SoundFile = Path.GetFileName(dialog.SoundFilePath);
                 // Preserve MIDI mapping (it's already in context.Data.MidiMapping)
 
@@ -704,6 +826,8 @@ namespace SongRequestDesktopV2Rewrite
             context.Data.FadeOut = false;
             context.Data.RepeatMode = "none";
             context.Data.IsEnabled = false;
+            context.Data.CustomOutputDeviceNumber = null;
+            context.Data.KeyboardShortcut = null;
 
             // Clear MIDI mapping when deleting button
             if (context.Data.MidiMapping != null)

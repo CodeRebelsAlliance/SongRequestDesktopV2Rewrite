@@ -1323,6 +1323,11 @@ namespace SongRequestDesktopV2Rewrite
 
         private void MusicShareButton_Click(object sender, RoutedEventArgs e)
         {
+            OpenMusicShareWindow();
+        }
+
+        public void OpenMusicShareWindow()
+        {
             // Only allow one MusicShare window at a time
             if (_musicShareWindow != null && _musicShareWindow.IsLoaded)
             {

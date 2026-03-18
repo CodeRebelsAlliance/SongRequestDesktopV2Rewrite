@@ -95,6 +95,8 @@ namespace SongRequestDesktopV2Rewrite
         public string RepeatMode { get; set; } // "none", "loop", "repeat-n"
         public bool IsEnabled { get; set; }
         public float Volume { get; set; } // 0.0 to 1.0
+        public int? CustomOutputDeviceNumber { get; set; } // null = use global output device
+        public KeyboardShortcutConfig? KeyboardShortcut { get; set; }
         public MidiMapping? MidiMapping { get; set; } // MIDI controller mapping
 
         public SoundboardButton()
@@ -110,10 +112,42 @@ namespace SongRequestDesktopV2Rewrite
             RepeatMode = "none";
             IsEnabled = false;
             Volume = 1.0f; // Default 100%
+            CustomOutputDeviceNumber = null;
+            KeyboardShortcut = null;
             MidiMapping = null;
         }
 
         public bool IsEmpty => string.IsNullOrWhiteSpace(SoundFile);
+    }
+
+    public class KeyboardShortcutConfig
+    {
+        public bool Enabled { get; set; }
+        public string Gesture { get; set; }
+
+        public KeyboardShortcutConfig()
+        {
+            Enabled = false;
+            Gesture = string.Empty;
+        }
+    }
+
+    public class GlobalKeyboardShortcuts
+    {
+        public KeyboardShortcutConfig StopAll { get; set; }
+        public KeyboardShortcutConfig VolumeUp { get; set; }
+        public KeyboardShortcutConfig VolumeDown { get; set; }
+        public KeyboardShortcutConfig NextPage { get; set; }
+        public KeyboardShortcutConfig PreviousPage { get; set; }
+
+        public GlobalKeyboardShortcuts()
+        {
+            StopAll = new KeyboardShortcutConfig { Enabled = false, Gesture = "S" };
+            VolumeUp = new KeyboardShortcutConfig { Enabled = false, Gesture = "Plus" };
+            VolumeDown = new KeyboardShortcutConfig { Enabled = false, Gesture = "Minus" };
+            NextPage = new KeyboardShortcutConfig { Enabled = false, Gesture = "PageUp" };
+            PreviousPage = new KeyboardShortcutConfig { Enabled = false, Gesture = "PageDown" };
+        }
     }
 
     /// <summary>
@@ -125,6 +159,7 @@ namespace SongRequestDesktopV2Rewrite
         public int CurrentPageIndex { get; set; }
         public float MasterVolume { get; set; } // 0.0 to 1.0
         public int OutputDeviceNumber { get; set; } // -1 for default device
+        public GlobalKeyboardShortcuts KeyboardShortcuts { get; set; }
 
         // MIDI configuration
         public bool MidiEnabled { get; set; }
@@ -144,10 +179,46 @@ namespace SongRequestDesktopV2Rewrite
             CurrentPageIndex = 0;
             MasterVolume = 1.0f; // Default 100%
             OutputDeviceNumber = -1; // Default device
+            KeyboardShortcuts = new GlobalKeyboardShortcuts();
             MidiEnabled = false;
             MidiInputDevice = -1;
             MidiOutputDevice = -1;
             EmptyButtonFeedbackColor = "#000000";
+        }
+
+        private static void EnsureKeyboardShortcutDefaults(SoundboardConfiguration config)
+        {
+            config.KeyboardShortcuts ??= new GlobalKeyboardShortcuts();
+
+            config.KeyboardShortcuts.StopAll ??= new KeyboardShortcutConfig { Enabled = false, Gesture = "S" };
+            if (string.IsNullOrWhiteSpace(config.KeyboardShortcuts.StopAll.Gesture))
+            {
+                config.KeyboardShortcuts.StopAll.Gesture = "S";
+            }
+
+            config.KeyboardShortcuts.VolumeUp ??= new KeyboardShortcutConfig { Enabled = false, Gesture = "Plus" };
+            if (string.IsNullOrWhiteSpace(config.KeyboardShortcuts.VolumeUp.Gesture))
+            {
+                config.KeyboardShortcuts.VolumeUp.Gesture = "Plus";
+            }
+
+            config.KeyboardShortcuts.VolumeDown ??= new KeyboardShortcutConfig { Enabled = false, Gesture = "Minus" };
+            if (string.IsNullOrWhiteSpace(config.KeyboardShortcuts.VolumeDown.Gesture))
+            {
+                config.KeyboardShortcuts.VolumeDown.Gesture = "Minus";
+            }
+
+            config.KeyboardShortcuts.NextPage ??= new KeyboardShortcutConfig { Enabled = false, Gesture = "PageUp" };
+            if (string.IsNullOrWhiteSpace(config.KeyboardShortcuts.NextPage.Gesture))
+            {
+                config.KeyboardShortcuts.NextPage.Gesture = "PageUp";
+            }
+
+            config.KeyboardShortcuts.PreviousPage ??= new KeyboardShortcutConfig { Enabled = false, Gesture = "PageDown" };
+            if (string.IsNullOrWhiteSpace(config.KeyboardShortcuts.PreviousPage.Gesture))
+            {
+                config.KeyboardShortcuts.PreviousPage.Gesture = "PageDown";
+            }
         }
 
         /// <summary>
@@ -191,6 +262,8 @@ namespace SongRequestDesktopV2Rewrite
 
                     if (config != null && config.Pages.Count > 0)
                     {
+                        EnsureKeyboardShortcutDefaults(config);
+
                         // Validate and fix any missing button arrays
                         foreach (var page in config.Pages)
                         {

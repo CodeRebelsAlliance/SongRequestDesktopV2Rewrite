@@ -1,0 +1,94 @@
+<Window x:Class="SongRequestDesktopV2Rewrite.LaunchOptionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Launch Options"
+        Width="700"
+        Height="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#0f0f10"
+        Foreground="White"
+        FontFamily="Segoe UI"
+        ResizeMode="NoResize"
+        Icon="/SRshortLogo.png"
+        PreviewMouseDown="Window_PreviewMouseDown"
+        PreviewKeyDown="Window_PreviewKeyDown">
+
+    <Border Background="#0f0f10" CornerRadius="15" BorderBrush="#2C2C2C" BorderThickness="1">
+        <Grid Margin="30">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="20"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="20"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="20"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Background="#1a1a1a"
+                    CornerRadius="8"
+                    BorderBrush="#2C2C2C"
+                    BorderThickness="1"
+                    HorizontalAlignment="Stretch">
+                <Grid ClipToBounds="True">
+                    <Border x:Name="ProgressFill"
+                            Background="#5B8DEF"
+                            CornerRadius="7"
+                            HorizontalAlignment="Left"
+                            Width="0"/>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="2" HorizontalAlignment="Center">
+                <TextBlock Text="Choose how you want to use SongRequests"
+                           FontSize="26"
+                           FontWeight="Bold"
+                           Foreground="#E0E0E0"
+                           TextAlignment="Center"/>
+                <TextBlock x:Name="AutoStartText"
+                           Margin="0,10,0,0"
+                           FontSize="14"
+                           Foreground="#9E9E9E"
+                           TextAlignment="Center"/>
+            </StackPanel>
+
+            <UniformGrid Grid.Row="4" Rows="2" Columns="2" Margin="0,10,0,10">
+                <Button x:Name="SongRequestsButton" Tag="SongRequests" Click="OptionButton_Click" Margin="8" Background="#202020" BorderBrush="#303030" BorderThickness="2" Cursor="Hand">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="10">
+                        <TextBlock Text="🎵" FontSize="38" HorizontalAlignment="Center" Foreground="White"/>
+                        <TextBlock Text="Song Requests" FontSize="20" FontWeight="SemiBold" Foreground="White" Margin="0,10,0,0" TextAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <Button x:Name="MusicPlayerButton" Tag="MusicPlayer" Click="OptionButton_Click" Margin="8" Background="#202020" BorderBrush="#303030" BorderThickness="2" Cursor="Hand">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="10">
+                        <TextBlock Text="▶️" FontSize="38" HorizontalAlignment="Center" Foreground="White"/>
+                        <TextBlock Text="Music Player" FontSize="20" FontWeight="SemiBold" Foreground="White" Margin="0,10,0,0" TextAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <Button x:Name="MusicShareButton" Tag="MusicShare" Click="OptionButton_Click" Margin="8" Background="#202020" BorderBrush="#303030" BorderThickness="2" Cursor="Hand">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="10">
+                        <TextBlock Text="📡" FontSize="38" HorizontalAlignment="Center" Foreground="White"/>
+                        <TextBlock Text="Music Share" FontSize="20" FontWeight="SemiBold" Foreground="White" Margin="0,10,0,0" TextAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <Button x:Name="SoundboardButton" Tag="Soundboard" Click="OptionButton_Click" Margin="8" Background="#202020" BorderBrush="#303030" BorderThickness="2" Cursor="Hand">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="10">
+                        <TextBlock Text="🎛️" FontSize="38" HorizontalAlignment="Center" Foreground="White"/>
+                        <TextBlock Text="Soundboard" FontSize="20" FontWeight="SemiBold" Foreground="White" Margin="0,10,0,0" TextAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </UniformGrid>
+
+            <CheckBox x:Name="RememberSelectionCheckBox"
+                      Grid.Row="6"
+                      Content="Remember selection"
+                      Foreground="White"
+                      FontSize="14"
+                      HorizontalAlignment="Left"/>
+        </Grid>
+    </Border>
+</Window>

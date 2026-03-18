@@ -1,0 +1,60 @@
+<Window x:Class="SongRequestDesktopV2Rewrite.KeybindCaptureDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Set Keyboard Shortcut"
+        Width="420"
+        Height="240"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="#121212"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="Press the key combination now"
+                   Foreground="White"
+                   FontSize="18"
+                   FontWeight="SemiBold"/>
+
+        <Border Grid.Row="2"
+                Background="#202020"
+                BorderBrush="#5B8DEF"
+                BorderThickness="2"
+                CornerRadius="8"
+                Padding="12">
+            <TextBlock x:Name="DetectedKeyText"
+                       Text="No shortcut detected"
+                       Foreground="White"
+                       FontSize="16"
+                       FontWeight="Bold"
+                       TextAlignment="Center"/>
+        </Border>
+
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button Content="Apply"
+                    Width="100"
+                    Height="34"
+                    Margin="0,0,8,0"
+                    Background="#4CAF50"
+                    Foreground="White"
+                    BorderThickness="0"
+                    Click="ApplyButton_Click"/>
+            <Button Content="Cancel"
+                    Width="100"
+                    Height="34"
+                    Background="#505050"
+                    Foreground="White"
+                    BorderThickness="0"
+                    Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

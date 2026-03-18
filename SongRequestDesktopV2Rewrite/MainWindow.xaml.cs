@@ -21,12 +21,13 @@ namespace SongRequestDesktopV2Rewrite
         private bool shown = false;
         private DispatcherTimer _progressTimer;
         private double _progress = 0;
+        private StartupMode _startupMode = StartupMode.SongRequests;
         private readonly string[] _statusMessages = new[]
         {
             "Initializing...",
             "Loading configuration...",
             "Checking for updates...",
-            "Preparing authentication...",
+            "Preparing launch options...",
             "Almost ready..."
         };
         private int _currentStatusIndex = 0;
@@ -95,7 +96,7 @@ namespace SongRequestDesktopV2Rewrite
             // Simulate loading stages
             await Task.Delay(500);  // Initial delay
 
-            // Check for updates before showing Authentication
+            // Check for updates before showing launch options and Authentication
             await CheckForUpdatesAsync();
 
             await Task.Delay(1500); // Let progress bar finish
@@ -106,6 +107,25 @@ namespace SongRequestDesktopV2Rewrite
             StatusText.Text = "Ready!";
 
             await Task.Delay(300); // Brief pause to show completion
+
+            // Launch options step before authentication
+            var launchState = LaunchOptionsStorage.Load();
+            var launchOptionsWindow = new LaunchOptionsWindow(launchState)
+            {
+                Owner = this
+            };
+
+            var launchResult = launchOptionsWindow.ShowDialog();
+            if (launchResult != true)
+            {
+                Close();
+                return;
+            }
+
+            _startupMode = launchOptionsWindow.SelectedMode;
+            launchState.LastSelectedMode = launchOptionsWindow.SelectedMode;
+            launchState.RememberSelection = launchOptionsWindow.RememberSelection;
+            LaunchOptionsStorage.Save(launchState);
 
             // Show authentication window
             var authForm = new Authentication();
@@ -160,8 +180,31 @@ namespace SongRequestDesktopV2Rewrite
             if (shown)
             {
                 shown = false;
+
                 var youtubeForm = new YoutubeForm(cookies);
                 youtubeForm.Show();
+
+                switch (_startupMode)
+                {
+                    case StartupMode.SongRequests:
+                        break;
+
+                    case StartupMode.MusicPlayer:
+                        youtubeForm.Hide();
+                        youtubeForm.ShowMusicPlayer();
+                        break;
+
+                    case StartupMode.MusicShare:
+                        youtubeForm.Hide();
+                        youtubeForm.ShowMusicPlayer();
+                        youtubeForm.ShowMusicShare();
+                        break;
+
+                    case StartupMode.Soundboard:
+                        youtubeForm.Hide();
+                        youtubeForm.ShowSoundboard();
+                        break;
+                }
             }
         }
 

@@ -150,10 +150,28 @@ namespace SongRequestDesktopV2Rewrite
 
         private async void MusicPlayerButton_Click(object sender, RoutedEventArgs e)
         {
+            ShowMusicPlayer();
+        }
+
+        public void ShowMusicPlayer()
+        {
             _musicPlayer.Show();
+            _musicPlayer.Activate();
+            _musicPlayer.Focus();
+        }
+
+        public void ShowMusicShare()
+        {
+            ShowMusicPlayer();
+            _musicPlayer.OpenMusicShareWindow();
         }
 
         private void SoundboardButton_Click(object sender, RoutedEventArgs e)
+        {
+            ShowSoundboard();
+        }
+
+        public void ShowSoundboard()
         {
             // Only allow one Soundboard window at a time
             if (_soundboardWindow != null && !_soundboardWindow.IsClosed())
@@ -834,7 +852,7 @@ namespace SongRequestDesktopV2Rewrite
             {
                 using var client = new System.Net.Http.HttpClient();
                 var bytes = await client.GetByteArrayAsync(url);
-                var ms = new MemoryStream(bytes);
+                using var ms = new MemoryStream(bytes);
                 var bmp = new BitmapImage();
                 bmp.BeginInit();
                 bmp.CacheOption = BitmapCacheOption.OnLoad;
