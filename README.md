@@ -1,9 +1,12 @@
 # SongRequestDesktopV2Rewrite
 ![test](https://badgen.net/badge/status/stable/green?icon=github)
-![test2](https://badgen.net/badge/latest/v2.1/blue?icon=version)
+![test2](https://badgen.net/badge/latest/v2.8/blue?icon=version)
 
 ![avast](https://i.ibb.co/pr2hn5z/Avast-Safe2.png) *
 # Desktop Application for managing Song Requests
+
+> [!IMPORTANT]
+> The program will not work without the companion web server available under [this github repository](https://github.com/CodeRebelsAlliance/NewSongRequests). The server needs to be reachable in the network this desktop application runs in.
 
 ## Installation
 
