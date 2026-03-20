@@ -1,0 +1,112 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for changelog
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publish (self-contained Windows)
+        run: >
+          dotnet publish
+          -c Release
+          -r win-x64
+          --self-contained true
+          /p:PublishSingleFile=false
+          -o publish
+
+      - name: Copy build-defaults into publish folder
+        run: |
+          if (Test-Path "build-defaults") {
+            Copy-Item -Path "build-defaults\*" -Destination "publish" -Recurse -Force
+          }
+
+      - name: Create ZIP (songrequest.zip)
+        run: |
+          powershell Compress-Archive -Path publish\* -DestinationPath songrequest.zip
+
+      # -------------------------
+      # VERSION CALCULATION
+      # -------------------------
+      - name: Get latest release version
+        id: version
+        shell: pwsh
+        run: |
+          $releases = Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" } `
+            -Uri "https://api.github.com/repos/${{ github.repository }}/releases"
+
+          if ($releases.Count -eq 0) {
+            $newVersion = "v1.0"
+            $previousTag = ""
+          } else {
+            $latest = $releases | Sort-Object {[version]($_.tag_name.TrimStart('v'))} -Descending | Select-Object -First 1
+            $tag = $latest.tag_name
+
+            Write-Host "Latest tag: $tag"
+
+            if ($tag -match "v(\d+)\.(\d+)") {
+              $major = [int]$Matches[1]
+              $minor = [int]$Matches[2] + 1
+              $newVersion = "v$major.$minor"
+              $previousTag = $tag
+            } else {
+              throw "Invalid version format: $tag"
+            }
+          }
+
+          echo "new_version=$newVersion" >> $env:GITHUB_OUTPUT
+          echo "previous_tag=$previousTag" >> $env:GITHUB_OUTPUT
+
+      # -------------------------
+      # CHANGELOG GENERATION
+      # -------------------------
+      - name: Generate changelog
+        id: changelog
+        shell: pwsh
+        run: |
+          if ("${{ steps.version.outputs.previous_tag }}" -eq "") {
+            $log = git log --pretty=format:"- %s"
+          } else {
+            $log = git log ${{ steps.version.outputs.previous_tag }}..HEAD --pretty=format:"- %s"
+          }
+
+          if (-not $log) {
+            $log = "- No changes"
+          }
+
+          $content = "## Changes`n$log"
+
+          echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
+          echo "$content" >> $env:GITHUB_OUTPUT
+          echo "EOF" >> $env:GITHUB_OUTPUT
+
+      # -------------------------
+      # CREATE RELEASE
+      # -------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.new_version }}
+          name: Release ${{ steps.version.outputs.new_version }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: songrequest.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
