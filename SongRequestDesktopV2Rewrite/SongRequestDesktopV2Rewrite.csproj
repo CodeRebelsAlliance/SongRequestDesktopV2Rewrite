@@ -23,13 +23,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CefSharp.Wpf.NETCore" Version="144.0.120" />
-    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="CefSharp.Wpf.NETCore" Version="146.0.100" />
+    <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="QRCoder" Version="1.7.0" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
-    <PackageReference Include="YoutubeExplode" Version="6.5.7" />
-    <PackageReference Include="YoutubeExplode.Converter" Version="6.5.7" />
+    <PackageReference Include="YoutubeExplode" Version="6.6.0" />
+    <PackageReference Include="YoutubeExplode.Converter" Version="6.6.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,15 +42,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="chromiumembeddedframework.runtime.win-arm64" Version="144.0.12" />
+    <PackageReference Update="chromiumembeddedframework.runtime.win-arm64" Version="146.0.10" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="chromiumembeddedframework.runtime.win-x64" Version="144.0.12" />
+    <PackageReference Update="chromiumembeddedframework.runtime.win-x64" Version="146.0.10" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="chromiumembeddedframework.runtime.win-x86" Version="144.0.12" />
+    <PackageReference Update="chromiumembeddedframework.runtime.win-x86" Version="146.0.10" />
   </ItemGroup>
 
 </Project>
