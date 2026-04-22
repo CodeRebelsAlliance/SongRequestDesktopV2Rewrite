@@ -326,11 +326,25 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <StackPanel Orientation="Horizontal" Grid.Row="0" VerticalAlignment="Center" Margin="8, 2">
-                        <TextBlock x:Name="ViewLabel" Text="Normal List" FontFamily="Segoe UI" FontWeight="Bold" FontSize="19"/>
-                        <Button x:Name="SortButton" Content="Sort by" Width="80" Height="28" Margin="12,0"
-                                Click="SortButton_Click" VerticalAlignment="Center" Style="{StaticResource SecondaryButton}"/>
-                    </StackPanel>
+                    <DockPanel Grid.Row="0" Margin="8, 4, 8, 2" LastChildFill="False">
+                        <TextBlock x:Name="ViewLabel" Text="Normal List" FontFamily="Segoe UI" FontWeight="Bold" FontSize="19" VerticalAlignment="Center"/>
+
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="Sort:" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="SortModeComboBox" Width="200" Height="28" Margin="0,0,12,0" SelectionChanged="SortModeComboBox_SelectionChanged">
+                                <ComboBoxItem Content="Newest sent in date" Tag="NewestSentInDate" IsSelected="True"/>
+                                <ComboBoxItem Content="Oldest sent in date" Tag="OldestSentInDate"/>
+                                <ComboBoxItem Content="Title (A-Z)" Tag="TitleAscending"/>
+                                <ComboBoxItem Content="Title (Z-A)" Tag="TitleDescending"/>
+                                <ComboBoxItem Content="Creator (A-Z)" Tag="CreatorAscending"/>
+                                <ComboBoxItem Content="Creator (Z-A)" Tag="CreatorDescending"/>
+                            </ComboBox>
+
+                            <TextBlock Text="Search:" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBox x:Name="ListSearchTextBox" Width="260" Height="28" Margin="0,0,8,0" TextChanged="ListSearchTextBox_TextChanged"/>
+                            <Button x:Name="ClearSearchButton" Content="Clear" Width="70" Height="28" Click="ClearSearchButton_Click" Style="{StaticResource SecondaryButton}"/>
+                        </StackPanel>
+                    </DockPanel>
 
                     <!-- Wrap the video list in a host Grid so we can toggle panel loading overlay -->
                     <Grid x:Name="VideoListHost" Grid.Row="1">

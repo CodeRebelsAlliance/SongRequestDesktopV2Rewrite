@@ -43,6 +43,31 @@ namespace SongRequestDesktopV2Rewrite
         public int refresh_seconds => ConfigService.Instance.Current.FetchingTimer;
         public static AppManager _appManager;
         private SoundboardWindow? _soundboardWindow;
+        private readonly Dictionary<string, SongPanelMetadata> _sentSongPanels = new Dictionary<string, SongPanelMetadata>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, SongPanelMetadata> _blacklistedSongPanels = new Dictionary<string, SongPanelMetadata>(StringComparer.OrdinalIgnoreCase);
+        private SongListSortMode _currentSortMode = SongListSortMode.NewestSentInDate;
+        private string _currentSearchText = string.Empty;
+
+        private enum SongListSortMode
+        {
+            NewestSentInDate,
+            OldestSentInDate,
+            TitleAscending,
+            TitleDescending,
+            CreatorAscending,
+            CreatorDescending
+        }
+
+        private class SongPanelMetadata
+        {
+            public string VideoId { get; set; } = string.Empty;
+            public Border Panel { get; set; } = null!;
+            public DateTime? SentInTimestampUtc { get; set; }
+            public DateTime AddedUtc { get; set; }
+            public string Title { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public string Message { get; set; } = string.Empty;
+        }
 
         public YoutubeForm(IReadOnlyList<System.Net.Cookie> cookies)
         {
@@ -94,6 +119,9 @@ namespace SongRequestDesktopV2Rewrite
                 }
             }
             catch { }
+
+            SortModeComboBox.SelectedIndex = 0;
+            ApplySortingAndFiltering();
         }
 
         private async void SubmitSongButton_Click(object sender, EventArgs e)
@@ -194,9 +222,93 @@ namespace SongRequestDesktopV2Rewrite
             _soundboardWindow.Show();
         }
 
-        private void SortButton_Click(object sender, EventArgs e)
-        { 
-            //SortEntries();
+        private void SortModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (SortModeComboBox.SelectedItem is ComboBoxItem selectedItem &&
+                selectedItem.Tag is string selectedTag &&
+                Enum.TryParse(selectedTag, out SongListSortMode parsedMode))
+            {
+                _currentSortMode = parsedMode;
+                ApplySortingAndFiltering();
+            }
+        }
+
+        private void ListSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            _currentSearchText = ListSearchTextBox.Text?.Trim() ?? string.Empty;
+            ApplySortingAndFiltering();
+        }
+
+        private void ClearSearchButton_Click(object sender, RoutedEventArgs e)
+        {
+            ListSearchTextBox.Clear();
+        }
+
+        private void ApplySortingAndFiltering()
+        {
+            ApplySortingAndFilteringToPanel(VideoListPanel, _sentSongPanels.Values);
+            ApplySortingAndFilteringToPanel(VideoBlackListPanel, _blacklistedSongPanels.Values);
+        }
+
+        private void ApplySortingAndFilteringToPanel(Panel hostPanel, IEnumerable<SongPanelMetadata> entries)
+        {
+            if (hostPanel == null) return;
+
+            var orderedEntries = OrderSongEntries(entries).ToList();
+            hostPanel.Children.Clear();
+
+            foreach (var entry in orderedEntries)
+            {
+                entry.Panel.Visibility = MatchesSearch(entry) ? Visibility.Visible : Visibility.Collapsed;
+                hostPanel.Children.Add(entry.Panel);
+            }
+        }
+
+        private IEnumerable<SongPanelMetadata> OrderSongEntries(IEnumerable<SongPanelMetadata> entries)
+        {
+            return _currentSortMode switch
+            {
+                SongListSortMode.NewestSentInDate => entries
+                    .OrderByDescending(e => e.SentInTimestampUtc ?? e.AddedUtc)
+                    .ThenByDescending(e => e.AddedUtc),
+                SongListSortMode.OldestSentInDate => entries
+                    .OrderBy(e => e.SentInTimestampUtc ?? e.AddedUtc)
+                    .ThenBy(e => e.AddedUtc),
+                SongListSortMode.TitleAscending => entries
+                    .OrderBy(e => e.Title ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(e => e.Creator ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+                SongListSortMode.TitleDescending => entries
+                    .OrderByDescending(e => e.Title ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ThenByDescending(e => e.Creator ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+                SongListSortMode.CreatorAscending => entries
+                    .OrderBy(e => e.Creator ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(e => e.Title ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+                SongListSortMode.CreatorDescending => entries
+                    .OrderByDescending(e => e.Creator ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ThenByDescending(e => e.Title ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+                _ => entries
+            };
+        }
+
+        private bool MatchesSearch(SongPanelMetadata entry)
+        {
+            if (string.IsNullOrWhiteSpace(_currentSearchText))
+            {
+                return true;
+            }
+
+            var query = _currentSearchText;
+            return ContainsIgnoreCase(entry.VideoId, query)
+                   || ContainsIgnoreCase(entry.Title, query)
+                   || ContainsIgnoreCase(entry.Creator, query)
+                   || ContainsIgnoreCase(entry.Message, query)
+                   || ContainsIgnoreCase(entry.SentInTimestampUtc?.ToLocalTime().ToString("g"), query);
+        }
+
+        private static bool ContainsIgnoreCase(string? source, string query)
+        {
+            return !string.IsNullOrWhiteSpace(source) &&
+                   source.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public class VideoData
@@ -246,8 +358,11 @@ namespace SongRequestDesktopV2Rewrite
                         bool isApproved = entry[2]?.ToObject<bool>() ?? false;
                         double? timestamp = entry[3]?.ToObject<double?>();
 
-                        DateTime timestampUtc = DateTime.MinValue;
-                        if (timestamp.HasValue) timestampUtc = DateTimeOffset.FromUnixTimeSeconds((long)timestamp.Value).UtcDateTime;
+                        DateTime? timestampUtc = null;
+                        if (timestamp.HasValue)
+                        {
+                            timestampUtc = DateTimeOffset.FromUnixTimeSeconds((long)timestamp.Value).UtcDateTime;
+                        }
 
                         if (fetchedYtids.Contains(ytid))
                         {
@@ -350,6 +465,7 @@ namespace SongRequestDesktopV2Rewrite
                     toRemove.Add(child);
                     fetchedYtids.Remove(ytid);
                     fetchedVideoData.Remove(ytid);
+                    _sentSongPanels.Remove(ytid);
                 }
             }
             foreach (var el in toRemove) VideoListPanel.Children.Remove(el);
@@ -363,9 +479,12 @@ namespace SongRequestDesktopV2Rewrite
                     AppendConsoleText("Removed Panel with Blacklisted ytid (remote) " + ytid);
                     toRemoveB.Add(child);
                     fetchedBlacklist.Remove(ytid);
+                    _blacklistedSongPanels.Remove(ytid);
                 }
             }
             foreach (var el in toRemoveB) VideoBlackListPanel.Children.Remove(el);
+
+            ApplySortingAndFiltering();
         }
 
         private async Task UpdateVideoPanelStatusAsync(string videoId, bool isApproved)
@@ -414,6 +533,8 @@ namespace SongRequestDesktopV2Rewrite
         // AddVideoPanelAsync: WPF version of the old WinForms dynamic panel creation + download flow
         public async Task AddVideoPanelAsync(string videoUrl, DateTime? timestamp = null, string message = null, bool? isApproved = null)
         {
+            string videoId = _youTubeService.GetYouTubeVideoId(videoUrl);
+
             // Create container Border similar to rounded panel
             var videoPanel = new Border
             {
@@ -426,7 +547,7 @@ namespace SongRequestDesktopV2Rewrite
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(10),
                 Margin = new Thickness(0, 0, 0, 10),
-                Tag = YoutubeService.ExtractVideoId(videoUrl)
+                Tag = videoId
             };
 
             var grid = new Grid();
@@ -508,7 +629,7 @@ namespace SongRequestDesktopV2Rewrite
             // Store video data for drag
             dragIcon.Tag = new DragSongData
             {
-                VideoId = YoutubeService.ExtractVideoId(videoUrl),
+                VideoId = videoId,
                 Title = "Loading...", // Will be updated later
                 FilePath = "" // Will be updated later
             };
@@ -535,8 +656,21 @@ namespace SongRequestDesktopV2Rewrite
 
             videoPanel.Child = grid;
 
-            // Add to the stack panel
-            VideoListPanel.Children.Insert(0, videoPanel);
+            if (_sentSongPanels.TryGetValue(videoId, out var existingEntry) && existingEntry.Panel != videoPanel)
+            {
+                VideoListPanel.Children.Remove(existingEntry.Panel);
+            }
+
+            var panelEntry = new SongPanelMetadata
+            {
+                VideoId = videoId,
+                Panel = videoPanel,
+                SentInTimestampUtc = timestamp?.ToUniversalTime(),
+                AddedUtc = DateTime.UtcNow,
+                Message = message ?? string.Empty
+            };
+            _sentSongPanels[videoId] = panelEntry;
+            ApplySortingAndFiltering();
 
             // Force layout
             await Task.Yield();
@@ -548,7 +682,6 @@ namespace SongRequestDesktopV2Rewrite
 
             try
             {
-                string videoId = _youTubeService.GetYouTubeVideoId(videoUrl);
                 string mp3FilePath = System.IO.Path.Combine(downloadPath, $"{videoId}.mp3");
 
                 if (File.Exists(mp3FilePath))
@@ -565,6 +698,9 @@ namespace SongRequestDesktopV2Rewrite
                     titleG = title;
                     creatorG = creator;
                     lengthG = length.ToString(@"hh\:mm\:ss");
+                    panelEntry.Title = title ?? string.Empty;
+                    panelEntry.Creator = creator ?? string.Empty;
+                    ApplySortingAndFiltering();
 
                     // Update drag icon data
                     if (dragIcon.Tag is DragSongData dragData)
@@ -596,6 +732,9 @@ namespace SongRequestDesktopV2Rewrite
                     titleG = title;
                     creatorG = creator;
                     lengthG = length.ToString(@"hh\:mm\:ss");
+                    panelEntry.Title = title ?? string.Empty;
+                    panelEntry.Creator = creator ?? string.Empty;
+                    ApplySortingAndFiltering();
 
                     // Update drag icon data
                     if (dragIcon.Tag is DragSongData dragData)
@@ -697,6 +836,9 @@ namespace SongRequestDesktopV2Rewrite
                     await SendOtherRequest("blacklist", videoId);
                     VideoListPanel.Children.Remove(videoPanel);
                     fetchedYtids.Remove(videoId);
+                    fetchedVideoData.Remove(videoId);
+                    _sentSongPanels.Remove(videoId);
+                    ApplySortingAndFiltering();
                     AppendConsoleText($"Blacklisted {videoId}");
                 };
 
@@ -709,6 +851,9 @@ namespace SongRequestDesktopV2Rewrite
                         if (downloadedFilePath != null && File.Exists(downloadedFilePath)) File.Delete(downloadedFilePath);
                         VideoListPanel.Children.Remove(videoPanel);
                         fetchedYtids.Remove(videoId);
+                        fetchedVideoData.Remove(videoId);
+                        _sentSongPanels.Remove(videoId);
+                        ApplySortingAndFiltering();
                         AppendConsoleText($"Deleted {videoId}");
                     }
                 };
@@ -949,8 +1094,19 @@ namespace SongRequestDesktopV2Rewrite
 
             videoPanel.Child = grid;
 
-            // add to WPF blacklist container
-            VideoBlackListPanel.Children.Add(videoPanel);
+            if (_blacklistedSongPanels.TryGetValue(ytid, out var existingEntry) && existingEntry.Panel != videoPanel)
+            {
+                VideoBlackListPanel.Children.Remove(existingEntry.Panel);
+            }
+
+            var panelEntry = new SongPanelMetadata
+            {
+                VideoId = ytid,
+                Panel = videoPanel,
+                AddedUtc = DateTime.UtcNow
+            };
+            _blacklistedSongPanels[ytid] = panelEntry;
+            ApplySortingAndFiltering();
 
             // Wire up unblacklist
             unblacklistButton.Click += async (s, e) =>
@@ -961,6 +1117,8 @@ namespace SongRequestDesktopV2Rewrite
                     await SendOtherRequest("unblacklist", ytid);
                     VideoBlackListPanel.Children.Remove(videoPanel);
                     fetchedBlacklist.Remove(ytid);
+                    _blacklistedSongPanels.Remove(ytid);
+                    ApplySortingAndFiltering();
 
                     // Try to call FetchData if available
                     var mi = this.GetType().GetMethod("FetchData", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
@@ -1005,6 +1163,9 @@ namespace SongRequestDesktopV2Rewrite
                 titleText.Text = string.IsNullOrEmpty(title) ? "Blacklisted Video" : title;
                 creatorText.Text = creator ?? string.Empty;
                 lengthText.Text = length.ToString();
+                panelEntry.Title = title ?? string.Empty;
+                panelEntry.Creator = creator ?? string.Empty;
+                ApplySortingAndFiltering();
             }
             catch (Exception ex)
             {
