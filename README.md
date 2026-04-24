@@ -1,6 +1,6 @@
 # SongRequestDesktopV2Rewrite
 ![test](https://badgen.net/badge/status/stable/green?icon=github)
-![test2](https://badgen.net/badge/latest/v2.8/blue?icon=version)
+![test2](https://badgen.net/badge/latest/v2.9/blue?icon=version)
 
 ![avast](https://i.ibb.co/pr2hn5z/Avast-Safe2.png) *
 # Desktop Application for managing Song Requests
