@@ -19,6 +19,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _normalizeVolume = false;
         private float _defaultVolume = -1f; // -1 means not set
         private bool _normalizationActive = false;
+        private bool _autoEnqueue = false;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -80,6 +81,12 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _normalizationActive;
             set => SetField(ref _normalizationActive, value);
+        }
+
+        public bool AutoEnqueue
+        {
+            get => _autoEnqueue;
+            set => SetField(ref _autoEnqueue, value);
         }
 
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

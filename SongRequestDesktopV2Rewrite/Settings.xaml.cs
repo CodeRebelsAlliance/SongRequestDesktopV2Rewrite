@@ -37,6 +37,7 @@ namespace SongRequestDesktopV2Rewrite
             var requestUrlBox = GetControl<TextBox>("RequestUrlBox");
             var fullscreenCheckBox = GetControl<CheckBox>("PresentationFullscreenCheckBox");
             var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
+            var autoEnqueueCheckBox = GetControl<CheckBox>("AutoEnqueueCheckBox");
 
             if (fetchingBox != null) fetchingBox.Text = cfg.FetchingTimer.ToString();
             if (threadsBox != null) threadsBox.Text = cfg.Threads.ToString();
@@ -46,6 +47,7 @@ namespace SongRequestDesktopV2Rewrite
             if (requestUrlBox != null) requestUrlBox.Text = cfg.RequestUrl;
             if (fullscreenCheckBox != null) fullscreenCheckBox.IsChecked = cfg.PresentationFullscreen;
             if (normalizeVolumeCheckBox != null) normalizeVolumeCheckBox.IsChecked = cfg.NormalizeVolume;
+            if (autoEnqueueCheckBox != null) autoEnqueueCheckBox.IsChecked = cfg.AutoEnqueue;
 
             // Fetch server-side sendin allowed status
             _ = FetchSendinAllowedStatusAsync();
@@ -61,6 +63,7 @@ namespace SongRequestDesktopV2Rewrite
             var requestUrlBox = GetControl<TextBox>("RequestUrlBox");
             var fullscreenCheckBox = GetControl<CheckBox>("PresentationFullscreenCheckBox");
             var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
+            var autoEnqueueCheckBox = GetControl<CheckBox>("AutoEnqueueCheckBox");
             var statusTb = GetControl<TextBlock>("StatusText");
 
             try
@@ -78,6 +81,7 @@ namespace SongRequestDesktopV2Rewrite
                     cfg.RequestUrl = requestUrlBox?.Text ?? "https://example.com/request";
                     cfg.PresentationFullscreen = fullscreenCheckBox?.IsChecked ?? false;
                     cfg.NormalizeVolume = normalizeVolumeCheckBox?.IsChecked ?? false;
+                    cfg.AutoEnqueue = autoEnqueueCheckBox?.IsChecked ?? false;
 
                     // If normalization is turned off, deactivate it
                     if (!cfg.NormalizeVolume)
