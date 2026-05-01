@@ -180,6 +180,7 @@
                     <StackPanel Orientation="Vertical" Margin="12,0,0,0">
                         <TextBlock Text="Audio Settings"/>
                         <CheckBox x:Name="NormalizeVolumeCheckBox" Content="Normalize Volume" Foreground="White" VerticalAlignment="Center" Margin="0,6,0,0"/>
+                        <CheckBox x:Name="AutoEnqueueCheckBox" Content="Auto Enqueue" Foreground="White" VerticalAlignment="Center" Margin="0,6,0,0" ToolTip="Automatically add newly sent in songs to the music player queue"/>
                     </StackPanel>
 
                     <StackPanel Orientation="Vertical" Margin="12,0,0,0">

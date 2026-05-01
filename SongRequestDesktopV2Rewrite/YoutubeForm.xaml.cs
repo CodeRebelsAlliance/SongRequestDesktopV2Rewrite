@@ -45,6 +45,7 @@ namespace SongRequestDesktopV2Rewrite
         private SoundboardWindow? _soundboardWindow;
         private readonly Dictionary<string, SongPanelMetadata> _sentSongPanels = new Dictionary<string, SongPanelMetadata>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, SongPanelMetadata> _blacklistedSongPanels = new Dictionary<string, SongPanelMetadata>(StringComparer.OrdinalIgnoreCase);
+        private bool _initialLoadComplete = false;
         private SongListSortMode _currentSortMode = SongListSortMode.NewestSentInDate;
         private string _currentSearchText = string.Empty;
 
@@ -449,6 +450,9 @@ namespace SongRequestDesktopV2Rewrite
             // Remove panels not present anymore
             RemoveNonExistingVideoPanels(newFetchedYtids, newFetchedBLYtids);
 
+            // Mark that the initial load has completed so subsequent new songs can be auto-enqueued
+            _initialLoadComplete = true;
+
             currently_fetching = false;
         }
 
@@ -746,6 +750,13 @@ namespace SongRequestDesktopV2Rewrite
                     string thumbnailUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
                     var bmp = await LoadBitmapImageFromUrl(thumbnailUrl);
                     if (bmp != null) thumbnail.Source = bmp;
+
+                    // Auto Enqueue: if enabled and initial load is done, this is a newly sent-in song
+                    if (_initialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true)
+                    {
+                        _musicPlayer.AddSong(new Song(titleG, creatorG, thumbnail, length, downloadedFilePath));
+                        AppendConsoleText($"🎵 Auto-enqueued: {titleG}", Brushes.LightGreen);
+                    }
                 }
 
                 if (isApproved.HasValue && isApproved.Value)
