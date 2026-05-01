@@ -754,7 +754,7 @@ namespace SongRequestDesktopV2Rewrite
                     // Auto Enqueue: if enabled and initial load is done, this is a newly sent-in song
                     if (_initialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true)
                     {
-                        _musicPlayer.AddSongExternal(new Song(titleG, creatorG, thumbnail, lengthG, downloadedFilePath));
+                        _musicPlayer.AddSong(new Song(titleG, creatorG, thumbnail, length, downloadedFilePath));
                         AppendConsoleText($"🎵 Auto-enqueued: {titleG}", Brushes.LightGreen);
                     }
                 }

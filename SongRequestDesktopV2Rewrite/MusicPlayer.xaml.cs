@@ -1416,6 +1416,29 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
+        public void AddSong(Song s)
+        {
+            if (s == null) return;
+
+            try
+            {
+                Queue.Add(s);
+                ComputeQueueTimings();
+                AnimateListItem(s);
+
+                // Calculate loudness in background if normalization is enabled
+                var cfg = ConfigService.Instance.Current;
+                if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+                {
+                    _ = Task.Run(() => CalculateSongLoudness(s));
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Unable to add song to queue: " + ex.Message);
+            }
+        }
+
         public void AddNextSongExternal(Song s)
         {
             // the external song does NOT provide duration, so we need to probe the file
