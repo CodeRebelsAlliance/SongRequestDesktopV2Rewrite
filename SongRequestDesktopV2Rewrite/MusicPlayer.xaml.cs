@@ -14,6 +14,7 @@ using NAudio.Wave.SampleProviders;
 using System.Collections.Generic;
 using CefSharp.DevTools.HeapProfiler;
 using TagLib;
+using Newtonsoft.Json;
 
 namespace SongRequestDesktopV2Rewrite
 {
@@ -64,6 +65,34 @@ namespace SongRequestDesktopV2Rewrite
         // Visualization window
         private VisualizationWindow? _visualizationWindow = null;
 
+        // Crash-recovery state persistence
+        private DispatcherTimer _stateTimer;
+
+        private class SongSnapshot
+        {
+            public string Title { get; set; } = "";
+            public string Artist { get; set; } = "";
+            public string SongPath { get; set; } = "";
+            public double DurationSeconds { get; set; }
+            public double PerceivedLoudness { get; set; } = -1;
+        }
+
+        private class PlayerSnapshot
+        {
+            public List<SongSnapshot> Songs { get; set; } = new();
+            public double PlaybackPositionSeconds { get; set; }
+            public float Volume { get; set; }
+            public DateTime SavedAt { get; set; }
+        }
+
+        private static string GetPlayerStatePath()
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var appFolder = Path.Combine(appData, "SongRequestDesktopV2Rewrite");
+            if (!Directory.Exists(appFolder)) Directory.CreateDirectory(appFolder);
+            return Path.Combine(appFolder, "player_state.json");
+        }
+
         public MusicPlayer()
         {
             InitializeComponent();
@@ -100,6 +129,13 @@ namespace SongRequestDesktopV2Rewrite
             UpdateAutopilotBadge();
 
             ConfigService.Instance.Current.PropertyChanged += Config_PropertyChanged;
+
+            // Start 2-minute auto-save timer for crash recovery
+            _stateTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(2) };
+            _stateTimer.Tick += (s, e) => SavePlayerState();
+            _stateTimer.Start();
+
+            Loaded += MusicPlayer_Loaded;
         }
 
         private void Config_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -1191,6 +1227,8 @@ namespace SongRequestDesktopV2Rewrite
 
         protected override void OnClosed(EventArgs e)
         {
+            _stateTimer?.Stop();
+            DeletePlayerState();
             base.OnClosed(e);
             StopPlayback();
         }
@@ -1665,6 +1703,153 @@ namespace SongRequestDesktopV2Rewrite
             System.Diagnostics.Debug.WriteLine($"Normalized volume for {song.Title}: {normalizedVolume:F2} (base: {baseVolume:F2}, loudness: {song.PerceivedLoudness:F1} LUFS)");
 
             return normalizedVolume;
+        }
+
+        // ── Crash-recovery helpers ────────────────────────────────────────────────
+
+        private async void MusicPlayer_Loaded(object sender, RoutedEventArgs e)
+        {
+            await CheckAndRestorePlayerState();
+        }
+
+        private async Task CheckAndRestorePlayerState()
+        {
+            var path = GetPlayerStatePath();
+            if (!System.IO.File.Exists(path)) return;
+
+            var result = MessageBox.Show(
+                "A previous music player session was found.\n" +
+                "This may have been caused by an unexpected shutdown or crash.\n\n" +
+                "Would you like to restore the queue and playback position?",
+                "Restore Previous Session",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                DeletePlayerState();
+                return;
+            }
+
+            try
+            {
+                var json = System.IO.File.ReadAllText(path);
+                var snapshot = JsonConvert.DeserializeObject<PlayerSnapshot>(json);
+
+                if (snapshot?.Songs == null || snapshot.Songs.Count == 0)
+                {
+                    DeletePlayerState();
+                    return;
+                }
+
+                foreach (var ss in snapshot.Songs)
+                {
+                    if (!System.IO.File.Exists(ss.SongPath)) continue;
+
+                    try
+                    {
+                        using var afr = new AudioFileReader(ss.SongPath);
+                        var duration = afr.TotalTime;
+
+                        var img = new Image();
+                        img.Source = new BitmapImage(new Uri("pack://application:,,,/SRshortLogo.png"));
+
+                        try
+                        {
+                            var tfile = TagLib.File.Create(ss.SongPath);
+                            var pic = tfile.Tag.Pictures?.FirstOrDefault();
+                            if (pic?.Data?.Data != null && pic.Data.Data.Length > 0)
+                            {
+                                using var ms = new MemoryStream(pic.Data.Data);
+                                var bmp = new BitmapImage();
+                                bmp.BeginInit();
+                                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                                bmp.StreamSource = ms;
+                                bmp.EndInit();
+                                bmp.Freeze();
+                                img.Source = bmp;
+                            }
+                        }
+                        catch { }
+
+                        var song = new Song(ss.Title, ss.Artist, img, duration, ss.SongPath)
+                        {
+                            PerceivedLoudness = ss.PerceivedLoudness
+                        };
+                        Queue.Add(song);
+                    }
+                    catch { }
+                }
+
+                if (snapshot.Volume > 0)
+                {
+                    _volume = snapshot.Volume;
+                    VolumeSlider.Value = _volume;
+                }
+
+                if (Queue.Count > 0)
+                {
+                    PlaySong(Queue[0]);
+
+                    double restorePos = snapshot.PlaybackPositionSeconds;
+                    if (restorePos > 0 && _currentReader != null &&
+                        restorePos < _currentReader.TotalTime.TotalSeconds)
+                    {
+                        _currentReader.CurrentTime = TimeSpan.FromSeconds(restorePos);
+                    }
+                }
+
+                DeletePlayerState();
+                ComputeQueueTimings();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to restore player state: {ex.Message}");
+                DeletePlayerState();
+            }
+        }
+
+        private void SavePlayerState()
+        {
+            try
+            {
+                if (Queue.Count == 0) return;
+
+                var snapshot = new PlayerSnapshot
+                {
+                    Songs = Queue.Select(s => new SongSnapshot
+                    {
+                        Title = s.Title,
+                        Artist = s.Artist,
+                        SongPath = s.songPath,
+                        DurationSeconds = s.Duration.TotalSeconds,
+                        PerceivedLoudness = s.PerceivedLoudness
+                    }).ToList(),
+                    PlaybackPositionSeconds = _currentReader?.CurrentTime.TotalSeconds ?? 0,
+                    Volume = _volume,
+                    SavedAt = DateTime.Now
+                };
+
+                var json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
+                System.IO.File.WriteAllText(GetPlayerStatePath(), json);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to save player state: {ex.Message}");
+            }
+        }
+
+        private void DeletePlayerState()
+        {
+            try
+            {
+                var path = GetPlayerStatePath();
+                if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to delete player state: {ex.Message}");
+            }
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
