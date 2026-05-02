@@ -1781,7 +1781,7 @@ namespace SongRequestDesktopV2Rewrite
                     catch { }
                 }
 
-                if (snapshot.Volume > 0)
+                if (snapshot.Volume >= 0 && snapshot.Volume <= 1)
                 {
                     _volume = snapshot.Volume;
                     VolumeSlider.Value = _volume;
@@ -1827,7 +1827,7 @@ namespace SongRequestDesktopV2Rewrite
                     }).ToList(),
                     PlaybackPositionSeconds = _currentReader?.CurrentTime.TotalSeconds ?? 0,
                     Volume = _volume,
-                    SavedAt = DateTime.Now
+                    SavedAt = DateTime.UtcNow
                 };
 
                 var json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
