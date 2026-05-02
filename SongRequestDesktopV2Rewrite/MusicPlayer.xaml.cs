@@ -97,6 +97,7 @@ namespace SongRequestDesktopV2Rewrite
             // Setup normalize volume button visibility
             UpdateNormalizeVolumeButtonVisibility();
             UpdateNormalizationStatus();
+            UpdateAutopilotBadge();
 
             ConfigService.Instance.Current.PropertyChanged += Config_PropertyChanged;
         }
@@ -146,6 +147,10 @@ namespace SongRequestDesktopV2Rewrite
                 else if (e.PropertyName == nameof(Config.DefaultVolume))
                 {
                     UpdateNormalizationStatus();
+                }
+                else if (e.PropertyName == nameof(Config.AutoEnqueue))
+                {
+                    UpdateAutopilotBadge();
                 }
             });
         }
@@ -1559,6 +1564,15 @@ namespace SongRequestDesktopV2Rewrite
                 normText.Text = "NORM OFF";
                 normText.Foreground = new SolidColorBrush(Colors.Black);
             }
+        }
+
+        private void UpdateAutopilotBadge()
+        {
+            var badge = FindName("AutopilotBadgeOuter") as Border;
+            if (badge == null) return;
+
+            bool enabled = ConfigService.Instance.Current?.AutoEnqueue == true;
+            badge.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private async Task CalculateLoudnessForQueueAsync()

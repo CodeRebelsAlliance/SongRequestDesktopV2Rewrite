@@ -517,6 +517,32 @@
                                    FontWeight="SemiBold"
                                    Foreground="White"/>
                     </Border>
+
+                    <!-- Autopilot Mode badge with gradient border -->
+                    <Border x:Name="AutopilotBadgeOuter"
+                            Margin="8,0,0,0"
+                            CornerRadius="8"
+                            Padding="2"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                        <Border.BorderBrush>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#FF5B8DEF" Offset="0.0"/>
+                                <GradientStop Color="#FFDA70D6" Offset="0.5"/>
+                                <GradientStop Color="#FFFF8C00" Offset="1.0"/>
+                            </LinearGradientBrush>
+                        </Border.BorderBrush>
+                        <Border.BorderThickness>2</Border.BorderThickness>
+                        <Border x:Name="AutopilotBadgeInner"
+                                Background="#1E1E2E"
+                                CornerRadius="6"
+                                Padding="10,4">
+                            <TextBlock Text="✈ Autopilot"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Foreground="White"/>
+                        </Border>
+                    </Border>
                 </StackPanel>
 
                 <!-- Set Default Volume button (visible only when normalize is enabled) -->

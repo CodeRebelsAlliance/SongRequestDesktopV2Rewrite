@@ -180,7 +180,20 @@
                     <StackPanel Orientation="Vertical" Margin="12,0,0,0">
                         <TextBlock Text="Audio Settings"/>
                         <CheckBox x:Name="NormalizeVolumeCheckBox" Content="Normalize Volume" Foreground="White" VerticalAlignment="Center" Margin="0,6,0,0"/>
-                        <CheckBox x:Name="AutoEnqueueCheckBox" Content="Auto Enqueue" Foreground="White" VerticalAlignment="Center" Margin="0,6,0,0" ToolTip="Automatically add newly sent in songs to the music player queue"/>
+                        <!-- Autopilot Mode setting with gradient border -->
+                        <Border Margin="0,6,0,0" CornerRadius="8" Padding="2" VerticalAlignment="Center">
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#FF5B8DEF" Offset="0.0"/>
+                                    <GradientStop Color="#FFDA70D6" Offset="0.5"/>
+                                    <GradientStop Color="#FFFF8C00" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <Border.BorderThickness>2</Border.BorderThickness>
+                            <Border Background="#1E1E2E" CornerRadius="6" Padding="8,4">
+                                <CheckBox x:Name="AutoEnqueueCheckBox" Content="✈ Autopilot Mode" Foreground="White" VerticalAlignment="Center" ToolTip="Automatically add newly sent in songs to the music player queue"/>
+                            </Border>
+                        </Border>
                     </StackPanel>
 
                     <StackPanel Orientation="Vertical" Margin="12,0,0,0">
