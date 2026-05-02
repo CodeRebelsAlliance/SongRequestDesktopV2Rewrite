@@ -200,6 +200,8 @@
                         <CheckBox x:Name="ShareMetadataOnlyCheckBox" Content="📊 Metadata Only"
                                   IsChecked="False" Foreground="White" FontSize="14"
                                   HorizontalAlignment="Center" Margin="0,20,0,0"
+                                  Checked="ShareMetadataOnlyCheckBox_Changed"
+                                  Unchecked="ShareMetadataOnlyCheckBox_Changed"
                                   ToolTip="When checked, only song metadata (title, artist, lyrics) will be streamed. Audio will not be shared."/>
 
                         <!-- Start/Stop Share Button -->
