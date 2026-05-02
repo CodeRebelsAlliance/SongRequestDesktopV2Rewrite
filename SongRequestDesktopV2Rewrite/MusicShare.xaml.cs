@@ -40,7 +40,8 @@ namespace SongRequestDesktopV2Rewrite
         // State
         private bool _isSharing = false;
         private bool _isReceiving = false;
-        // Cached on the UI thread so the NAudio audio callback can read it without a cross-thread UI access
+        // Cached on the UI thread so the NAudio audio callback can read it without a cross-thread UI access.
+        // Must only be written from the UI thread; volatile ensures the audio thread sees the latest value.
         private volatile bool _metadataOnlyMode = false;
         private DateTime _sessionStartTime;
         private int _bytesSent = 0;
@@ -129,7 +130,8 @@ namespace SongRequestDesktopV2Rewrite
 
         private void ShareMetadataOnlyCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            // Keep the cached field in sync so the audio thread can read it safely
+            // Always runs on the UI thread (WPF routed events). Writes to _metadataOnlyMode are
+            // atomic for bool and volatile ensures the audio thread sees the updated value immediately.
             _metadataOnlyMode = ShareMetadataOnlyCheckBox.IsChecked == true;
         }
 
