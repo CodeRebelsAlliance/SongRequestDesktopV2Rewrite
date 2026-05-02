@@ -196,9 +196,15 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Metadata Only Toggle -->
+                        <CheckBox x:Name="ShareMetadataOnlyCheckBox" Content="📊 Metadata Only"
+                                  IsChecked="False" Foreground="White" FontSize="14"
+                                  HorizontalAlignment="Center" Margin="0,20,0,0"
+                                  ToolTip="When checked, only song metadata (title, artist, lyrics) will be streamed. Audio will not be shared."/>
+
                         <!-- Start/Stop Share Button -->
                         <Button x:Name="StartShareButton" Content="Start Sharing" Width="200" Height="40" 
-                                Margin="0,20,0,0" Style="{StaticResource AccentButton}" 
+                                Margin="0,12,0,0" Style="{StaticResource AccentButton}" 
                                 Click="StartShareButton_Click" FontSize="16"/>
                     </StackPanel>
                 </Border>
