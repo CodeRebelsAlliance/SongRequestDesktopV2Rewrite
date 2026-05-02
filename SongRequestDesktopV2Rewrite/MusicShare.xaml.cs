@@ -174,6 +174,9 @@ namespace SongRequestDesktopV2Rewrite
                 _statsUpdateTimer.Tick += StatsUpdateTimer_Tick;
                 _statsUpdateTimer.Start();
 
+                // Disable metadata-only toggle while sharing
+                ShareMetadataOnlyCheckBox.IsEnabled = false;
+
                 // Subscribe to MusicPlayer events
                 if (_musicPlayer != null)
                 {
@@ -194,6 +197,9 @@ namespace SongRequestDesktopV2Rewrite
         private async void MusicPlayer_AudioSamplesCaptured(object? sender, float[] samples)
         {
             if (!_isSharing) return;
+
+            // Skip audio streaming when metadata-only mode is active
+            if (ShareMetadataOnlyCheckBox.IsChecked == true) return;
 
             try
             {
@@ -283,6 +289,9 @@ namespace SongRequestDesktopV2Rewrite
                 ShareStatusBorder.Visibility = Visibility.Collapsed;
                 StartShareButton.Content = "Start Sharing";
                 ShareIdInput.IsEnabled = true;
+
+                // Re-enable metadata-only toggle
+                ShareMetadataOnlyCheckBox.IsEnabled = true;
 
                 _isSharing = false;
                 _bytesSent = 0;
@@ -381,7 +390,10 @@ namespace SongRequestDesktopV2Rewrite
             if (_isSharing)
             {
                 var elapsed = DateTime.Now - _sessionStartTime;
-                ShareStatsText.Text = $"Streaming [Large Chunks] • {elapsed:mm\\:ss} elapsed • {_bytesSent / 1024}KB sent";
+                string streamMode = (ShareMetadataOnlyCheckBox.IsChecked == true)
+                    ? "Metadata Only"
+                    : $"Large Chunks • {_bytesSent / 1024}KB sent";
+                ShareStatsText.Text = $"Streaming [{streamMode}] • {elapsed:mm\\:ss} elapsed";
             }
         }
 
