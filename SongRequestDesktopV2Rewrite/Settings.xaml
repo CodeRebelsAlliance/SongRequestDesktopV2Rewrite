@@ -1,16 +1,22 @@
-﻿<Window x:Class="SongRequestDesktopV2Rewrite.Settings"
+<Window x:Class="SongRequestDesktopV2Rewrite.Settings"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SongRequestDesktopV2Rewrite"
         mc:Ignorable="d"
-        Title="Settings - SongRequest" Height="520" Width="1050" Background="#121212" Foreground="White" WindowStartupLocation="CenterOwner">
+        Title="Settings - SongRequest"
+        Width="1120"
+        Height="700"
+        MinWidth="900"
+        MinHeight="620"
+        WindowStartupLocation="CenterOwner"
+        Background="#121212"
+        Foreground="White">
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-        <!-- Minimal set of shared brushes and styles copied from YoutubeForm to keep styling consistent -->
         <SolidColorBrush x:Key="WindowBackground" Color="#121212"/>
         <SolidColorBrush x:Key="PanelBackground" Color="#202020"/>
+        <SolidColorBrush x:Key="PanelBackgroundLight" Color="#292929"/>
         <SolidColorBrush x:Key="ControlBorder" Color="#303030"/>
         <SolidColorBrush x:Key="AccentButtonBackground" Color="#FF5B8DEF"/>
         <SolidColorBrush x:Key="AccentButtonHover" Color="#FF7AD1FF"/>
@@ -23,7 +29,6 @@
         <SolidColorBrush x:Key="SecondaryButtonBackground" Color="#505050"/>
         <SolidColorBrush x:Key="SecondaryButtonHover" Color="#6A6A6A"/>
 
-        <!-- Rounded button base -->
         <Style TargetType="Button" x:Key="RoundedButton">
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -116,144 +121,352 @@
         </Style>
 
         <Style TargetType="TextBox" x:Key="RoundedTextBox">
-            <Setter Property="Background" Value="DimGray"/>
+            <Setter Property="Background" Value="#2A2A2A"/>
             <Setter Property="Foreground" Value="White"/>
+            <Setter Property="CaretBrush" Value="White"/>
             <Setter Property="Padding" Value="10,6"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="MinHeight" Value="32"/>
             <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                        <Border x:Name="TextBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
                             <ScrollViewer x:Name="PART_ContentHost" Margin="0"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="TextBorder" Property="BorderBrush" Value="#FF7AD1FF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
+        <Style TargetType="PasswordBox" x:Key="RoundedPasswordBox">
+            <Setter Property="Background" Value="#2A2A2A"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="PasswordBox">
+                        <Border x:Name="PasswordBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                            <ScrollViewer x:Name="PART_ContentHost"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="PasswordBorder" Property="BorderBrush" Value="#FF7AD1FF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="RoundedComboBox" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="#2A2A2A"/>
+            <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="MinHeight" Value="32"/>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="#2A2A2A"/>
+        </Style>
+
         <Style TargetType="Border" x:Key="CardBorder">
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Background" Value="{StaticResource PanelBackground}"/>
-            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Padding" Value="14"/>
             <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style x:Key="SettingsTabControlStyle" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
+        <Style x:Key="SettingsTabItemStyle" TargetType="TabItem">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{StaticResource PanelBackgroundLight}"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{StaticResource ControlBorder}"
+                                BorderThickness="1"
+                                CornerRadius="8,8,0,0">
+                            <ContentPresenter x:Name="ContentSite" ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource AccentButtonBackground}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource SecondaryButtonHover}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+
+        <Style x:Key="HintTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#BFBFBF"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,2,0,10"/>
+            <Setter Property="FontSize" Value="12"/>
         </Style>
     </Window.Resources>
 
     <Grid Margin="12">
-        <Border Style="{StaticResource CardBorder}" Padding="14">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-                <TextBlock Text="Application Settings" FontFamily="Segoe UI Black" FontSize="20" HorizontalAlignment="Left" />
+        <Border Style="{StaticResource CardBorder}" Padding="14,10">
+            <StackPanel>
+                <TextBlock Text="Application Settings" FontFamily="Segoe UI Black" FontSize="22"/>
+                <TextBlock Text="Organized by category. Changes are only written when you click Save."
+                           Style="{StaticResource HintTextStyle}"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+        </Border>
 
-                <!-- Config fields -->
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,12" HorizontalAlignment="Left" VerticalAlignment="Top">
-                    <StackPanel Orientation="Vertical" Margin="0,0,12,0">
-                        <TextBlock Text="Fetching Timer (s)"/>
-                        <TextBox x:Name="FetchingTimerBox" Width="140" Style="{StaticResource RoundedTextBox}"/>
-                    </StackPanel>
+        <Border Grid.Row="1" Style="{StaticResource CardBorder}" Margin="0,10,0,10" Padding="12">
+            <TabControl Style="{StaticResource SettingsTabControlStyle}">
+                <TabControl.Resources>
+                    <Style TargetType="TabItem" BasedOn="{StaticResource SettingsTabItemStyle}"/>
+                </TabControl.Resources>
 
-                    <StackPanel Orientation="Vertical" Margin="0,0,12,0">
-                        <TextBlock Text="Concurrent Threads"/>
-                        <TextBox x:Name="ThreadsBox" Width="140" Style="{StaticResource RoundedTextBox}"/>
-                    </StackPanel>
+                <TabItem Header="General">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <WrapPanel Margin="0,10,0,0" ItemWidth="500">
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,10,10">
+                                <StackPanel>
+                                    <TextBlock Text="Runtime" FontWeight="Bold" FontSize="16"/>
+                                    <TextBlock Text="Controls how often data is refreshed and how many parallel tasks run."
+                                               Style="{StaticResource HintTextStyle}"/>
 
-                    <StackPanel Orientation="Vertical">
-                        <TextBlock Text="Default Sorting"/>
-                        <TextBox x:Name="DefaultSortingBox" Width="200" Style="{StaticResource RoundedTextBox}"/>
-                    </StackPanel>
+                                    <TextBlock Text="Fetching Timer (seconds)" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="FetchingTimerBox" Style="{StaticResource RoundedTextBox}"/>
+                                    <TextBlock Text="Lower values refresh more frequently but can increase API usage."
+                                               Style="{StaticResource HintTextStyle}"/>
 
-                    <StackPanel Orientation="Vertical" Margin="12,0,0,0">
-                        <TextBlock Text="Presentation Mode"/>
-                        <CheckBox x:Name="PresentationFullscreenCheckBox" Content="Fullscreen" Foreground="White" VerticalAlignment="Center" Margin="0,6,0,0"/>
-                    </StackPanel>
+                                    <TextBlock Text="Concurrent Threads" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="ThreadsBox" Style="{StaticResource RoundedTextBox}"/>
+                                    <TextBlock Text="Use higher values only if your machine and network can handle it."
+                                               Style="{StaticResource HintTextStyle}"/>
 
-                    <StackPanel Orientation="Vertical" Margin="12,0,0,0">
-                        <TextBlock Text="Audio Settings"/>
-                        <CheckBox x:Name="NormalizeVolumeCheckBox" Content="Normalize Volume" Foreground="White" VerticalAlignment="Center" Margin="0,6,0,0"/>
-                        <!-- Autopilot Mode setting with gradient border -->
-                        <Border Margin="0,6,0,0" CornerRadius="8" Padding="2" VerticalAlignment="Center">
-                            <Border.BorderBrush>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#FF5B8DEF" Offset="0.0"/>
-                                    <GradientStop Color="#FFDA70D6" Offset="0.5"/>
-                                    <GradientStop Color="#FFFF8C00" Offset="1.0"/>
-                                </LinearGradientBrush>
-                            </Border.BorderBrush>
-                            <Border.BorderThickness>2</Border.BorderThickness>
-                            <Border Background="#1E1E2E" CornerRadius="6" Padding="8,4">
-                                <CheckBox x:Name="AutoEnqueueCheckBox" Content="✈ Autopilot Mode" Foreground="White" VerticalAlignment="Center" ToolTip="Automatically add newly sent in songs to the music player queue"/>
+                                    <TextBlock Text="Default Sorting (legacy value)" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="DefaultSortingBox" Style="{StaticResource RoundedTextBox}"/>
+                                    <TextBlock Text="Kept for compatibility with existing config and server behavior."
+                                               Style="{StaticResource HintTextStyle}"/>
+                                </StackPanel>
                             </Border>
-                        </Border>
-                    </StackPanel>
 
-                    <StackPanel Orientation="Vertical" Margin="12,0,0,0">
-                        <TextBlock Text="Server Status"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                            <CheckBox x:Name="SendinAllowedCheckBox" Content="Sending Allowed" Foreground="White" VerticalAlignment="Center" IsEnabled="False"/>
-                            <Button x:Name="ToggleSendinButton" Content="Toggle" Width="80" Height="28" Margin="8,0,0,0" Style="{StaticResource WarningButton}" Click="ToggleSendinButton_Click"/>
-                        </StackPanel>
-                    </StackPanel>
-                </StackPanel>
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,10,10">
+                                <StackPanel>
+                                    <TextBlock Text="Playback &amp; Presentation" FontWeight="Bold" FontSize="16"/>
+                                    <TextBlock Text="Options that affect queueing, screen behavior, and audio handling."
+                                               Style="{StaticResource HintTextStyle}"/>
 
-                <!-- Middle area: address, token and console controls -->
-                <Grid Grid.Row="2">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2*"/>
-                        <ColumnDefinition Width="1*"/>
-                    </Grid.ColumnDefinitions>
+                                    <CheckBox x:Name="PresentationFullscreenCheckBox"
+                                              Content="Open presentation in fullscreen mode"
+                                              Foreground="White"
+                                              Margin="0,0,0,8"/>
+                                    <CheckBox x:Name="NormalizeVolumeCheckBox"
+                                              Content="Normalize volume between tracks"
+                                              Foreground="White"
+                                              Margin="0,0,0,8"/>
 
-                    <StackPanel Grid.Column="0" Orientation="Vertical">
-                        <TextBlock Text="Server Address"/>
-                        <TextBox x:Name="AddressBox" Style="{StaticResource RoundedTextBox}"/>
-
-                        <TextBlock Text="Bearer Token OR JWT Authentication" Margin="0,8,0,0"/>
-                        <TextBox x:Name="TokenBox" Style="{StaticResource RoundedTextBox}"/>
-
-                        <TextBlock Text="Presentation Request URL (QR Code)" Margin="0,8,0,0"/>
-                        <TextBox x:Name="RequestUrlBox" Style="{StaticResource RoundedTextBox}" Text="https://example.com/request"/>
-
-                        <WrapPanel Margin="0,12,0,0" HorizontalAlignment="Left">
-                            <Button x:Name="SaveButton" Content="Save" Width="110" Margin="6,0" Style="{StaticResource SuccessButton}" Click="SaveButton_Click"/>
-                            <Button x:Name="ReloadButton" Content="Reload" Width="110" Margin="6,0" Style="{StaticResource SecondaryButton}" Click="ReloadButton_Click"/>
-                            <Button x:Name="CloseButton" Content="Close" Width="110" Margin="6,0" Style="{StaticResource DangerButton}" Click="CloseButton_Click"/>
-                            <Button x:Name="RegisterAuth" Content="Authenticate" Width="146" Style="{StaticResource AccentButton}" Click="RegisterAuth_OnClick"/>
+                                    <Border Margin="0,2,0,0" CornerRadius="8" Padding="2">
+                                        <Border.BorderBrush>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#FF5B8DEF" Offset="0.0"/>
+                                                <GradientStop Color="#FFDA70D6" Offset="0.5"/>
+                                                <GradientStop Color="#FFFF8C00" Offset="1.0"/>
+                                            </LinearGradientBrush>
+                                        </Border.BorderBrush>
+                                        <Border.BorderThickness>2</Border.BorderThickness>
+                                        <Border Background="#1E1E2E" CornerRadius="6" Padding="10,8">
+                                            <StackPanel>
+                                                <CheckBox x:Name="AutoEnqueueCheckBox"
+                                                          Content="✈ Autopilot Mode (auto-enqueue new songs)"
+                                                          Foreground="White"/>
+                                                <TextBlock Text="Automatically adds newly sent-in songs to the player queue."
+                                                           Style="{StaticResource HintTextStyle}"
+                                                           Margin="0,6,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
                         </WrapPanel>
-                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
 
-                    <!-- Console interaction panel -->
-                    <Border Grid.Column="1" Style="{StaticResource CardBorder}" Margin="12,0,0,0" Padding="10">
-                        <StackPanel>
-                            <TextBlock Text="Console" FontWeight="Bold"/>
-                            <WrapPanel Margin="0,8,0,0">
-                                <Button x:Name="ClearConsoleButton" Content="Clear Console" Width="120" Style="{StaticResource DangerButton}" Click="ClearConsoleButton_Click"/>
-                                <Button x:Name="AppendConsoleButton" Content="Append" Width="120" Margin="8,0,0,0" Style="{StaticResource AccentButton}" Click="AppendConsoleButton_Click"/>
-                            </WrapPanel>
+                <TabItem Header="Security &amp; Server">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <WrapPanel Margin="0,10,0,0" ItemWidth="500">
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,10,10">
+                                <StackPanel>
+                                    <TextBlock Text="Server Connection" FontWeight="Bold" FontSize="16"/>
+                                    <TextBlock Text="Base URL and request URL used by fetch and presentation features."
+                                               Style="{StaticResource HintTextStyle}"/>
 
-                            <TextBox x:Name="AppendTextBox" Style="{StaticResource RoundedTextBox}" Margin="0,8,0,0" Text="Test message from Settings"/>
+                                    <TextBlock Text="Server Address" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="AddressBox" Style="{StaticResource RoundedTextBox}"/>
+                                    <TextBlock Text="Example: http://127.0.0.1:5000"
+                                               Style="{StaticResource HintTextStyle}"/>
 
-                            <TextBlock Text="Console Foreground" Margin="0,8,0,0"/>
-                            <ComboBox x:Name="ConsoleColorCombo" SelectedIndex="0">
-                                <ComboBoxItem>Red</ComboBoxItem>
-                                <ComboBoxItem>White</ComboBoxItem>
-                            </ComboBox>
-                            <Button x:Name="ApplyColorButton" Content="Apply Color" Width="120" Margin="0,8,0,0" Style="{StaticResource SecondaryButton}" Click="ApplyColorButton_Click"/>
-                        </StackPanel>
-                    </Border>
-                </Grid>
+                                    <TextBlock Text="Presentation Request URL (QR Code)" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="RequestUrlBox" Style="{StaticResource RoundedTextBox}" Text="https://example.com/request"/>
+                                    <TextBlock Text="Shown to users for submitting requests from their devices."
+                                               Style="{StaticResource HintTextStyle}"/>
 
-                <!-- Footer status -->
-                <TextBlock x:Name="StatusText" Grid.Row="3" Text="" Foreground="LightGray" Margin="4,10,0,0"/>
-            </Grid>
+                                    <Separator Margin="0,4,0,10" Background="{StaticResource ControlBorder}"/>
+
+                                    <TextBlock Text="Server-side Send-In Status" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBlock Text="Current server permission for receiving new song requests."
+                                               Style="{StaticResource HintTextStyle}"
+                                               Margin="0,2,0,6"/>
+                                    <WrapPanel>
+                                        <CheckBox x:Name="SendinAllowedCheckBox"
+                                                  Content="Sending Allowed"
+                                                  Foreground="White"
+                                                  IsEnabled="False"
+                                                  Margin="0,4,10,0"/>
+                                        <Button x:Name="ToggleSendinButton"
+                                                Content="Toggle"
+                                                Width="90"
+                                                Height="30"
+                                                Style="{StaticResource WarningButton}"
+                                                Click="ToggleSendinButton_Click"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,10,10">
+                                <StackPanel>
+                                    <TextBlock Text="Authentication" FontWeight="Bold" FontSize="16"/>
+                                    <TextBlock Text="Bearer token is masked by default. Click the eye icon to reveal it temporarily."
+                                               Style="{StaticResource HintTextStyle}"/>
+
+                                    <TextBlock Text="Bearer Token / JWT" Style="{StaticResource FieldLabelStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <PasswordBox x:Name="TokenPasswordBox"
+                                                     Grid.Column="0"
+                                                     Style="{StaticResource RoundedPasswordBox}"
+                                                     PasswordChanged="TokenPasswordBox_PasswordChanged"/>
+                                        <TextBox x:Name="TokenRevealBox"
+                                                 Grid.Column="0"
+                                                 Style="{StaticResource RoundedTextBox}"
+                                                 Visibility="Collapsed"
+                                                 TextChanged="TokenRevealBox_TextChanged"/>
+                                        <Button x:Name="ToggleTokenVisibilityButton"
+                                                Grid.Column="1"
+                                                Margin="8,0,0,0"
+                                                Width="40"
+                                                Height="32"
+                                                ToolTip="Show or hide token"
+                                                Content="👁"
+                                                Style="{StaticResource SecondaryButton}"
+                                                Click="ToggleTokenVisibilityButton_Click"/>
+                                    </Grid>
+
+                                    <TextBlock Text="Tip: Keep this hidden while streaming or screen sharing."
+                                               Style="{StaticResource HintTextStyle}"
+                                               Margin="0,8,0,8"/>
+
+                                    <Button x:Name="RegisterAuth"
+                                            Content="Open Browser Authentication"
+                                            Width="240"
+                                            Style="{StaticResource AccentButton}"
+                                            Click="RegisterAuth_OnClick"/>
+                                </StackPanel>
+                            </Border>
+                        </WrapPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Console &amp; Tools">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <Border Style="{StaticResource CardBorder}" Margin="0,10,10,10">
+                            <StackPanel>
+                                <TextBlock Text="Console Controls" FontWeight="Bold" FontSize="16"/>
+                                <TextBlock Text="Manage the main window console for debugging and moderation workflows."
+                                           Style="{StaticResource HintTextStyle}"/>
+
+                                <TextBlock Text="Message to append" Style="{StaticResource FieldLabelStyle}"/>
+                                <TextBox x:Name="AppendTextBox"
+                                         Style="{StaticResource RoundedTextBox}"
+                                         Text="Test message from Settings"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalContentAlignment="Top"
+                                         MinHeight="80"/>
+
+                                <WrapPanel Margin="0,10,0,0">
+                                    <Button x:Name="AppendConsoleButton" Content="Append to Console" Width="150" Style="{StaticResource AccentButton}" Click="AppendConsoleButton_Click"/>
+                                    <Button x:Name="ClearConsoleButton" Content="Clear Console" Width="130" Margin="8,0,0,0" Style="{StaticResource DangerButton}" Click="ClearConsoleButton_Click"/>
+                                </WrapPanel>
+
+                                <TextBlock Text="Console text color" Style="{StaticResource FieldLabelStyle}" Margin="0,12,0,4"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <ComboBox x:Name="ConsoleColorCombo" Width="180" SelectedIndex="1" Style="{StaticResource RoundedComboBox}">
+                                        <ComboBoxItem>Green</ComboBoxItem>
+                                        <ComboBoxItem>Red</ComboBoxItem>
+                                        <ComboBoxItem>White</ComboBoxItem>
+                                    </ComboBox>
+                                    <Button x:Name="ApplyColorButton" Content="Apply Color" Width="120" Margin="8,0,0,0" Style="{StaticResource SecondaryButton}" Click="ApplyColorButton_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </Border>
+
+        <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="12,10">
+            <DockPanel LastChildFill="False">
+                <TextBlock x:Name="StatusText"
+                           DockPanel.Dock="Left"
+                           Text=""
+                           Foreground="LightGray"
+                           VerticalAlignment="Center"
+                           Margin="4,0,20,0"/>
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="SaveButton" Content="Save" Width="110" Margin="6,0" Style="{StaticResource SuccessButton}" Click="SaveButton_Click"/>
+                    <Button x:Name="ReloadButton" Content="Reload" Width="110" Margin="6,0" Style="{StaticResource SecondaryButton}" Click="ReloadButton_Click"/>
+                    <Button x:Name="CloseButton" Content="Close" Width="110" Margin="6,0" Style="{StaticResource DangerButton}" Click="CloseButton_Click"/>
+                </StackPanel>
+            </DockPanel>
         </Border>
     </Grid>
 </Window>

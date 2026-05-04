@@ -13,6 +13,9 @@ namespace SongRequestDesktopV2Rewrite
     /// </summary>
     public partial class Settings : Window
     {
+        private bool _isTokenVisible;
+        private bool _isSyncingTokenControls;
+
         public Settings()
         {
             InitializeComponent();
@@ -24,6 +27,51 @@ namespace SongRequestDesktopV2Rewrite
             return FindName(name) as T;
         }
 
+        private void SetTokenValue(string token)
+        {
+            var tokenPasswordBox = GetControl<PasswordBox>("TokenPasswordBox");
+            var tokenRevealBox = GetControl<TextBox>("TokenRevealBox");
+            _isSyncingTokenControls = true;
+            if (tokenPasswordBox != null) tokenPasswordBox.Password = token ?? string.Empty;
+            if (tokenRevealBox != null) tokenRevealBox.Text = token ?? string.Empty;
+            _isSyncingTokenControls = false;
+        }
+
+        private string GetTokenValue()
+        {
+            var tokenPasswordBox = GetControl<PasswordBox>("TokenPasswordBox");
+            var tokenRevealBox = GetControl<TextBox>("TokenRevealBox");
+
+            if (_isTokenVisible)
+            {
+                return tokenRevealBox?.Text ?? tokenPasswordBox?.Password ?? string.Empty;
+            }
+
+            return tokenPasswordBox?.Password ?? tokenRevealBox?.Text ?? string.Empty;
+        }
+
+        private void UpdateTokenVisibility()
+        {
+            var tokenPasswordBox = GetControl<PasswordBox>("TokenPasswordBox");
+            var tokenRevealBox = GetControl<TextBox>("TokenRevealBox");
+            var toggleButton = GetControl<Button>("ToggleTokenVisibilityButton");
+
+            if (tokenPasswordBox != null)
+            {
+                tokenPasswordBox.Visibility = _isTokenVisible ? Visibility.Collapsed : Visibility.Visible;
+            }
+
+            if (tokenRevealBox != null)
+            {
+                tokenRevealBox.Visibility = _isTokenVisible ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            if (toggleButton != null)
+            {
+                toggleButton.Content = _isTokenVisible ? "🙈" : "👁";
+            }
+        }
+
         private void LoadCurrentConfig()
         {
             var cfg = ConfigService.Instance.Current;
@@ -31,7 +79,6 @@ namespace SongRequestDesktopV2Rewrite
 
             var fetchingBox = GetControl<TextBox>("FetchingTimerBox");
             var threadsBox = GetControl<TextBox>("ThreadsBox");
-            var tokenBox = GetControl<TextBox>("TokenBox");
             var addressBox = GetControl<TextBox>("AddressBox");
             var sortingBox = GetControl<TextBox>("DefaultSortingBox");
             var requestUrlBox = GetControl<TextBox>("RequestUrlBox");
@@ -41,13 +88,16 @@ namespace SongRequestDesktopV2Rewrite
 
             if (fetchingBox != null) fetchingBox.Text = cfg.FetchingTimer.ToString();
             if (threadsBox != null) threadsBox.Text = cfg.Threads.ToString();
-            if (tokenBox != null) tokenBox.Text = cfg.BearerToken;
+            SetTokenValue(cfg.BearerToken);
             if (addressBox != null) addressBox.Text = cfg.Address;
             if (sortingBox != null) sortingBox.Text = cfg.DefaultSorting;
             if (requestUrlBox != null) requestUrlBox.Text = cfg.RequestUrl;
             if (fullscreenCheckBox != null) fullscreenCheckBox.IsChecked = cfg.PresentationFullscreen;
             if (normalizeVolumeCheckBox != null) normalizeVolumeCheckBox.IsChecked = cfg.NormalizeVolume;
             if (autoEnqueueCheckBox != null) autoEnqueueCheckBox.IsChecked = cfg.AutoEnqueue;
+
+            _isTokenVisible = false;
+            UpdateTokenVisibility();
 
             // Fetch server-side sendin allowed status
             _ = FetchSendinAllowedStatusAsync();
@@ -57,7 +107,6 @@ namespace SongRequestDesktopV2Rewrite
         {
             var fetchingBox = GetControl<TextBox>("FetchingTimerBox");
             var threadsBox = GetControl<TextBox>("ThreadsBox");
-            var tokenBox = GetControl<TextBox>("TokenBox");
             var addressBox = GetControl<TextBox>("AddressBox");
             var sortingBox = GetControl<TextBox>("DefaultSortingBox");
             var requestUrlBox = GetControl<TextBox>("RequestUrlBox");
@@ -65,6 +114,7 @@ namespace SongRequestDesktopV2Rewrite
             var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
             var autoEnqueueCheckBox = GetControl<CheckBox>("AutoEnqueueCheckBox");
             var statusTb = GetControl<TextBlock>("StatusText");
+            var tokenValue = GetTokenValue();
 
             try
             {
@@ -75,7 +125,7 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     cfg.FetchingTimer = fetching;
                     cfg.Threads = threads;
-                    cfg.BearerToken = tokenBox?.Text ?? string.Empty;
+                    cfg.BearerToken = tokenValue;
                     cfg.Address = addressBox?.Text ?? string.Empty;
                     cfg.DefaultSorting = sortingBox?.Text ?? string.Empty;
                     cfg.RequestUrl = requestUrlBox?.Text ?? "https://example.com/request";
@@ -104,6 +154,36 @@ namespace SongRequestDesktopV2Rewrite
                     statusTb.Foreground = Brushes.OrangeRed;
                 }
             }
+        }
+
+        private void ToggleTokenVisibilityButton_Click(object sender, RoutedEventArgs e)
+        {
+            _isTokenVisible = !_isTokenVisible;
+            UpdateTokenVisibility();
+        }
+
+        private void TokenPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (_isSyncingTokenControls) return;
+            var tokenPasswordBox = sender as PasswordBox;
+            var tokenRevealBox = GetControl<TextBox>("TokenRevealBox");
+            if (tokenPasswordBox == null || tokenRevealBox == null) return;
+
+            _isSyncingTokenControls = true;
+            tokenRevealBox.Text = tokenPasswordBox.Password;
+            _isSyncingTokenControls = false;
+        }
+
+        private void TokenRevealBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isSyncingTokenControls) return;
+            var tokenRevealBox = sender as TextBox;
+            var tokenPasswordBox = GetControl<PasswordBox>("TokenPasswordBox");
+            if (tokenRevealBox == null || tokenPasswordBox == null) return;
+
+            _isSyncingTokenControls = true;
+            tokenPasswordBox.Password = tokenRevealBox.Text ?? string.Empty;
+            _isSyncingTokenControls = false;
         }
 
         private void ReloadButton_Click(object sender, RoutedEventArgs e)

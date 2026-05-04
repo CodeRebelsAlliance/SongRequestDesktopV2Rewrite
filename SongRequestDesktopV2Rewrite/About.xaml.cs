@@ -13,7 +13,6 @@ namespace SongRequestDesktopV2Rewrite
         public About()
         {
             InitializeComponent();
-            // set version text from assembly (use FindName to avoid generated field mismatch)
             try
             {
                 var v = About.version;
@@ -42,7 +41,6 @@ namespace SongRequestDesktopV2Rewrite
                     if (statusTb != null) 
                         statusTb.Text = $"Update available: {updateInfo.LatestVersion} (Current: {updateInfo.CurrentVersion})";
 
-                    // Show update prompt
                     var updatePrompt = new UpdatePrompt(
                         updateInfo.DownloadUrl,
                         updateInfo.LatestVersion,
