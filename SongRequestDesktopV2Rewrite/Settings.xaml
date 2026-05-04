@@ -245,8 +245,8 @@
 
         <Border Style="{StaticResource CardBorder}" Padding="14,10">
             <StackPanel>
-                <TextBlock Text="Application Settings" FontFamily="Segoe UI Black" FontSize="22"/>
-                <TextBlock Text="Organized by category. Changes are only written when you click Save."
+                <TextBlock Text="Settings" FontFamily="Segoe UI Black" FontSize="22"/>
+                <TextBlock Text="Changes are only written when you click Save."
                            Style="{StaticResource HintTextStyle}"
                            Margin="0,4,0,0"/>
             </StackPanel>
@@ -269,17 +269,17 @@
 
                                     <TextBlock Text="Fetching Timer (seconds)" Style="{StaticResource FieldLabelStyle}"/>
                                     <TextBox x:Name="FetchingTimerBox" Style="{StaticResource RoundedTextBox}"/>
-                                    <TextBlock Text="Lower values refresh more frequently but can increase API usage."
+                                    <TextBlock Text="Lower values refresh more frequently but can increase API usage. API does not have a rate-limit by default, so this is mostly reliant on network quality."
                                                Style="{StaticResource HintTextStyle}"/>
 
                                     <TextBlock Text="Concurrent Threads" Style="{StaticResource FieldLabelStyle}"/>
                                     <TextBox x:Name="ThreadsBox" Style="{StaticResource RoundedTextBox}"/>
-                                    <TextBlock Text="Use higher values only if your machine and network can handle it."
+                                    <TextBlock Text="Use higher values only if your machine and network can handle it. Higher values improve Performance for high-end systems and reduce performance for low-end systems."
                                                Style="{StaticResource HintTextStyle}"/>
 
                                     <TextBlock Text="Default Sorting (legacy value)" Style="{StaticResource FieldLabelStyle}"/>
                                     <TextBox x:Name="DefaultSortingBox" Style="{StaticResource RoundedTextBox}"/>
-                                    <TextBlock Text="Kept for compatibility with existing config and server behavior."
+                                    <TextBlock Text="Kept for compatibility with existing config and server behavior. You do not need to change this under normal circumstances."
                                                Style="{StaticResource HintTextStyle}"/>
                                 </StackPanel>
                             </Border>
@@ -311,7 +311,7 @@
                                         <Border Background="#1E1E2E" CornerRadius="6" Padding="10,8">
                                             <StackPanel>
                                                 <CheckBox x:Name="AutoEnqueueCheckBox"
-                                                          Content="✈ Autopilot Mode (auto-enqueue new songs)"
+                                                          Content="✈ Autopilot Mode"
                                                           Foreground="White"/>
                                                 <TextBlock Text="Automatically adds newly sent-in songs to the player queue."
                                                            Style="{StaticResource HintTextStyle}"
@@ -369,7 +369,7 @@
                             <Border Style="{StaticResource CardBorder}" Margin="0,0,10,10">
                                 <StackPanel>
                                     <TextBlock Text="Authentication" FontWeight="Bold" FontSize="16"/>
-                                    <TextBlock Text="Bearer token is masked by default. Click the eye icon to reveal it temporarily."
+                                    <TextBlock Text="Administrator authentication is required for SongRequest to work correctly."
                                                Style="{StaticResource HintTextStyle}"/>
 
                                     <TextBlock Text="Bearer Token / JWT" Style="{StaticResource FieldLabelStyle}"/>
@@ -404,7 +404,7 @@
                                                Margin="0,8,0,8"/>
 
                                     <Button x:Name="RegisterAuth"
-                                            Content="Open Browser Authentication"
+                                            Content="Authenticate using SchülerApp Account"
                                             Width="240"
                                             Style="{StaticResource AccentButton}"
                                             Click="RegisterAuth_OnClick"/>
