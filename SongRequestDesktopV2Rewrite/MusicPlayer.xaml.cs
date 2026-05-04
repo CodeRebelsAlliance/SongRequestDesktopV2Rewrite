@@ -685,7 +685,7 @@ namespace SongRequestDesktopV2Rewrite
                     AudioSamplesCaptured?.Invoke(this, samples);
 
                     // Forward to Visualization Window
-                    _visualizationWindow?.UpdateAudioSamples(samples);
+                    _visualizationWindow?.UpdateAudioSamples(samples, _capturingProvider.WaveFormat.Channels);
                 };
             }
 

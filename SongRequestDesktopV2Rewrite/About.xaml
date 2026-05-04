@@ -27,7 +27,7 @@
                 <StackPanel Margin="12,6" VerticalAlignment="Center">
                     <TextBlock x:Name="AppTitle" Text="Technik-AG SongRequest" FontSize="22" FontWeight="Bold" Foreground="White"/>
                     <TextBlock x:Name="VersionText" Text="Version 2.1" FontSize="12" Foreground="#CCCCCC" Margin="0,6,0,0" />
-                    <TextBlock Text="https://redstefan.software/songrequests/" FontSize="12" Foreground="#AAAAAA"/>
+                    <TextBlock Text="https://songrequests.by-cra.net/" FontSize="12" Foreground="#AAAAAA"/>
                 </StackPanel>
             </StackPanel>
         </DockPanel>

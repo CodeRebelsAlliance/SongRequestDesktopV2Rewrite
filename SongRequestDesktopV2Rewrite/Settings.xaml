@@ -198,8 +198,11 @@
         <Style x:Key="SettingsTabItemStyle" TargetType="TabItem">
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="Background" Value="{StaticResource PanelBackgroundLight}"/>
-            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Padding" Value="18,10"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="MinWidth" Value="130"/>
+            <Setter Property="MinHeight" Value="40"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
@@ -208,7 +211,12 @@
                                 BorderBrush="{StaticResource ControlBorder}"
                                 BorderThickness="1"
                                 CornerRadius="8,8,0,0">
-                            <ContentPresenter x:Name="ContentSite" ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <ContentPresenter x:Name="ContentSite"
+                                              ContentSource="Header"
+                                              Margin="{TemplateBinding Padding}"
+                                              RecognizesAccessKey="True"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">

@@ -320,7 +320,7 @@ namespace SongRequestDesktopV2Rewrite
             try
             {
                 var address = ConfigService.Instance.Current?.Address ?? "http://127.0.0.1:5000";
-                var url = $"https://redstefan.software/schuelerapp/sign-jwt?audience={Uri.EscapeDataString(address)}";
+                var url = $"https://schuelerapp.by-cra.net/sign-jwt?audience={Uri.EscapeDataString(address)}";
                 var psi = new ProcessStartInfo { FileName = url, UseShellExecute = true };
                 Process.Start(psi);
             }

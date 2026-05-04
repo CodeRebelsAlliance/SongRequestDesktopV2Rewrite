@@ -16,14 +16,18 @@ namespace SongRequestDesktopV2Rewrite
         private VisualizationType _currentType = VisualizationType.Spectrum;
         private float[] _audioSamples = Array.Empty<float>();
         private readonly object _sampleLock = new object();
-        
+         
         // FFT data
-        private float[] _fftData = new float[512];
         private readonly int _fftSize = 512;
+        private readonly float[] _monoHistory = new float[8192];
+        private int _monoHistoryWriteIndex;
+        private int _monoHistoryCount;
+        private int _channelCount = 2;
         
         // Smoothing for visualizations
         private float[] _smoothedSpectrum = new float[64];
         private const float SmoothingFactor = 0.7f;
+        private float _spectrumAutoGain = 1.0f;
         
         // Particles system
         private List<Particle> _particles = new List<Particle>();
@@ -73,15 +77,40 @@ namespace SongRequestDesktopV2Rewrite
         /// <summary>
         /// Update audio samples from the music player
         /// </summary>
-        public void UpdateAudioSamples(float[] samples)
+        public void UpdateAudioSamples(float[] samples, int channels = 2)
         {
             lock (_sampleLock)
             {
                 // Store a copy of the samples
                 if (samples != null && samples.Length > 0)
                 {
+                    _channelCount = Math.Max(1, channels);
                     _audioSamples = new float[samples.Length];
                     Array.Copy(samples, _audioSamples, samples.Length);
+
+                    // Build mono history from interleaved channels so FFT-based views use correct data.
+                    for (int i = 0; i < samples.Length; i += _channelCount)
+                    {
+                        float mono = 0f;
+                        int usedChannels = 0;
+
+                        for (int ch = 0; ch < _channelCount && i + ch < samples.Length; ch++)
+                        {
+                            mono += samples[i + ch];
+                            usedChannels++;
+                        }
+
+                        if (usedChannels > 0)
+                        {
+                            mono /= usedChannels;
+                            _monoHistory[_monoHistoryWriteIndex] = mono;
+                            _monoHistoryWriteIndex = (_monoHistoryWriteIndex + 1) % _monoHistory.Length;
+                            if (_monoHistoryCount < _monoHistory.Length)
+                            {
+                                _monoHistoryCount++;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -444,42 +473,79 @@ namespace SongRequestDesktopV2Rewrite
 
         private void PerformFFT()
         {
-            if (_audioSamples.Length < _fftSize)
+            if (_monoHistoryCount < _fftSize)
                 return;
 
-            // Simple FFT implementation using Complex numbers
+            // Read the latest mono window from ring buffer for stable and correct FFT input.
             Complex[] fftInput = new Complex[_fftSize];
-            
-            for (int i = 0; i < _fftSize && i < _audioSamples.Length; i++)
+
+            for (int i = 0; i < _fftSize; i++)
             {
+                int historyIndex = (_monoHistoryWriteIndex - _fftSize + i + _monoHistory.Length) % _monoHistory.Length;
+                float sample = _monoHistory[historyIndex];
+
                 // Apply Hanning window
                 double window = 0.5 * (1 - Math.Cos(2 * Math.PI * i / _fftSize));
-                fftInput[i] = new Complex(_audioSamples[i] * window, 0);
+                fftInput[i] = new Complex(sample * window, 0);
             }
 
             // Perform FFT
             FFT(fftInput);
 
-            // Calculate magnitudes and smooth
-            int bins = 64;
-            int samplesPerBin = _fftSize / 2 / bins;
-            
+            // Calculate magnitudes using stable contiguous bins and adaptive gain.
+            int bins = _smoothedSpectrum.Length;
+            int minFftBin = 2; // skip DC and very low rumble
+            int maxFftBin = (_fftSize / 2) - 1;
+            double fftScale = _fftSize / 2.0;
+            int availableBins = Math.Max(1, maxFftBin - minFftBin + 1);
+            double binsPerBand = availableBins / (double)bins;
+            var rawBands = new double[bins];
+
             for (int i = 0; i < bins; i++)
             {
-                float sum = 0;
-                for (int j = 0; j < samplesPerBin; j++)
+                int startIndex = minFftBin + (int)Math.Floor(i * binsPerBand);
+                int endIndex = minFftBin + (int)Math.Floor((i + 1) * binsPerBand) - 1;
+                if (endIndex <= startIndex)
                 {
-                    int index = i * samplesPerBin + j;
-                    if (index < fftInput.Length / 2)
-                    {
-                        sum += (float)fftInput[index].Magnitude;
-                    }
+                    endIndex = startIndex;
                 }
-                
-                float avgMagnitude = sum / samplesPerBin / 100f; // Normalize
-                
+                if (i == bins - 1) endIndex = maxFftBin;
+
+                double sum = 0;
+                int count = 0;
+                for (int j = startIndex; j <= endIndex && j < fftInput.Length / 2; j++)
+                {
+                    sum += fftInput[j].Magnitude;
+                    count++;
+                }
+
+                double avgMagnitude = count > 0 ? (sum / count) / fftScale : 0;
+                double freqPosition = i / (double)Math.Max(1, bins - 1);
+                double lowEndCompensation = 0.45 + (freqPosition * 1.55);
+                double weightedMagnitude = avgMagnitude * lowEndCompensation;
+
+                // Soft compression before auto-gain keeps response lively without pinning bars.
+                rawBands[i] = Math.Log10(1.0 + weightedMagnitude * 1000.0);
+            }
+
+            double framePeak = rawBands.Max();
+            if (framePeak > 0.000001)
+            {
+                float targetGain = (float)(0.90 / framePeak);
+                _spectrumAutoGain = (_spectrumAutoGain * 0.90f) + (targetGain * 0.10f);
+            }
+            else
+            {
+                _spectrumAutoGain *= 0.98f;
+            }
+
+            for (int i = 0; i < bins; i++)
+            {
+                float normalized = (float)Math.Clamp(rawBands[i] * _spectrumAutoGain, 0.0, 1.0);
+                if (normalized < 0.01f) normalized = 0f;
+
                 // Smooth the spectrum
-                _smoothedSpectrum[i] = _smoothedSpectrum[i] * SmoothingFactor + avgMagnitude * (1 - SmoothingFactor);
+                _smoothedSpectrum[i] = _smoothedSpectrum[i] * SmoothingFactor + normalized * (1 - SmoothingFactor);
             }
         }
 
