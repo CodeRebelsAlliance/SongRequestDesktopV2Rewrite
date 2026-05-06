@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
@@ -142,7 +143,7 @@ namespace SongRequestDesktopV2Rewrite
                 var titleTb = FindName("PresentationTitle") as TextBlock;
                 var artistTb = FindName("PresentationArtist") as TextBlock;
                 var thumb = FindName("PresentationThumbnail") as Image;
-                var prog = FindName("PresentationProgress") as Slider;
+                var prog = FindName("PresentationProgress") as ProgressBar;
                 var elapsedTb = FindName("PresentationElapsed") as TextBlock;
                 var remainingTb = FindName("PresentationRemaining") as TextBlock;
                 var playerPanel = FindName("PlayerPanel") as Border;
@@ -153,7 +154,12 @@ namespace SongRequestDesktopV2Rewrite
 
                 if (prog != null && e.TotalTime.TotalSeconds > 0)
                 {
-                    prog.Value = Math.Clamp(e.CurrentTime.TotalSeconds / e.TotalTime.TotalSeconds, 0, 1);
+                    double targetProgress = Math.Clamp(e.CurrentTime.TotalSeconds / e.TotalTime.TotalSeconds, 0, 1);
+                    var progressAnim = new DoubleAnimation(targetProgress, TimeSpan.FromMilliseconds(240))
+                    {
+                        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                    };
+                    prog.BeginAnimation(RangeBase.ValueProperty, progressAnim, HandoffBehavior.SnapshotAndReplace);
                 }
 
                 if (elapsedTb != null) elapsedTb.Text = e.CurrentTime.ToString(@"mm\:ss");
@@ -599,8 +605,7 @@ namespace SongRequestDesktopV2Rewrite
                     Margin = new Thickness(0, 10, 0, 10),
                     TextWrapping = TextWrapping.Wrap,
                     TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    MaxWidth = 1100,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
                     LineHeight = 44,
                     Opacity = InactiveLyricOpacity
                 };

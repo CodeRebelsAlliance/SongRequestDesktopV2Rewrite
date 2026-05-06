@@ -60,6 +60,20 @@ namespace SongRequestDesktopV2Rewrite
         private LyricsService _lyricsService = new LyricsService();
         private List<(TimeSpan Time, string Text)> _currentSyncedLines = new List<(TimeSpan, string)>();
         private TextBlock _currentHighlighted = null;
+        private const double BaseLyricFontSize = 30;
+        private const double ActiveLyricFontSize = 38;
+        private const int LyricAnimationDurationMs = 230;
+        private static readonly Color InactiveLyricColor = Color.FromRgb(195, 195, 195);
+        private static readonly Color ActiveLyricColor = Colors.White;
+        private const double InactiveLyricOpacity = 0.82;
+        private const double ActiveLyricOpacity = 1.0;
+        private readonly object _lyricsCacheLock = new object();
+        private readonly Dictionary<string, LyricsResult> _lyricsCache = new Dictionary<string, LyricsResult>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Task<LyricsResult>> _lyricsInFlight = new Dictionary<string, Task<LyricsResult>>(StringComparer.OrdinalIgnoreCase);
+        private int _lyricsRequestVersion;
+        private string _currentLyricsSongKey = string.Empty;
+        private bool _isNoLyricsLayout;
+        private int _layoutTransitionVersion;
         private MusicShare? _musicShareWindow = null;
 
         // Visualization window
@@ -83,6 +97,21 @@ namespace SongRequestDesktopV2Rewrite
             public double PlaybackPositionSeconds { get; set; }
             public float Volume { get; set; }
             public DateTime SavedAt { get; set; }
+        }
+
+        public static readonly DependencyProperty SmoothScrollOffsetProperty =
+            DependencyProperty.RegisterAttached(
+                "SmoothScrollOffset",
+                typeof(double),
+                typeof(MusicPlayer),
+                new PropertyMetadata(0.0, OnSmoothScrollOffsetChanged));
+
+        private static void OnSmoothScrollOffsetChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is ScrollViewer scrollViewer)
+            {
+                scrollViewer.ScrollToVerticalOffset((double)e.NewValue);
+            }
         }
 
         private static string GetPlayerStatePath()
@@ -121,7 +150,12 @@ namespace SongRequestDesktopV2Rewrite
             }
 
             // when queue changes, recompute ETA / playback times
-            Queue.CollectionChanged += (s, e) => { ComputeQueueTimings(); QueueChanged?.Invoke(this, EventArgs.Empty); };
+            Queue.CollectionChanged += (s, e) =>
+            {
+                ComputeQueueTimings();
+                QueueChanged?.Invoke(this, EventArgs.Empty);
+                PrefetchNextLyrics();
+            };
 
             // Setup normalize volume button visibility
             UpdateNormalizeVolumeButtonVisibility();
@@ -136,6 +170,18 @@ namespace SongRequestDesktopV2Rewrite
             _stateTimer.Start();
 
             Loaded += MusicPlayer_Loaded;
+            SizeChanged += MusicPlayer_SizeChanged;
+            Player.SizeChanged += MusicPlayer_SizeChanged;
+        }
+
+        private void MusicPlayer_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!IsLoaded) return;
+                ApplyLyricsAdaptiveLayoutValues(_isNoLyricsLayout, false);
+            }), DispatcherPriority.Render);
         }
 
         private void Config_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -394,8 +440,11 @@ namespace SongRequestDesktopV2Rewrite
                             // Clear lyrics
                             var lyricsPanel = FindName("LyricsStackPanel") as StackPanel;
                             if (lyricsPanel != null) lyricsPanel.Children.Clear();
+                            WholeLyricsPanel.Visibility = Visibility.Hidden;
+                            SetLyricsLoadingVisible(false);
                             _currentSyncedLines.Clear();
                             _currentHighlighted = null;
+                            ApplyLyricsAdaptiveLayout(false, false);
 
                             // Notify presentation that nothing is playing
                             try
@@ -438,115 +487,61 @@ namespace SongRequestDesktopV2Rewrite
 
         private void UpdateLyricHighlighting(TimeSpan currentTime)
         {
-            var lyricsPanel = FindName("LyricsStackPanel") as StackPanel;
-            var lyricsScroll = FindName("LyricsScrollViewer") as ScrollViewer;
-            if (lyricsPanel == null || lyricsScroll == null || _currentReader == null) return;            
+            if (WholeLyricsPanel.Visibility != Visibility.Visible || LyricsLoadingPanel.Visibility == Visibility.Visible) return;
+            if (_currentReader == null || LyricsStackPanel == null || LyricsScrollViewer == null) return;
+            if (LyricsStackPanel.Children.Count == 0) return;
 
             int index = -1;
-            if (_currentSyncedLines != null && _currentSyncedLines.Count > 0)
+            if (_currentSyncedLines.Count > 0)
             {
-                // find last line where Time <= currentTime
                 for (int i = 0; i < _currentSyncedLines.Count; i++)
                 {
-                    if (_currentSyncedLines[i].Time <= currentTime) index = i; else break;
+                    if (_currentSyncedLines[i].Time <= currentTime) index = i;
+                    else break;
                 }
                 if (index < 0) index = 0;
             }
             else
             {
-                // No synced lyrics: approximate current line from playback progress
-                int count = lyricsPanel.Children.Count;
-                if (count == 0) return;
-                if (_currentReader == null || _currentReader.TotalTime.TotalSeconds <= 0)
-                {
-                    index = 0;
-                }
-                else
-                {
-                    double prog = Math.Clamp(_currentReader.CurrentTime.TotalSeconds / Math.Max(1.0, _currentReader.TotalTime.TotalSeconds), 0.0, 1.0);
-                    index = (int)Math.Round(prog * (count - 1));
-                }
+                double totalSeconds = Math.Max(1.0, _currentReader.TotalTime.TotalSeconds);
+                double progress = Math.Clamp(_currentReader.CurrentTime.TotalSeconds / totalSeconds, 0.0, 1.0);
+                index = (int)Math.Round(progress * Math.Max(0, LyricsStackPanel.Children.Count - 1));
             }
 
-            if (index < 0 || index >= lyricsPanel.Children.Count) return;
+            if (index < 0 || index >= LyricsStackPanel.Children.Count) return;
+            if (LyricsStackPanel.Children[index] is not TextBlock tb) return;
 
-            var tb = lyricsPanel.Children[index] as TextBlock;
-            if (tb == null) return;
-
-            // Revert previous highlighted line
             if (_currentHighlighted != null && _currentHighlighted != tb)
             {
-                try
-                {
-                    var prevBrush = _currentHighlighted.Foreground as SolidColorBrush;
-                    if (prevBrush == null)
-                    {
-                        prevBrush = new SolidColorBrush(Colors.LightGray);
-                        _currentHighlighted.Foreground = prevBrush;
-                    }
-
-                    var colorAnimPrev = new ColorAnimation(Colors.LightGray, TimeSpan.FromMilliseconds(300));
-                    colorAnimPrev.Completed += (s, e) =>
-                    {
-                        prevBrush.Color = Colors.LightGray;
-                        prevBrush.BeginAnimation(SolidColorBrush.ColorProperty, null);
-                    };
-                    prevBrush.BeginAnimation(SolidColorBrush.ColorProperty, colorAnimPrev);
-
-                    var sizeAnimPrev = new DoubleAnimation(24, TimeSpan.FromMilliseconds(300));
-                    sizeAnimPrev.Completed += (s, e) =>
-                    {
-                        if (_currentHighlighted == null) return;
-                        _currentHighlighted.FontSize = 24;
-                        _currentHighlighted.BeginAnimation(TextBlock.FontSizeProperty, null);
-                    };
-                    if (_currentHighlighted == null) return;
-                    _currentHighlighted.BeginAnimation(TextBlock.FontSizeProperty, sizeAnimPrev);
-                }
-                catch { }
+                var prevBrush = _currentHighlighted.Foreground as SolidColorBrush ?? new SolidColorBrush(InactiveLyricColor);
+                _currentHighlighted.Foreground = prevBrush;
+                prevBrush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(InactiveLyricColor, TimeSpan.FromMilliseconds(LyricAnimationDurationMs)));
+                _currentHighlighted.BeginAnimation(TextBlock.FontSizeProperty, new DoubleAnimation(BaseLyricFontSize, TimeSpan.FromMilliseconds(LyricAnimationDurationMs)));
+                _currentHighlighted.BeginAnimation(OpacityProperty, new DoubleAnimation(InactiveLyricOpacity, TimeSpan.FromMilliseconds(LyricAnimationDurationMs)));
             }
 
-            // Animate current line to white and increase size
+            var brush = tb.Foreground as SolidColorBrush ?? new SolidColorBrush(InactiveLyricColor);
+            tb.Foreground = brush;
+            brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(ActiveLyricColor, TimeSpan.FromMilliseconds(LyricAnimationDurationMs)));
+            tb.BeginAnimation(TextBlock.FontSizeProperty, new DoubleAnimation(ActiveLyricFontSize, TimeSpan.FromMilliseconds(LyricAnimationDurationMs)));
+            tb.BeginAnimation(OpacityProperty, new DoubleAnimation(ActiveLyricOpacity, TimeSpan.FromMilliseconds(LyricAnimationDurationMs)));
+            _currentHighlighted = tb;
+
             try
             {
-                var brush = tb.Foreground as SolidColorBrush;
-                if (brush == null)
+                var transform = tb.TransformToAncestor(LyricsStackPanel);
+                var point = transform.Transform(new Point(0, 0));
+                double target = Math.Max(0, point.Y - (LyricsScrollViewer.ViewportHeight / 2) + (tb.ActualHeight / 2));
+                var scrollAnim = new DoubleAnimation(target, TimeSpan.FromMilliseconds(420))
                 {
-                    brush = new SolidColorBrush(Colors.LightGray);
-                    tb.Foreground = brush;
-                }
-
-                var colorAnim = new ColorAnimation(Colors.White, TimeSpan.FromMilliseconds(300));
-                colorAnim.Completed += (s, e) =>
-                {
-                    brush.Color = Colors.White;
-                    brush.BeginAnimation(SolidColorBrush.ColorProperty, null);
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
                 };
-                brush.BeginAnimation(SolidColorBrush.ColorProperty, colorAnim);
-
-                var sizeAnim = new DoubleAnimation(30, TimeSpan.FromMilliseconds(300));
-                sizeAnim.Completed += (s, e) =>
-                {
-                    tb.FontSize = 30;
-                    tb.BeginAnimation(TextBlock.FontSizeProperty, null);
-                };
-                tb.BeginAnimation(TextBlock.FontSizeProperty, sizeAnim);
-
-                _currentHighlighted = tb;
-
-                // autoscroll: bring the tb into view (center)
-                try
-                {
-                    var transform = tb.TransformToAncestor(lyricsPanel);
-                    var point = transform.Transform(new Point(0, 0));
-                    double target = point.Y;
-                    double viewportHeight = lyricsScroll.ViewportHeight;
-                    double offset = Math.Max(0, target - viewportHeight / 2);
-                    lyricsScroll.ScrollToVerticalOffset(offset);
-                }
-                catch { }
+                LyricsScrollViewer.BeginAnimation(SmoothScrollOffsetProperty, scrollAnim, HandoffBehavior.SnapshotAndReplace);
             }
-            catch { }
+            catch
+            {
+                // Ignore transform/scroll glitches during resize transitions.
+            }
         }
 
         private async Task BeginCrossfadeToNext(Song nextSong)
@@ -734,71 +729,375 @@ namespace SongRequestDesktopV2Rewrite
 
         private async Task FetchAndDisplayLyricsFor(Song current)
         {
+            if (current == null)
+            {
+                LyricsStackPanel.Children.Clear();
+                _currentSyncedLines.Clear();
+                _currentHighlighted = null;
+                SetLyricsLoadingVisible(false);
+                SetLyricsPanelVisibility(false, false);
+                ApplyLyricsAdaptiveLayout(false, false);
+                return;
+            }
+
+            int requestVersion = ++_lyricsRequestVersion;
+            string songKey = BuildLyricsSongKey(current);
+            _currentLyricsSongKey = songKey;
+
+            // Reset to normal layout immediately so lyrics-enabled songs never inherit no-lyrics sizing.
+            await Dispatcher.InvokeAsync(() => ApplyLyricsAdaptiveLayout(false, false));
+
+            var fetchTask = GetOrStartLyricsTask(current, songKey);
+            _ = ShowLyricsLoadingIfSlowAsync(songKey, requestVersion, fetchTask);
+
+            LyricsResult result;
             try
             {
-                WholeLyricsPanel.Visibility = Visibility.Hidden;
-                if (current == null) return;
+                result = await fetchTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                result = new LyricsResult();
+            }
 
-                var res = await _lyricsService.GetCachedLyricsAsync(current.Artist.Replace(" - Topic", ""), current.Title, current.Duration);
-                if (!res.Found)
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (requestVersion != _lyricsRequestVersion || !string.Equals(songKey, _currentLyricsSongKey, StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                SetLyricsLoadingVisible(false);
+                RenderLyricsResult(result);
+            });
+
+            PrefetchNextLyrics();
+        }
+
+        private void RenderLyricsResult(LyricsResult result)
+        {
+            LyricsStackPanel.Children.Clear();
+            _currentSyncedLines.Clear();
+            _currentHighlighted = null;
+            LyricsScrollViewer.BeginAnimation(SmoothScrollOffsetProperty, null);
+            LyricsScrollViewer.ScrollToVerticalOffset(0);
+
+            if (result.Found && result.HasSynced)
+            {
+                _currentSyncedLines = result
+                    .ParseSyncedLines()
+                    .Where(l => !string.IsNullOrWhiteSpace(l.Text))
+                    .ToList();
+
+                if (_currentSyncedLines.Count > 0)
                 {
-                    // fallback to live fetch
-                    res = await _lyricsService.GetLyricsAsync(current.Artist, current.Title, current.Duration);
+                    foreach (var (_, text) in _currentSyncedLines)
+                    {
+                        LyricsStackPanel.Children.Add(CreateLyricTextBlock(text));
+                    }
+
+                    SetLyricsPanelVisibility(true);
+                    ApplyLyricsAdaptiveLayout(false);
+                    return;
+                }
+            }
+
+            if (result.Found)
+            {
+                var plainLines = (result.PlainLyrics ?? string.Empty)
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(l => l.Trim())
+                    .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .ToList();
+
+                if (plainLines.Count > 0)
+                {
+                    foreach (var line in plainLines)
+                    {
+                        LyricsStackPanel.Children.Add(CreateLyricTextBlock(line));
+                    }
+
+                    SetLyricsPanelVisibility(true);
+                    ApplyLyricsAdaptiveLayout(false);
+                    return;
+                }
+            }
+
+            SetLyricsPanelVisibility(false);
+            ApplyLyricsAdaptiveLayout(true);
+        }
+
+        private TextBlock CreateLyricTextBlock(string text)
+        {
+            return new TextBlock
+            {
+                Text = text,
+                FontSize = BaseLyricFontSize,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(InactiveLyricColor),
+                Margin = new Thickness(0, 8, 0, 8),
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Opacity = InactiveLyricOpacity
+            };
+        }
+
+        private string BuildLyricsSongKey(Song song)
+        {
+            return $"{song.songPath}|{song.Artist}|{song.Title}".Trim();
+        }
+
+        private string SanitizeArtist(string artist)
+        {
+            return (artist ?? string.Empty).Replace(" - Topic", string.Empty).Trim();
+        }
+
+        private Task<LyricsResult> GetOrStartLyricsTask(Song song, string songKey)
+        {
+            lock (_lyricsCacheLock)
+            {
+                if (_lyricsCache.TryGetValue(songKey, out var cached))
+                {
+                    return Task.FromResult(cached);
                 }
 
-                // prepare UI update
-                Dispatcher.Invoke(() =>
+                if (_lyricsInFlight.TryGetValue(songKey, out var inflight))
                 {
-                    var lyricsPanel = FindName("LyricsStackPanel") as StackPanel;
-                    if (lyricsPanel == null) return;
-                    lyricsPanel.Children.Clear();
+                    return inflight;
+                }
+
+                var task = FetchLyricsInternalAsync(song, songKey);
+                _lyricsInFlight[songKey] = task;
+                return task;
+            }
+        }
+
+        private async Task<LyricsResult> FetchLyricsInternalAsync(Song song, string songKey)
+        {
+            LyricsResult result = new LyricsResult();
+            try
+            {
+                string sanitizedArtist = SanitizeArtist(song.Artist);
+                result = await _lyricsService.GetCachedLyricsAsync(sanitizedArtist, song.Title, song.Duration).ConfigureAwait(false);
+                if (!result.Found)
+                {
+                    result = await _lyricsService.GetLyricsAsync(song.Artist, song.Title, song.Duration).ConfigureAwait(false);
+                }
+            }
+            catch
+            {
+                result = new LyricsResult();
+            }
+            finally
+            {
+                lock (_lyricsCacheLock)
+                {
+                    _lyricsInFlight.Remove(songKey);
+                    _lyricsCache[songKey] = result;
+                }
+            }
+
+            return result;
+        }
+
+        private async Task ShowLyricsLoadingIfSlowAsync(string songKey, int requestVersion, Task<LyricsResult> task)
+        {
+            try
+            {
+                await Task.Delay(350).ConfigureAwait(false);
+                if (task.IsCompleted) return;
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (requestVersion != _lyricsRequestVersion || !string.Equals(songKey, _currentLyricsSongKey, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    LyricsStackPanel.Children.Clear();
                     _currentSyncedLines.Clear();
                     _currentHighlighted = null;
-
-                    if (res.Found)
-                    {
-                        if (res.HasSynced)
-                        {
-                            WholeLyricsPanel.Visibility = Visibility.Visible;
-                            _currentSyncedLines = res.ParseSyncedLines();
-                            foreach (var (time, text) in _currentSyncedLines)
-                            {
-                                var tb = new TextBlock { Text = text, Foreground = new SolidColorBrush(Colors.LightGray), FontSize = 24, FontWeight = FontWeights.Bold, Margin = new Thickness(0,4,0,4), MaxWidth = 780, TextWrapping = TextWrapping.Wrap};
-                                lyricsPanel.Children.Add(tb);
-                            }
-                        }
-                        else
-                        {
-                            WholeLyricsPanel.Visibility = Visibility.Visible;
-                            // plain lyrics - split into lines
-                            var lines = (res.PlainLyrics ?? string.Empty).Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                            foreach (var l in lines)
-                            {
-                                var tb = new TextBlock { Text = l, Foreground = new SolidColorBrush(Colors.White), FontSize = 24, Margin = new Thickness(0,4,0,4), MaxWidth = 780, TextWrapping = TextWrapping.Wrap };
-                                lyricsPanel.Children.Add(tb);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        WholeLyricsPanel.Visibility = Visibility.Hidden;
-                        var tb = new TextBlock { Text = "Lyrics not found.", Foreground = new SolidColorBrush(Colors.Gray), FontSize = 24 };
-                        lyricsPanel.Children.Add(tb);
-                    }
+                    SetLyricsPanelVisibility(true, false);
+                    SetLyricsLoadingVisible(true);
                 });
             }
-            catch (Exception ex)
+            catch
             {
-                Dispatcher.Invoke(() =>
-                {
-                    var lyricsPanel = FindName("LyricsStackPanel") as StackPanel;
-                    if (lyricsPanel == null) return;
-                    lyricsPanel.Children.Clear();
-                    var tb = new TextBlock { Text = "Error fetching lyrics: " + ex.Message, Foreground = Brushes.OrangeRed };
-                    lyricsPanel.Children.Add(tb);
-                    WholeLyricsPanel.Visibility = Visibility.Visible;
-                });
+                // Ignore loading indicator race conditions.
             }
+        }
+
+        private void SetLyricsLoadingVisible(bool isVisible)
+        {
+            LyricsLoadingPanel.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void SetLyricsPanelVisibility(bool isVisible, bool animate = true)
+        {
+            WholeLyricsPanel.BeginAnimation(OpacityProperty, null);
+
+            if (!animate)
+            {
+                WholeLyricsPanel.Visibility = isVisible ? Visibility.Visible : Visibility.Hidden;
+                WholeLyricsPanel.Opacity = isVisible ? 1 : 0;
+                return;
+            }
+
+            if (isVisible)
+            {
+                WholeLyricsPanel.Visibility = Visibility.Visible;
+                var showAnim = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(220))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                WholeLyricsPanel.BeginAnimation(OpacityProperty, showAnim, HandoffBehavior.SnapshotAndReplace);
+            }
+            else
+            {
+                var hideAnim = new DoubleAnimation(0.0, TimeSpan.FromMilliseconds(220))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+                };
+                hideAnim.Completed += (_, __) =>
+                {
+                    WholeLyricsPanel.Visibility = Visibility.Hidden;
+                    WholeLyricsPanel.Opacity = 0;
+                };
+                WholeLyricsPanel.BeginAnimation(OpacityProperty, hideAnim, HandoffBehavior.SnapshotAndReplace);
+            }
+        }
+
+        private void PrefetchNextLyrics()
+        {
+            if (Queue.Count <= 1) return;
+            var next = Queue[1];
+            if (next == null) return;
+            string nextKey = BuildLyricsSongKey(next);
+            _ = GetOrStartLyricsTask(next, nextKey);
+        }
+
+        private void ApplyLyricsAdaptiveLayout(bool noLyrics, bool animate = true)
+        {
+            if (NowPlayingHeader == null || NowInfoStack == null || ThumbnailBorder == null || ProgressPanel == null) return;
+            _layoutTransitionVersion++;
+            _isNoLyricsLayout = noLyrics;
+            NowPlayingHeader.BeginAnimation(OpacityProperty, null);
+            NowPlayingHeader.Opacity = 1;
+            ApplyLyricsAdaptiveLayoutValues(noLyrics, animate);
+        }
+
+        private void ApplyLyricsAdaptiveLayoutValues(bool noLyrics, bool animate)
+        {
+            double playerWidth = Player.ActualWidth > 0 ? Player.ActualWidth : Player.Width;
+            double playerHeight = Player.ActualHeight > 0 ? Player.ActualHeight : ActualHeight;
+            if (double.IsNaN(playerWidth) || playerWidth <= 0) playerWidth = 835;
+            if (double.IsNaN(playerHeight) || playerHeight <= 0) playerHeight = 800;
+
+            double progressAreaHeight = ProgressRow?.ActualHeight > 0
+                ? ProgressRow.ActualHeight
+                : (ProgressPanel.ActualHeight > 0 ? ProgressPanel.ActualHeight + 18 : 106);
+            double controlsAreaHeight = ControlsRow?.ActualHeight > 0 ? ControlsRow.ActualHeight : 130;
+            double reservedBottomHeight = progressAreaHeight + controlsAreaHeight + 46;
+            double availableVisualHeight = Math.Max(120, playerHeight - reservedBottomHeight);
+
+            double targetThumbWidth;
+            if (noLyrics)
+            {
+                double widthByContainer = Math.Max(140, (playerWidth - 52) * 0.72);
+                double heightByContainer = Math.Max(130, availableVisualHeight * 0.86);
+                double widthByHeight = heightByContainer * (16.0 / 9.0);
+                targetThumbWidth = Math.Clamp(Math.Min(widthByContainer, widthByHeight), 140, 820);
+            }
+            else
+            {
+                targetThumbWidth = Math.Clamp((playerWidth - 88) * 0.25, 150, 280);
+            }
+
+            var targetThumbHeight = targetThumbWidth * (9.0 / 16.0);
+            var targetHeaderMargin = noLyrics ? new Thickness(6, 14, 6, 6) : new Thickness(6);
+            var targetInfoMargin = noLyrics
+                ? new Thickness(0, Math.Clamp(targetThumbHeight * 0.07, 10, 24), 0, 0)
+                : new Thickness(12, 0, 0, 0);
+            var targetProgressMargin = noLyrics ? new Thickness(6, 10, 6, 8) : new Thickness(6, 6, 6, 8);
+
+            double scale = Math.Clamp(targetThumbWidth / 448d, 0.85, 1.55);
+            var targetTitleFont = noLyrics ? Math.Clamp(40d * scale, 28, 60) : 26d;
+            var targetArtistFont = noLyrics ? Math.Clamp(30d * scale, 22, 44) : 24d;
+            var targetLengthFont = noLyrics ? Math.Clamp(22d * scale, 18, 34) : 18d;
+            bool allowTwoLineTitle = noLyrics && availableVisualHeight >= 290;
+            double titleLineHeight = targetTitleFont * 1.2;
+
+            NowPlayingHeader.Orientation = noLyrics ? Orientation.Vertical : Orientation.Horizontal;
+            NowPlayingHeader.HorizontalAlignment = noLyrics ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+            NowPlayingHeader.VerticalAlignment = noLyrics ? VerticalAlignment.Center : VerticalAlignment.Stretch;
+            NowInfoStack.HorizontalAlignment = noLyrics ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+
+            var textAlignment = noLyrics ? TextAlignment.Center : TextAlignment.Left;
+            NowTitle.TextAlignment = textAlignment;
+            NowArtist.TextAlignment = textAlignment;
+            NowLength.TextAlignment = textAlignment;
+            NowLength.HorizontalAlignment = noLyrics ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+            NowTitle.TextWrapping = noLyrics ? TextWrapping.Wrap : TextWrapping.NoWrap;
+            NowTitle.TextTrimming = noLyrics && allowTwoLineTitle ? TextTrimming.None : TextTrimming.CharacterEllipsis;
+            NowTitle.MaxWidth = noLyrics
+                ? Math.Max(140, Math.Min(playerWidth - 60, targetThumbWidth + 120))
+                : Math.Max(260, Math.Min(playerWidth - 90, 560));
+            NowTitle.MaxHeight = noLyrics
+                ? (allowTwoLineTitle ? titleLineHeight * 2.3 : titleLineHeight * 1.2)
+                : double.PositiveInfinity;
+
+            Grid.SetRowSpan(NowPlayingHeader, noLyrics ? 2 : 1);
+
+            if (animate)
+            {
+                AnimateDouble(ThumbnailBorder, FrameworkElement.WidthProperty, targetThumbWidth, 460);
+                AnimateDouble(ThumbnailBorder, FrameworkElement.HeightProperty, targetThumbHeight, 460);
+                AnimateThickness(NowPlayingHeader, FrameworkElement.MarginProperty, targetHeaderMargin, 460);
+                AnimateThickness(NowInfoStack, FrameworkElement.MarginProperty, targetInfoMargin, 460);
+                AnimateThickness(ProgressPanel, FrameworkElement.MarginProperty, targetProgressMargin, 460);
+                AnimateDouble(NowTitle, TextBlock.FontSizeProperty, targetTitleFont, 420);
+                AnimateDouble(NowArtist, TextBlock.FontSizeProperty, targetArtistFont, 420);
+                AnimateDouble(NowLength, TextBlock.FontSizeProperty, targetLengthFont, 420);
+            }
+            else
+            {
+                ThumbnailBorder.BeginAnimation(FrameworkElement.WidthProperty, null);
+                ThumbnailBorder.BeginAnimation(FrameworkElement.HeightProperty, null);
+                NowPlayingHeader.BeginAnimation(FrameworkElement.MarginProperty, null);
+                NowInfoStack.BeginAnimation(FrameworkElement.MarginProperty, null);
+                ProgressPanel.BeginAnimation(FrameworkElement.MarginProperty, null);
+                NowTitle.BeginAnimation(TextBlock.FontSizeProperty, null);
+                NowArtist.BeginAnimation(TextBlock.FontSizeProperty, null);
+                NowLength.BeginAnimation(TextBlock.FontSizeProperty, null);
+
+                ThumbnailBorder.Width = targetThumbWidth;
+                ThumbnailBorder.Height = targetThumbHeight;
+                NowPlayingHeader.Margin = targetHeaderMargin;
+                NowInfoStack.Margin = targetInfoMargin;
+                ProgressPanel.Margin = targetProgressMargin;
+                NowTitle.FontSize = targetTitleFont;
+                NowArtist.FontSize = targetArtistFont;
+                NowLength.FontSize = targetLengthFont;
+            }
+        }
+
+        private static void AnimateDouble(FrameworkElement target, DependencyProperty property, double value, int durationMs)
+        {
+            var animation = new DoubleAnimation
+            {
+                To = value,
+                Duration = TimeSpan.FromMilliseconds(durationMs),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+            };
+            target.BeginAnimation(property, animation, HandoffBehavior.SnapshotAndReplace);
+        }
+
+        private static void AnimateThickness(FrameworkElement target, DependencyProperty property, Thickness value, int durationMs)
+        {
+            var animation = new ThicknessAnimation
+            {
+                To = value,
+                Duration = TimeSpan.FromMilliseconds(durationMs),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+            };
+            target.BeginAnimation(property, animation, HandoffBehavior.SnapshotAndReplace);
         }
 
         private async Task CrossfadeToNext(Song nextSong)

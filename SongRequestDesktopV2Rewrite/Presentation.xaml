@@ -20,6 +20,36 @@
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
+        <Style x:Key="ModernPresentationProgressBar" TargetType="ProgressBar">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="#3A3A3A"/>
+            <Setter Property="Foreground">
+                <Setter.Value>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#5B8DEF" Offset="0"/>
+                        <GradientStop Color="#7AD1FF" Offset="1"/>
+                    </LinearGradientBrush>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid x:Name="TemplateRoot" SnapsToDevicePixels="True">
+                            <Border x:Name="PART_Track"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="#66FFFFFF"
+                                    BorderThickness="1"
+                                    CornerRadius="12"/>
+                            <Border x:Name="PART_Indicator"
+                                    Background="{TemplateBinding Foreground}"
+                                    HorizontalAlignment="Left"
+                                    CornerRadius="12"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Simple animated marquee for non-timed lyrics -->
         <Storyboard x:Key="MarqueeStoryboard" RepeatBehavior="Forever">
             <DoubleAnimation Storyboard.TargetName="MarqueeTranslate" Storyboard.TargetProperty="X" From="700" To="-1800" Duration="0:0:24" />
@@ -158,8 +188,13 @@
                         <RowDefinition x:Name="MarqueeRow" Height="80"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Progress slider -->
-                    <Slider x:Name="PresentationProgress" Grid.Row="0" Minimum="0" Maximum="1" Value="0" Height="18" IsEnabled="False" IsHitTestVisible="False" Background="#2A2A2A"/>
+                    <!-- Progress -->
+                    <ProgressBar x:Name="PresentationProgress"
+                                 Grid.Row="0"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Value="0"
+                                 Style="{StaticResource ModernPresentationProgressBar}"/>
 
                     <!-- Elapsed/Remaining times with translucent backgrounds -->
                     <DockPanel Grid.Row="1" Margin="0,4,0,0">
@@ -175,7 +210,7 @@
                     <Border x:Name="TimedLyricsBorder" Grid.Row="2" Background="#B0000000" CornerRadius="10" Padding="18,14" Margin="0,12,0,0" Visibility="Collapsed">
                         <Grid>
                             <ScrollViewer x:Name="TimedLyricsScroll" VerticalScrollBarVisibility="Hidden" CanContentScroll="False">
-                                <StackPanel x:Name="TimedLyricsStack" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="12,6">
+                                <StackPanel x:Name="TimedLyricsStack" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="4,6">
                                     <!-- Lyrics will be populated dynamically -->
                                 </StackPanel>
                             </ScrollViewer>

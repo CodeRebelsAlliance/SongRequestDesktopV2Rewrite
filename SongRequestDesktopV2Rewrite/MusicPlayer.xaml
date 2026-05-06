@@ -171,6 +171,234 @@
             </Setter>
         </Style>
 
+        <Style TargetType="Slider" x:Key="ModernProgressSlider">
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Height="{TemplateBinding Height}">
+                            <Track x:Name="PART_Track"
+                                   Minimum="{TemplateBinding Minimum}"
+                                   Maximum="{TemplateBinding Maximum}"
+                                   Value="{Binding Value, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                   VerticalAlignment="Center">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton x:Name="FilledTrack" Command="Slider.DecreaseLarge" Focusable="False" Height="10">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border CornerRadius="7" Background="{StaticResource ControlAccent}" SnapsToDevicePixels="True"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton x:Name="RemainingTrack" Command="Slider.IncreaseLarge" Focusable="False" Height="10">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border CornerRadius="7" Background="#343434" SnapsToDevicePixels="True"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb x:Name="ProgressThumb" Width="20" Height="20" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                                        <Thumb.RenderTransform>
+                                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                        </Thumb.RenderTransform>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Grid>
+                                                    <Ellipse Fill="#EEFFFFFF" Width="20" Height="20"/>
+                                                    <Ellipse Fill="{StaticResource ControlAccent}" Width="12" Height="12"/>
+                                                </Grid>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="FilledTrack" Property="Height" Value="12"/>
+                                <Setter TargetName="RemainingTrack" Property="Height" Value="12"/>
+                                <Setter TargetName="ProgressThumb" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseCaptureWithin" Value="True">
+                                <Setter TargetName="ProgressThumb" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+
+                            <Trigger SourceName="ProgressThumb" Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ProgressThumb" Property="Opacity" Value="1"/>
+                                <Setter TargetName="ProgressThumb" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+
+                            <EventTrigger RoutedEvent="Thumb.DragStarted" SourceName="ProgressThumb">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ProgressThumb"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                         To="1.24"
+                                                         Duration="0:0:0.10"/>
+                                        <DoubleAnimation Storyboard.TargetName="ProgressThumb"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                         To="1.24"
+                                                         Duration="0:0:0.10"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+
+                            <EventTrigger RoutedEvent="Thumb.DragCompleted" SourceName="ProgressThumb">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ProgressThumb"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                         To="1.12"
+                                                         Duration="0:0:0.12"/>
+                                        <DoubleAnimation Storyboard.TargetName="ProgressThumb"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                         To="1.12"
+                                                         Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Slider" x:Key="CompactModernSlider">
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Height="{TemplateBinding Height}">
+                            <Track x:Name="PART_Track"
+                                   Minimum="{TemplateBinding Minimum}"
+                                   Maximum="{TemplateBinding Maximum}"
+                                   Value="{Binding Value, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                   VerticalAlignment="Center">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton x:Name="CompactFilledTrack" Command="Slider.DecreaseLarge" Focusable="False" Height="6">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border CornerRadius="5" Background="{StaticResource ControlAccent}" SnapsToDevicePixels="True"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton x:Name="CompactRemainingTrack" Command="Slider.IncreaseLarge" Focusable="False" Height="6">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border CornerRadius="5" Background="#3A3A3A" SnapsToDevicePixels="True"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb x:Name="CompactThumb" Width="14" Height="14" Background="Transparent" RenderTransformOrigin="0.5,0.5" VerticalAlignment="Center">
+                                        <Thumb.RenderTransform>
+                                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                        </Thumb.RenderTransform>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Grid>
+                                                    <Ellipse Fill="#F0FFFFFF" Width="14" Height="14"/>
+                                                    <Ellipse Fill="{StaticResource ControlAccent}" Width="8" Height="8"/>
+                                                </Grid>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CompactFilledTrack" Property="Height" Value="8"/>
+                                <Setter TargetName="CompactRemainingTrack" Property="Height" Value="8"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                            <EventTrigger RoutedEvent="Thumb.DragStarted" SourceName="CompactThumb">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="CompactThumb"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                         To="1.2"
+                                                         Duration="0:0:0.1"/>
+                                        <DoubleAnimation Storyboard.TargetName="CompactThumb"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                         To="1.2"
+                                                         Duration="0:0:0.1"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="Thumb.DragCompleted" SourceName="CompactThumb">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="CompactThumb"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                         To="1"
+                                                         Duration="0:0:0.12"/>
+                                        <DoubleAnimation Storyboard.TargetName="CompactThumb"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                         To="1"
+                                                         Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="OutputDeviceDropdownItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBd" Background="Transparent" CornerRadius="7" BorderThickness="1" BorderBrush="Transparent">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBd" Property="Background" Value="#2A3244"/>
+                                <Setter TargetName="ItemBd" Property="BorderBrush" Value="#405A86"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBd" Property="Background" Value="#334869"/>
+                                <Setter TargetName="ItemBd" Property="BorderBrush" Value="{StaticResource ControlAccentLight}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="OutputDeviceComboStyle" TargetType="ComboBox" BasedOn="{StaticResource AnimatedComboBox}">
+            <Setter Property="Background" Value="#171B22"/>
+            <Setter Property="BorderBrush" Value="#3A3F4B"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource OutputDeviceDropdownItemStyle}"/>
+        </Style>
+
         <!-- Helper value converterless binding for track fill: a small attached behaviour in code-behind is best for precise fill,
        but if you prefer pure XAML: consumers can animate the TrackFill width from code when Value changes.
        The style above focuses on thumb animation + look & feel. -->
@@ -587,20 +815,20 @@
             <Border Margin="0,12,0,12" CornerRadius="12" Padding="12" Background="Black" HorizontalAlignment="Center" Width="835" x:Name="Player">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="120"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition x:Name="NowPlayingHeaderRow" Height="Auto" MinHeight="124"/>
+                        <RowDefinition x:Name="LyricsRow" Height="*"/>
                         <!-- lyrics will occupy this row -->
-                        <RowDefinition Height="60"/>
+                        <RowDefinition x:Name="ProgressRow" Height="Auto" MinHeight="88"/>
                         <!-- progress -->
-                        <RowDefinition Height="80"/>
+                        <RowDefinition x:Name="ControlsRow" Height="Auto" MinHeight="112"/>
                     </Grid.RowDefinitions>
 
                     <!-- Current song display -->
-                    <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="6">
+                    <StackPanel x:Name="NowPlayingHeader" Orientation="Horizontal" Grid.Row="0" Margin="6">
                         <Border Width="192" Height="108" CornerRadius="8" Background="#222" x:Name="ThumbnailBorder">
                             <Image x:Name="NowThumbnail" Stretch="Uniform"/>
                         </Border>
-                        <StackPanel Margin="12,0">
+                        <StackPanel x:Name="NowInfoStack" Margin="12,0">
                             <TextBlock x:Name="NowTitle" Text="Title" FontSize="26" FontWeight="Bold" Foreground="White" />
                             <TextBlock x:Name="NowArtist" Text="Artist" FontSize="24" FontWeight="Bold" Foreground="#CCCCCC"/>
                             <TextBlock x:Name="NowLength" Text="00:00" FontSize="18" Foreground="#999999" Margin="0,6,0,0"/>
@@ -609,15 +837,28 @@
 
                     <!-- Lyrics panel (below thumbnail, above progress) -->
                     <Border Grid.Row="1" Background="#CF070707" CornerRadius="8" Padding="8" Margin="6,8,6,8" x:Name="WholeLyricsPanel" Visibility="Hidden">
-                        <ScrollViewer x:Name="LyricsScrollViewer" VerticalScrollBarVisibility="Hidden">
-                            <StackPanel x:Name="LyricsStackPanel" Orientation="Vertical" />
-                        </ScrollViewer>
+                        <Grid>
+                            <ScrollViewer x:Name="LyricsScrollViewer" VerticalScrollBarVisibility="Hidden" CanContentScroll="False">
+                                <StackPanel x:Name="LyricsStackPanel" Orientation="Vertical" HorizontalAlignment="Stretch" />
+                            </ScrollViewer>
+
+                            <StackPanel x:Name="LyricsLoadingPanel" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Width="320">
+                                <ProgressBar IsIndeterminate="True" Height="10" Foreground="{StaticResource ControlAccent}" Background="#2A2A2A"/>
+                                <TextBlock Text="Loading lyrics..."
+                                           Foreground="#DCDCDC"
+                                           FontSize="22"
+                                           FontWeight="SemiBold"
+                                           TextAlignment="Center"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,12,0,0"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- Progress + time -->
-                    <StackPanel Grid.Row="2" Margin="6,12" Orientation="Vertical">
-                        <Slider x:Name="ProgressSlider" Minimum="0" Maximum="1" Value="0" Height="8" Background="#2A2A2A" 
-                        IsMoveToPointEnabled="True" PreviewMouseLeftButtonUp="ProgressSlider_PreviewMouseLeftButtonUp" Style="{StaticResource AnimatedSlider}"/>
+                    <StackPanel x:Name="ProgressPanel" Grid.Row="2" Margin="6,5" Orientation="Vertical">
+                        <Slider x:Name="ProgressSlider" Minimum="0" Maximum="1" Value="0" Height="22" Background="#2A2A2A" 
+                        IsMoveToPointEnabled="True" PreviewMouseLeftButtonUp="ProgressSlider_PreviewMouseLeftButtonUp" Style="{StaticResource ModernProgressSlider}"/>
                         <DockPanel Margin="4,6,4,0">
                             <TextBlock x:Name="ElapsedText" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Left" FontWeight="Bold" FontSize="20"/>
                             <TextBlock x:Name="RemainingText" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Right" TextAlignment="Right" FontWeight="Bold" FontSize="20"/>
@@ -633,14 +874,14 @@
 
                         <StackPanel Orientation="Vertical" Margin="24,0">
                             <TextBlock Text="Volume" Foreground="#DDD" FontWeight="Bold" FontSize="18"/>
-                            <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" Value="0.9" Width="130" SmallChange="0.1" Style="{StaticResource AnimatedSlider}"/>
+                            <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" Value="0.9" Width="130" SmallChange="0.1" Style="{StaticResource CompactModernSlider}"/>
                             <TextBlock Text="Crossfade (s)" Foreground="#DDD" FontWeight="Bold" FontSize="18"/>
-                            <Slider x:Name="CrossfadeSlider" Minimum="0" Maximum="10" Value="4" Width="130" Style="{StaticResource AnimatedSlider}"/>
+                            <Slider x:Name="CrossfadeSlider" Minimum="0" Maximum="10" Value="4" Width="130" Style="{StaticResource CompactModernSlider}"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Vertical" Margin="12,0">
                             <TextBlock Text="Output" Foreground="#DDD" FontWeight="Bold" FontSize="18"/>
-                            <ComboBox x:Name="OutputDeviceCombo" Width="300" Style="{StaticResource AnimatedComboBox}" FontSize="16"/>
+                            <ComboBox x:Name="OutputDeviceCombo" Width="300" Style="{StaticResource OutputDeviceComboStyle}" FontSize="16"/>
                         </StackPanel>
                     </StackPanel>
                 </Grid>
