@@ -784,7 +784,6 @@ namespace SongRequestDesktopV2Rewrite
             {
                 _currentSyncedLines = result
                     .ParseSyncedLines()
-                    .Where(l => !string.IsNullOrWhiteSpace(l.Text))
                     .ToList();
 
                 if (_currentSyncedLines.Count > 0)
