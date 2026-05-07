@@ -306,6 +306,13 @@
                                               Content="Normalize volume between tracks"
                                               Foreground="White"
                                               Margin="0,0,0,8"/>
+                                    <CheckBox x:Name="CaptionFallbackCheckBox"
+                                              Content="Use YouTube captions as lyrics fallback"
+                                              Foreground="White"
+                                              Margin="0,0,0,8"/>
+                                    <TextBlock Text="When lyric APIs fail, use cached YouTube subtitles as fallback lyrics."
+                                               Style="{StaticResource HintTextStyle}"
+                                               Margin="0,0,0,8"/>
 
                                     <Border Margin="0,2,0,0" CornerRadius="8" Padding="2">
                                         <Border.BorderBrush>

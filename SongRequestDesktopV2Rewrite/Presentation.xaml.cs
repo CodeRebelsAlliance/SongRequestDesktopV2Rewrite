@@ -508,6 +508,7 @@ namespace SongRequestDesktopV2Rewrite
 
             SetLyricsLoadingVisible(true);
             SetLyricsFocusLayout(false);
+            SetLyricsProviderLabel("Lyrics: Loading...");
         }
 
         private void ApplyLyricsResult(LyricsResult result)
@@ -555,6 +556,7 @@ namespace SongRequestDesktopV2Rewrite
             }
 
             LyricsResult result;
+            string providerLabel = "Lyrics: LRCLIB";
             try
             {
                 result = await fetchTask;
@@ -564,7 +566,9 @@ namespace SongRequestDesktopV2Rewrite
                 result = new LyricsResult { Found = false };
             }
 
-            if ((!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
+            var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
+            if (fallbackEnabled
+                && (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
                 && TryGetCachedYoutubeSubtitleFallback(song.songPath, out var timedSubtitleFallback, out var plainSubtitleFallback))
             {
                 result = new LyricsResult
@@ -573,12 +577,18 @@ namespace SongRequestDesktopV2Rewrite
                     SyncedLyrics = timedSubtitleFallback ?? string.Empty,
                     PlainLyrics = plainSubtitleFallback ?? string.Empty
                 };
+                providerLabel = "Lyrics: YouTube captions";
+            }
+            else if (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
+            {
+                providerLabel = "";
             }
 
             await Dispatcher.InvokeAsync(() =>
             {
                 if (requestVersion != _lyricsRequestVersion) return;
                 if (_lastSong == null || BuildLyricsKey(_lastSong) != songKey) return;
+                SetLyricsProviderLabel(providerLabel);
                 ApplyLyricsResult(result);
             });
         }
@@ -681,6 +691,16 @@ namespace SongRequestDesktopV2Rewrite
 
             if (marqueeText != null) marqueeText.Text = "";
             _currentHighlighted = null;
+            SetLyricsProviderLabel("");
+        }
+
+        private void SetLyricsProviderLabel(string text)
+        {
+            var providerText = FindName("LyricsProviderText") as TextBlock;
+            if (providerText != null)
+            {
+                providerText.Text = text;
+            }
         }
 
         private sealed class CachedYoutubeVideoData

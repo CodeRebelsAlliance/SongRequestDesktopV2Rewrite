@@ -85,6 +85,7 @@ namespace SongRequestDesktopV2Rewrite
             var fullscreenCheckBox = GetControl<CheckBox>("PresentationFullscreenCheckBox");
             var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
             var autoEnqueueCheckBox = GetControl<CheckBox>("AutoEnqueueCheckBox");
+            var captionFallbackCheckBox = GetControl<CheckBox>("CaptionFallbackCheckBox");
 
             if (fetchingBox != null) fetchingBox.Text = cfg.FetchingTimer.ToString();
             if (threadsBox != null) threadsBox.Text = cfg.Threads.ToString();
@@ -95,6 +96,7 @@ namespace SongRequestDesktopV2Rewrite
             if (fullscreenCheckBox != null) fullscreenCheckBox.IsChecked = cfg.PresentationFullscreen;
             if (normalizeVolumeCheckBox != null) normalizeVolumeCheckBox.IsChecked = cfg.NormalizeVolume;
             if (autoEnqueueCheckBox != null) autoEnqueueCheckBox.IsChecked = cfg.AutoEnqueue;
+            if (captionFallbackCheckBox != null) captionFallbackCheckBox.IsChecked = cfg.UseCaptionLyricsFallback;
 
             _isTokenVisible = false;
             UpdateTokenVisibility();
@@ -113,6 +115,7 @@ namespace SongRequestDesktopV2Rewrite
             var fullscreenCheckBox = GetControl<CheckBox>("PresentationFullscreenCheckBox");
             var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
             var autoEnqueueCheckBox = GetControl<CheckBox>("AutoEnqueueCheckBox");
+            var captionFallbackCheckBox = GetControl<CheckBox>("CaptionFallbackCheckBox");
             var statusTb = GetControl<TextBlock>("StatusText");
             var tokenValue = GetTokenValue();
 
@@ -132,6 +135,7 @@ namespace SongRequestDesktopV2Rewrite
                     cfg.PresentationFullscreen = fullscreenCheckBox?.IsChecked ?? false;
                     cfg.NormalizeVolume = normalizeVolumeCheckBox?.IsChecked ?? false;
                     cfg.AutoEnqueue = autoEnqueueCheckBox?.IsChecked ?? false;
+                    cfg.UseCaptionLyricsFallback = captionFallbackCheckBox?.IsChecked ?? true;
 
                     // If normalization is turned off, deactivate it
                     if (!cfg.NormalizeVolume)

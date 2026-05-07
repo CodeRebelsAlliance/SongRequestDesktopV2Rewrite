@@ -199,11 +199,21 @@
                     <!-- Elapsed/Remaining times with translucent backgrounds -->
                     <DockPanel Grid.Row="1" Margin="0,4,0,0">
                         <Border Background="#AA000000" CornerRadius="6" Padding="8,4" DockPanel.Dock="Left">
-                            <TextBlock x:Name="PresentationElapsed" Text="00:00" Foreground="#AAAAAA" FontSize="20" />
+                            <TextBlock x:Name="PresentationElapsed" Text="00:00" Foreground="#AAAAAA" FontSize="20" FontWeight="Bold" />
                         </Border>
                         <Border Background="#AA000000" CornerRadius="6" Padding="8,4" DockPanel.Dock="Right">
-                            <TextBlock x:Name="PresentationRemaining" Text="00:00" Foreground="#AAAAAA" FontSize="20" TextAlignment="Right" />
+                            <TextBlock x:Name="PresentationRemaining" Text="00:00" Foreground="#AAAAAA" FontSize="20" TextAlignment="Right" FontWeight="Bold" />
                         </Border>
+                        <TextBlock x:Name="LyricsProviderText"
+                                   Text="Lyrics: -"
+                                   Foreground="#AFAFAF"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   DockPanel.Dock="Left"
+                                   Margin="12,0"/>
+                        
                     </DockPanel>
 
                     <!-- Timed lyrics: scrollable list with animated highlight and translucent background -->

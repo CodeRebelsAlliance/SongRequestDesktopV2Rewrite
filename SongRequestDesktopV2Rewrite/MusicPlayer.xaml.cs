@@ -737,6 +737,7 @@ namespace SongRequestDesktopV2Rewrite
                 SetLyricsLoadingVisible(false);
                 SetLyricsPanelVisibility(false, false);
                 ApplyLyricsAdaptiveLayout(false, false);
+                SetLyricsProviderLabel("");
                 return;
             }
 
@@ -751,6 +752,7 @@ namespace SongRequestDesktopV2Rewrite
             _ = ShowLyricsLoadingIfSlowAsync(songKey, requestVersion, fetchTask);
 
             LyricsResult result;
+            string providerLabel = "Lyrics: LRCLIB";
             try
             {
                 result = await fetchTask.ConfigureAwait(false);
@@ -760,7 +762,9 @@ namespace SongRequestDesktopV2Rewrite
                 result = new LyricsResult();
             }
 
-            if ((!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
+            var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
+            if (fallbackEnabled
+                && (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
                 && TryGetCachedYoutubeSubtitleFallback(current.songPath, out var timedSubtitleFallback, out var plainSubtitleFallback))
             {
                 result = new LyricsResult
@@ -769,6 +773,11 @@ namespace SongRequestDesktopV2Rewrite
                     SyncedLyrics = timedSubtitleFallback ?? string.Empty,
                     PlainLyrics = plainSubtitleFallback ?? string.Empty
                 };
+                providerLabel = "Lyrics: YouTube captions";
+            }
+            else if (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
+            {
+                providerLabel = "";
             }
 
             await Dispatcher.InvokeAsync(() =>
@@ -777,6 +786,7 @@ namespace SongRequestDesktopV2Rewrite
                     return;
 
                 SetLyricsLoadingVisible(false);
+                SetLyricsProviderLabel(providerLabel);
                 RenderLyricsResult(result);
             });
 
@@ -961,6 +971,7 @@ namespace SongRequestDesktopV2Rewrite
                     _currentHighlighted = null;
                     SetLyricsPanelVisibility(true, false);
                     SetLyricsLoadingVisible(true);
+                    SetLyricsProviderLabel("Lyrics: Loading...");
                 });
             }
             catch
@@ -972,6 +983,14 @@ namespace SongRequestDesktopV2Rewrite
         private void SetLyricsLoadingVisible(bool isVisible)
         {
             LyricsLoadingPanel.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void SetLyricsProviderLabel(string text)
+        {
+            if (LyricsProviderText != null)
+            {
+                LyricsProviderText.Text = text;
+            }
         }
 
         private void SetLyricsPanelVisibility(bool isVisible, bool animate = true)

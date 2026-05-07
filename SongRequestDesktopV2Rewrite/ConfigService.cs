@@ -20,6 +20,7 @@ namespace SongRequestDesktopV2Rewrite
         private float _defaultVolume = -1f; // -1 means not set
         private bool _normalizationActive = false;
         private bool _autoEnqueue = false;
+        private bool _useCaptionLyricsFallback = true;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -87,6 +88,12 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _autoEnqueue;
             set => SetField(ref _autoEnqueue, value);
+        }
+
+        public bool UseCaptionLyricsFallback
+        {
+            get => _useCaptionLyricsFallback;
+            set => SetField(ref _useCaptionLyricsFallback, value);
         }
 
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
