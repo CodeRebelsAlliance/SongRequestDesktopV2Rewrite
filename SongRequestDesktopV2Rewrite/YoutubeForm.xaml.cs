@@ -39,7 +39,10 @@ namespace SongRequestDesktopV2Rewrite
         public int ConcurrentTaskNumber => ConfigService.Instance.Current.Threads;
         public HashSet<string> fetchedYtids = new HashSet<string>();
         public HashSet<string> fetchedBlacklist = new HashSet<string>();
-        private Dictionary<string, VideoData> fetchedVideoData = new Dictionary<string, VideoData>();
+        private Dictionary<string, VideoData> fetchedVideoData = new Dictionary<string, VideoData>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _videoCacheSync = new object();
+        private readonly string _videoMetadataCachePath = System.IO.Path.Combine(downloadPath, "video-metadata-cache.json");
+        private readonly string _thumbnailCachePath = System.IO.Path.Combine(downloadPath, "thumbnail-cache");
         public int refresh_seconds => ConfigService.Instance.Current.FetchingTimer;
         public static AppManager _appManager;
         private SoundboardWindow? _soundboardWindow;
@@ -75,6 +78,8 @@ namespace SongRequestDesktopV2Rewrite
             InitializeComponent();
             
             _youTubeService = new YoutubeService(cookies);
+            EnsureVideoCacheFolders();
+            LoadVideoDataCache();
             // start clock
             _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _clockTimer.Tick += (s, e) => ClockText.Text = DateTime.Now.ToString("HH:mm:ss");
@@ -316,6 +321,154 @@ namespace SongRequestDesktopV2Rewrite
         {
             public string YtId { get; set; }
             public bool IsApproved { get; set; }
+            public string Title { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public long DurationTicks { get; set; }
+            public string ThumbnailPath { get; set; } = string.Empty;
+            public string SubtitleText { get; set; } = string.Empty;
+            public string SubtitleTimedText { get; set; } = string.Empty;
+        }
+
+        private void EnsureVideoCacheFolders()
+        {
+            try
+            {
+                Directory.CreateDirectory(downloadPath);
+                Directory.CreateDirectory(_thumbnailCachePath);
+            }
+            catch (Exception ex)
+            {
+                AppendConsoleText($"Failed to prepare cache folders: {ex.Message}", Brushes.OrangeRed);
+            }
+        }
+
+        private void LoadVideoDataCache()
+        {
+            try
+            {
+                if (!File.Exists(_videoMetadataCachePath)) return;
+
+                var json = File.ReadAllText(_videoMetadataCachePath);
+                var loaded = JsonConvert.DeserializeObject<Dictionary<string, VideoData>>(json);
+                if (loaded == null) return;
+
+                lock (_videoCacheSync)
+                {
+                    fetchedVideoData = loaded
+                        .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key))
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendConsoleText($"Failed loading video metadata cache: {ex.Message}", Brushes.OrangeRed);
+            }
+        }
+
+        private void SaveVideoDataCache()
+        {
+            try
+            {
+                EnsureVideoCacheFolders();
+                var tempPath = _videoMetadataCachePath + ".tmp";
+                string json;
+                lock (_videoCacheSync)
+                {
+                    json = JsonConvert.SerializeObject(fetchedVideoData, Formatting.Indented);
+                }
+                File.WriteAllText(tempPath, json);
+                File.Copy(tempPath, _videoMetadataCachePath, true);
+                File.Delete(tempPath);
+            }
+            catch (Exception ex)
+            {
+                AppendConsoleText($"Failed saving video metadata cache: {ex.Message}", Brushes.OrangeRed);
+            }
+        }
+
+        private VideoData GetOrCreateVideoData(string videoId)
+        {
+            lock (_videoCacheSync)
+            {
+                if (!fetchedVideoData.TryGetValue(videoId, out var data))
+                {
+                    data = new VideoData { YtId = videoId };
+                    fetchedVideoData[videoId] = data;
+                }
+
+                return data;
+            }
+        }
+
+        private async Task<BitmapImage?> LoadBitmapImageFromFileAsync(string filePath)
+        {
+            try
+            {
+                if (!File.Exists(filePath)) return null;
+                await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var ms = new MemoryStream();
+                await fs.CopyToAsync(ms);
+                ms.Position = 0;
+
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.StreamSource = ms;
+                bmp.EndInit();
+                bmp.Freeze();
+                return bmp;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task SaveBitmapImageToFileAsync(BitmapSource source, string filePath)
+        {
+            await Task.Run(() =>
+            {
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(filePath) ?? _thumbnailCachePath);
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(source));
+                using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+                encoder.Save(fs);
+            });
+        }
+
+        private async Task<BitmapImage?> GetOrFetchThumbnailAsync(string videoId, string videoUrl, VideoData videoData)
+        {
+            if (!string.IsNullOrWhiteSpace(videoData.ThumbnailPath))
+            {
+                var cachedBmp = await LoadBitmapImageFromFileAsync(videoData.ThumbnailPath);
+                if (cachedBmp != null) return cachedBmp;
+            }
+
+            string thumbnailUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
+            var bmp = await LoadBitmapImageFromUrl(thumbnailUrl);
+            if (bmp != null)
+            {
+                var thumbnailPath = System.IO.Path.Combine(_thumbnailCachePath, $"{videoId}.png");
+                await SaveBitmapImageToFileAsync(bmp, thumbnailPath);
+                videoData.ThumbnailPath = thumbnailPath;
+                SaveVideoDataCache();
+            }
+
+            return bmp;
+        }
+
+        private async Task CacheSubtitlesIfMissingAsync(string videoId, string videoUrl)
+        {
+            var videoData = GetOrCreateVideoData(videoId);
+            if (!string.IsNullOrWhiteSpace(videoData.SubtitleText) && !string.IsNullOrWhiteSpace(videoData.SubtitleTimedText)) return;
+
+            var subtitleResult = await _youTubeService.TryGetSubtitlesAsync(videoUrl);
+            if (subtitleResult != null && (!string.IsNullOrWhiteSpace(subtitleResult.PlainText) || !string.IsNullOrWhiteSpace(subtitleResult.TimedLrcText)))
+            {
+                videoData.SubtitleText = subtitleResult.PlainText ?? string.Empty;
+                videoData.SubtitleTimedText = subtitleResult.TimedLrcText ?? string.Empty;
+                SaveVideoDataCache();
+            }
         }
 
         // Data structure for dragging songs to soundboard
@@ -371,14 +524,18 @@ namespace SongRequestDesktopV2Rewrite
                             {
                                 await UpdateVideoPanelStatusAsync(ytid, isApproved);
                             }
-                            if (fetchedVideoData.ContainsKey(ytid)) fetchedVideoData[ytid].IsApproved = isApproved;
+                            if (fetchedVideoData.ContainsKey(ytid))
+                            {
+                                fetchedVideoData[ytid].IsApproved = isApproved;
+                            }
                         }
                         else
                         {
                             string videoUrl = $"https://www.youtube.com/watch?v={ytid}";
                             await AddVideoPanelAsync(videoUrl, timestampUtc, message, isApproved);
                             fetchedYtids.Add(ytid);
-                            fetchedVideoData[ytid] = new VideoData { YtId = ytid, IsApproved = isApproved };
+                            var videoData = GetOrCreateVideoData(ytid);
+                            videoData.IsApproved = isApproved;
                         }
                     }
                     finally
@@ -388,6 +545,7 @@ namespace SongRequestDesktopV2Rewrite
                 }).ToList();
 
                 await Task.WhenAll(fetchTasks);
+                SaveVideoDataCache();
                 AppendConsoleText("Fetched Database successfully!", Brushes.LightGreen);
             }
             catch (Exception ex)
@@ -488,6 +646,7 @@ namespace SongRequestDesktopV2Rewrite
             }
             foreach (var el in toRemoveB) VideoBlackListPanel.Children.Remove(el);
 
+            SaveVideoDataCache();
             ApplySortingAndFiltering();
         }
 
@@ -683,6 +842,14 @@ namespace SongRequestDesktopV2Rewrite
             string titleG = string.Empty;
             string creatorG = string.Empty;
             string lengthG = string.Empty;
+            var cachedVideoData = GetOrCreateVideoData(videoId);
+            if (isApproved.HasValue)
+            {
+                cachedVideoData.IsApproved = isApproved.Value;
+            }
+            TimeSpan resolvedLength = cachedVideoData.DurationTicks > 0
+                ? TimeSpan.FromTicks(cachedVideoData.DurationTicks)
+                : TimeSpan.Zero;
 
             try
             {
@@ -697,24 +864,40 @@ namespace SongRequestDesktopV2Rewrite
 
                     downloadedFilePath = mp3FilePath;
 
-                    var (title, length, creator) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
-                    UpdateLabels(title, length, creator, titleText, lengthText, creatorText);
-                    titleG = title;
-                    creatorG = creator;
-                    lengthG = length.ToString(@"hh\:mm\:ss");
-                    panelEntry.Title = title ?? string.Empty;
-                    panelEntry.Creator = creator ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(cachedVideoData.Title) && !string.IsNullOrWhiteSpace(cachedVideoData.Creator) && cachedVideoData.DurationTicks > 0)
+                    {
+                        resolvedLength = TimeSpan.FromTicks(cachedVideoData.DurationTicks);
+                        UpdateLabels(cachedVideoData.Title, resolvedLength, cachedVideoData.Creator, titleText, lengthText, creatorText);
+                        titleG = cachedVideoData.Title;
+                        creatorG = cachedVideoData.Creator;
+                        lengthG = resolvedLength.ToString(@"hh\:mm\:ss");
+                    }
+                    else
+                    {
+                        var (title, length, creator) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
+                        resolvedLength = length;
+                        cachedVideoData.Title = title ?? string.Empty;
+                        cachedVideoData.Creator = creator ?? string.Empty;
+                        cachedVideoData.DurationTicks = length.Ticks;
+                        UpdateLabels(title, length, creator, titleText, lengthText, creatorText);
+                        titleG = title;
+                        creatorG = creator;
+                        lengthG = length.ToString(@"hh\:mm\:ss");
+                        SaveVideoDataCache();
+                    }
+
+                    panelEntry.Title = titleG ?? string.Empty;
+                    panelEntry.Creator = creatorG ?? string.Empty;
                     ApplySortingAndFiltering();
 
                     // Update drag icon data
                     if (dragIcon.Tag is DragSongData dragData)
                     {
-                        dragData.Title = title;
+                        dragData.Title = titleG;
                         dragData.FilePath = mp3FilePath;
                     }
 
-                    string thumbnailUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
-                    var bmp = await LoadBitmapImageFromUrl(thumbnailUrl);
+                    var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, cachedVideoData);
                     if (bmp != null) thumbnail.Source = bmp;
                 }
                 else
@@ -732,12 +915,17 @@ namespace SongRequestDesktopV2Rewrite
                     EnableControls(true, playButton, approveButton, blacklistButton, deleteButton, inspectButton, playNextButton);
 
                     var (title, length, creator) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
+                    resolvedLength = length;
+                    cachedVideoData.Title = title ?? string.Empty;
+                    cachedVideoData.Creator = creator ?? string.Empty;
+                    cachedVideoData.DurationTicks = length.Ticks;
                     UpdateLabels(title, length, creator, titleText, lengthText, creatorText);
                     titleG = title;
                     creatorG = creator;
                     lengthG = length.ToString(@"hh\:mm\:ss");
                     panelEntry.Title = title ?? string.Empty;
                     panelEntry.Creator = creator ?? string.Empty;
+                    SaveVideoDataCache();
                     ApplySortingAndFiltering();
 
                     // Update drag icon data
@@ -747,17 +935,18 @@ namespace SongRequestDesktopV2Rewrite
                         dragData.FilePath = downloadedFilePath;
                     }
 
-                    string thumbnailUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
-                    var bmp = await LoadBitmapImageFromUrl(thumbnailUrl);
+                    var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, cachedVideoData);
                     if (bmp != null) thumbnail.Source = bmp;
 
                     // Auto Enqueue: if enabled and initial load is done, this is a newly sent-in song
                     if (_initialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true)
                     {
-                        _musicPlayer.AddSong(new Song(titleG, creatorG, thumbnail, length, downloadedFilePath));
+                        _musicPlayer.AddSong(new Song(titleG, creatorG, thumbnail, resolvedLength, downloadedFilePath));
                         AppendConsoleText($"🎵 Auto-enqueued: {titleG}", Brushes.LightGreen);
                     }
                 }
+
+                _ = CacheSubtitlesIfMissingAsync(videoId, videoUrl);
 
                 if (isApproved.HasValue && isApproved.Value)
                 {
@@ -789,6 +978,9 @@ namespace SongRequestDesktopV2Rewrite
                         }
 
                         await SendApprovalRequest(videoId, !currentlyApproved);
+                        var videoData = GetOrCreateVideoData(videoId);
+                        videoData.IsApproved = !currentlyApproved;
+                        SaveVideoDataCache();
                         AppendConsoleText($"Approval toggled for {videoId}");
                     }
                     catch (Exception ex)
@@ -831,7 +1023,7 @@ namespace SongRequestDesktopV2Rewrite
                     {
                         // Show lyrics in LyricsText if available
                         LyricsSongTitle.Text = titleG;
-                        await ShowLyricsAsync(videoUrl, downloadPath, titleG, creatorG.Replace(" - Topic", ""));
+                        await ShowLyricsAsync(videoId, videoUrl, titleG, creatorG.Replace(" - Topic", ""));
                         // Show a lyrics panel if exists
                         var host = this.FindName("RightCardBorder") as UIElement;
                         if (host != null) host.Visibility = Visibility.Visible;
@@ -848,6 +1040,7 @@ namespace SongRequestDesktopV2Rewrite
                     VideoListPanel.Children.Remove(videoPanel);
                     fetchedYtids.Remove(videoId);
                     fetchedVideoData.Remove(videoId);
+                    SaveVideoDataCache();
                     _sentSongPanels.Remove(videoId);
                     ApplySortingAndFiltering();
                     AppendConsoleText($"Blacklisted {videoId}");
@@ -863,6 +1056,7 @@ namespace SongRequestDesktopV2Rewrite
                         VideoListPanel.Children.Remove(videoPanel);
                         fetchedYtids.Remove(videoId);
                         fetchedVideoData.Remove(videoId);
+                        SaveVideoDataCache();
                         _sentSongPanels.Remove(videoId);
                         ApplySortingAndFiltering();
                         AppendConsoleText($"Deleted {videoId}");
@@ -1054,11 +1248,36 @@ namespace SongRequestDesktopV2Rewrite
             creatorLabel.Text = creator;
         }
 
-        private async Task ShowLyricsAsync(string videoUrl, string downloadPath, string title, string artist)
+        private async Task ShowLyricsAsync(string videoId, string videoUrl, string title, string artist)
         {
             try
             {
                 string lyrics = await _youTubeService.GetLyricsAsync(artist, title, videoUrl);
+
+                if (fetchedVideoData.TryGetValue(videoId, out var cachedVideoData))
+                {
+                    if ((string.IsNullOrWhiteSpace(lyrics) || lyrics.StartsWith("No Lyrics", StringComparison.OrdinalIgnoreCase))
+                        && !string.IsNullOrWhiteSpace(cachedVideoData.SubtitleText))
+                    {
+                        lyrics = cachedVideoData.SubtitleText;
+                    }
+                    else if (string.IsNullOrWhiteSpace(cachedVideoData.SubtitleText) || string.IsNullOrWhiteSpace(cachedVideoData.SubtitleTimedText))
+                    {
+                        var subtitleResult = await _youTubeService.TryGetSubtitlesAsync(videoUrl);
+                        if (subtitleResult != null && (!string.IsNullOrWhiteSpace(subtitleResult.PlainText) || !string.IsNullOrWhiteSpace(subtitleResult.TimedLrcText)))
+                        {
+                            cachedVideoData.SubtitleText = subtitleResult.PlainText ?? string.Empty;
+                            cachedVideoData.SubtitleTimedText = subtitleResult.TimedLrcText ?? string.Empty;
+                            SaveVideoDataCache();
+
+                            if (string.IsNullOrWhiteSpace(lyrics) || lyrics.StartsWith("No Lyrics", StringComparison.OrdinalIgnoreCase))
+                            {
+                                lyrics = cachedVideoData.SubtitleText;
+                            }
+                        }
+                    }
+                }
+
                 LyricsText.Document.Blocks.Clear();
                 LyricsText.Document.Blocks.Add(new Paragraph(new Run(lyrics)));
             }

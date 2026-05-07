@@ -760,6 +760,17 @@ namespace SongRequestDesktopV2Rewrite
                 result = new LyricsResult();
             }
 
+            if ((!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
+                && TryGetCachedYoutubeSubtitleFallback(current.songPath, out var timedSubtitleFallback, out var plainSubtitleFallback))
+            {
+                result = new LyricsResult
+                {
+                    Found = true,
+                    SyncedLyrics = timedSubtitleFallback ?? string.Empty,
+                    PlainLyrics = plainSubtitleFallback ?? string.Empty
+                };
+            }
+
             await Dispatcher.InvokeAsync(() =>
             {
                 if (requestVersion != _lyricsRequestVersion || !string.Equals(songKey, _currentLyricsSongKey, StringComparison.OrdinalIgnoreCase))
@@ -848,6 +859,41 @@ namespace SongRequestDesktopV2Rewrite
         private string SanitizeArtist(string artist)
         {
             return (artist ?? string.Empty).Replace(" - Topic", string.Empty).Trim();
+        }
+
+        private sealed class CachedYoutubeVideoData
+        {
+            public string SubtitleText { get; set; } = string.Empty;
+            public string SubtitleTimedText { get; set; } = string.Empty;
+        }
+
+        private static bool TryGetCachedYoutubeSubtitleFallback(string songPath, out string timedSubtitleText, out string plainSubtitleText)
+        {
+            timedSubtitleText = string.Empty;
+            plainSubtitleText = string.Empty;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(songPath)) return false;
+                var videoId = Path.GetFileNameWithoutExtension(songPath);
+                if (string.IsNullOrWhiteSpace(videoId)) return false;
+
+                var cachePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, YoutubeForm.downloadPath, "video-metadata-cache.json"));
+                if (!System.IO.File.Exists(cachePath)) return false;
+
+                var json = System.IO.File.ReadAllText(cachePath);
+                var cache = JsonConvert.DeserializeObject<Dictionary<string, CachedYoutubeVideoData>>(json);
+                if (cache == null) return false;
+                if (!cache.TryGetValue(videoId, out var cached)) return false;
+                if (string.IsNullOrWhiteSpace(cached?.SubtitleText) && string.IsNullOrWhiteSpace(cached?.SubtitleTimedText)) return false;
+
+                timedSubtitleText = cached.SubtitleTimedText;
+                plainSubtitleText = cached.SubtitleText;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private Task<LyricsResult> GetOrStartLyricsTask(Song song, string songKey)
