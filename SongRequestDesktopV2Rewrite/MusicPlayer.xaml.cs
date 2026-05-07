@@ -931,11 +931,11 @@ namespace SongRequestDesktopV2Rewrite
             LyricsResult result = new LyricsResult();
             try
             {
-                string sanitizedArtist = SanitizeArtist(song.Artist);
-                result = await _lyricsService.GetCachedLyricsAsync(sanitizedArtist, song.Title, song.Duration).ConfigureAwait(false);
+                var query = LyricsQueryNormalizer.Build(song);
+                result = await _lyricsService.GetCachedLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
                 if (!result.Found)
                 {
-                    result = await _lyricsService.GetLyricsAsync(song.Artist, song.Title, song.Duration).ConfigureAwait(false);
+                    result = await _lyricsService.GetLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
                 }
             }
             catch

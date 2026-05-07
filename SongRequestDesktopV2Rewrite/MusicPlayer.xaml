@@ -864,10 +864,11 @@
                             <TextBlock x:Name="LyricsProviderText"
                                        Text="Lyrics: -"
                                        Foreground="#AFAFAF"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
+                                       FontSize="20"
+                                       FontWeight="Normal"
                                        HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
+                                       TextAlignment="Center"
                                        Margin="12,0"/>
                             <TextBlock x:Name="RemainingText" Text="00:00" Foreground="#AAAAAA" DockPanel.Dock="Right" TextAlignment="Right" FontWeight="Bold" FontSize="20"/>
                         </DockPanel>

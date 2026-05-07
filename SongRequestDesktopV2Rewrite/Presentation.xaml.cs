@@ -450,7 +450,8 @@ namespace SongRequestDesktopV2Rewrite
         {
             try
             {
-                var result = await _lyricsService.GetLyricsAsync(song.Artist, song.Title, song.Duration);
+                var query = LyricsQueryNormalizer.Build(song);
+                var result = await _lyricsService.GetLyricsAsync(query.Artist, query.Title, song.Duration);
                 lock (_lyricsCacheLock)
                 {
                     _lyricsCache[key] = result;
