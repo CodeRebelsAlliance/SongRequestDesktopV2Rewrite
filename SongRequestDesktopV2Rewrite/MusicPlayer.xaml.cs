@@ -2,6 +2,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -41,6 +42,8 @@ namespace SongRequestDesktopV2Rewrite
         private bool _isCrossfading = false;
         private bool _isUserAdjustingVolume = false; // Track if user is manually changing volume
         private double _targetLoudness = -14.0; // Target loudness in LUFS
+        private readonly SemaphoreSlim _announcementVolumeGate = new SemaphoreSlim(1, 1);
+        private float _announcementOutputFactor = 1f;
 
         // Audio capture for Music Share
         private CapturingSampleProvider? _capturingProvider;
@@ -74,6 +77,7 @@ namespace SongRequestDesktopV2Rewrite
         private string _currentLyricsSongKey = string.Empty;
         private bool _isNoLyricsLayout;
         private int _layoutTransitionVersion;
+        private AnnouncementWindow? _announcementWindow = null;
         private MusicShare? _musicShareWindow = null;
 
         // Visualization window
@@ -159,6 +163,7 @@ namespace SongRequestDesktopV2Rewrite
 
             // Setup normalize volume button visibility
             UpdateNormalizeVolumeButtonVisibility();
+            UpdateAnnouncementButtonVisibility();
             UpdateNormalizationStatus();
             UpdateAutopilotBadge();
 
@@ -234,6 +239,10 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     UpdateAutopilotBadge();
                 }
+                else if (e.PropertyName == nameof(Config.EnableAnnouncements))
+                {
+                    UpdateAnnouncementButtonVisibility();
+                }
             });
         }
 
@@ -275,6 +284,74 @@ namespace SongRequestDesktopV2Rewrite
                 button.Visibility = ConfigService.Instance.Current?.NormalizeVolume == true 
                     ? Visibility.Visible 
                     : Visibility.Collapsed;
+            }
+        }
+
+        private void UpdateAnnouncementButtonVisibility()
+        {
+            var button = FindName("AnnouncementButton") as Button;
+            if (button == null) return;
+
+            bool enabled = ConfigService.Instance.Current?.EnableAnnouncements ?? true;
+            button.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        public async Task FadeAnnouncementDuckingAsync(double dimDb, int durationMs)
+        {
+            var targetFactor = (float)Math.Clamp(Math.Pow(10.0, -Math.Abs(dimDb) / 20.0), 0.01, 1.0);
+            await FadeAnnouncementOutputToAsync(targetFactor, durationMs);
+        }
+
+        public async Task FadeAnnouncementRestoreAsync(int durationMs)
+        {
+            await FadeAnnouncementOutputToAsync(1f, durationMs);
+        }
+
+        private async Task FadeAnnouncementOutputToAsync(float targetFactor, int durationMs)
+        {
+            await _announcementVolumeGate.WaitAsync();
+            try
+            {
+                float startFactor = _announcementOutputFactor;
+                _announcementOutputFactor = targetFactor;
+
+                var output = _outputDevice;
+                if (output == null) return;
+
+                int steps = Math.Max(10, durationMs / 20);
+                int delay = Math.Max(10, durationMs / steps);
+                for (int i = 1; i <= steps; i++)
+                {
+                    float t = i / (float)steps;
+                    float eased = 1f - (1f - t) * (1f - t);
+                    float current = startFactor + (targetFactor - startFactor) * eased;
+                    try
+                    {
+                        output.Volume = Math.Clamp(current, 0f, 1f);
+                    }
+                    catch
+                    {
+                        break;
+                    }
+
+                    if (i < steps)
+                    {
+                        await Task.Delay(delay);
+                    }
+                }
+
+                try
+                {
+                    output.Volume = Math.Clamp(targetFactor, 0f, 1f);
+                }
+                catch
+                {
+                    // output device might have changed during transition.
+                }
+            }
+            finally
+            {
+                _announcementVolumeGate.Release();
             }
         }
 
@@ -692,6 +769,7 @@ namespace SongRequestDesktopV2Rewrite
 
             // Output device reads from capturing provider (which wraps mixer)
             _outputDevice.Init(_capturingProvider);
+            _outputDevice.Volume = Math.Clamp(_announcementOutputFactor, 0f, 1f);
             _outputDevice.PlaybackStopped += OutputDevice_PlaybackStopped;
             _outputDevice.Play();
 
@@ -1834,6 +1912,11 @@ namespace SongRequestDesktopV2Rewrite
             OpenMusicShareWindow();
         }
 
+        private void AnnouncementButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenAnnouncementWindow();
+        }
+
         public void OpenMusicShareWindow()
         {
             // Only allow one MusicShare window at a time
@@ -1855,6 +1938,24 @@ namespace SongRequestDesktopV2Rewrite
             _musicShareWindow.Closed += (s, args) => { _musicShareWindow = null; };
 
             _musicShareWindow.Show();
+        }
+
+        public void OpenAnnouncementWindow()
+        {
+            if (_announcementWindow != null && _announcementWindow.IsLoaded)
+            {
+                _announcementWindow.Activate();
+                _announcementWindow.Focus();
+                return;
+            }
+
+            _announcementWindow = new AnnouncementWindow(this)
+            {
+                Owner = this
+            };
+
+            _announcementWindow.Closed += (s, args) => { _announcementWindow = null; };
+            _announcementWindow.Show();
         }
 
         private void VisualizationButton_Click(object sender, RoutedEventArgs e)

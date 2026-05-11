@@ -86,6 +86,7 @@ namespace SongRequestDesktopV2Rewrite
             var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
             var autoEnqueueCheckBox = GetControl<CheckBox>("AutoEnqueueCheckBox");
             var captionFallbackCheckBox = GetControl<CheckBox>("CaptionFallbackCheckBox");
+            var enableAnnouncementsCheckBox = GetControl<CheckBox>("EnableAnnouncementsCheckBox");
 
             if (fetchingBox != null) fetchingBox.Text = cfg.FetchingTimer.ToString();
             if (threadsBox != null) threadsBox.Text = cfg.Threads.ToString();
@@ -97,6 +98,7 @@ namespace SongRequestDesktopV2Rewrite
             if (normalizeVolumeCheckBox != null) normalizeVolumeCheckBox.IsChecked = cfg.NormalizeVolume;
             if (autoEnqueueCheckBox != null) autoEnqueueCheckBox.IsChecked = cfg.AutoEnqueue;
             if (captionFallbackCheckBox != null) captionFallbackCheckBox.IsChecked = cfg.UseCaptionLyricsFallback;
+            if (enableAnnouncementsCheckBox != null) enableAnnouncementsCheckBox.IsChecked = cfg.EnableAnnouncements;
 
             _isTokenVisible = false;
             UpdateTokenVisibility();
@@ -116,6 +118,7 @@ namespace SongRequestDesktopV2Rewrite
             var normalizeVolumeCheckBox = GetControl<CheckBox>("NormalizeVolumeCheckBox");
             var autoEnqueueCheckBox = GetControl<CheckBox>("AutoEnqueueCheckBox");
             var captionFallbackCheckBox = GetControl<CheckBox>("CaptionFallbackCheckBox");
+            var enableAnnouncementsCheckBox = GetControl<CheckBox>("EnableAnnouncementsCheckBox");
             var statusTb = GetControl<TextBlock>("StatusText");
             var tokenValue = GetTokenValue();
 
@@ -136,6 +139,7 @@ namespace SongRequestDesktopV2Rewrite
                     cfg.NormalizeVolume = normalizeVolumeCheckBox?.IsChecked ?? false;
                     cfg.AutoEnqueue = autoEnqueueCheckBox?.IsChecked ?? false;
                     cfg.UseCaptionLyricsFallback = captionFallbackCheckBox?.IsChecked ?? true;
+                    cfg.EnableAnnouncements = enableAnnouncementsCheckBox?.IsChecked ?? true;
 
                     // If normalization is turned off, deactivate it
                     if (!cfg.NormalizeVolume)

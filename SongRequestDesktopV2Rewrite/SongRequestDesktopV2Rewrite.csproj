@@ -42,6 +42,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="announcement.mp3">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Update="chromiumembeddedframework.runtime.win-arm64" Version="146.0.10" />
   </ItemGroup>
 

@@ -21,6 +21,10 @@ namespace SongRequestDesktopV2Rewrite
         private bool _normalizationActive = false;
         private bool _autoEnqueue = false;
         private bool _useCaptionLyricsFallback = true;
+        private bool _enableAnnouncements = true;
+        private double _announcementDimDb = 20.0;
+        private bool _announcementPlaySound = true;
+        private bool _announcementPushToTalk = true;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -94,6 +98,30 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _useCaptionLyricsFallback;
             set => SetField(ref _useCaptionLyricsFallback, value);
+        }
+
+        public bool EnableAnnouncements
+        {
+            get => _enableAnnouncements;
+            set => SetField(ref _enableAnnouncements, value);
+        }
+
+        public double AnnouncementDimDb
+        {
+            get => _announcementDimDb;
+            set => SetField(ref _announcementDimDb, value);
+        }
+
+        public bool AnnouncementPlaySound
+        {
+            get => _announcementPlaySound;
+            set => SetField(ref _announcementPlaySound, value);
+        }
+
+        public bool AnnouncementPushToTalk
+        {
+            get => _announcementPushToTalk;
+            set => SetField(ref _announcementPushToTalk, value);
         }
 
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
