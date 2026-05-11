@@ -1381,6 +1381,97 @@ namespace SongRequestDesktopV2Rewrite
             ComputeQueueTimings();
         }
 
+        private bool TryCreateSongFromFile(string filePath, out Song? song, out string errorMessage)
+        {
+            song = null;
+            errorMessage = string.Empty;
+
+            try
+            {
+                using var afr = new AudioFileReader(filePath);
+                var duration = afr.TotalTime;
+
+                string title = System.IO.Path.GetFileNameWithoutExtension(filePath);
+                string artist = "Unknown";
+                var img = new Image();
+                img.Source = new BitmapImage(new Uri("pack://application:,,,/SRshortLogo.png"));
+
+                try
+                {
+                    var tfile = TagLib.File.Create(filePath);
+                    if (!string.IsNullOrWhiteSpace(tfile.Tag.Title)) title = tfile.Tag.Title;
+                    if (tfile.Tag.Performers != null && tfile.Tag.Performers.Length > 0)
+                    {
+                        artist = string.Join(", ", tfile.Tag.Performers.Where(p => !string.IsNullOrWhiteSpace(p)));
+                        if (string.IsNullOrWhiteSpace(artist)) artist = "Unknown";
+                    }
+
+                    var pic = tfile.Tag.Pictures?.FirstOrDefault();
+                    if (pic != null && pic.Data != null && pic.Data.Data != null && pic.Data.Data.Length > 0)
+                    {
+                        using var ms = new MemoryStream(pic.Data.Data);
+                        var bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.StreamSource = ms;
+                        bmp.EndInit();
+                        bmp.Freeze();
+                        img.Source = bmp;
+                    }
+                }
+                catch
+                {
+                    // ignore metadata failures and use defaults
+                }
+
+                song = new Song(title, artist, img, duration, filePath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        private void AddSongToQueue(Song song, int? insertIndex = null)
+        {
+            if (insertIndex.HasValue && insertIndex.Value <= Queue.Count)
+            {
+                Queue.Insert(insertIndex.Value, song);
+            }
+            else
+            {
+                Queue.Add(song);
+            }
+
+            AnimateListItem(song);
+
+            var cfg = ConfigService.Instance.Current;
+            if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+            {
+                _ = Task.Run(() => CalculateSongLoudness(song));
+            }
+        }
+
+        private static string? ResolvePlaylistEntryPath(string entry, string playlistDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(entry)) return null;
+
+            if (Uri.TryCreate(entry, UriKind.Absolute, out var uri) && uri.IsFile)
+            {
+                return uri.LocalPath;
+            }
+
+            if (System.IO.Path.IsPathRooted(entry))
+            {
+                return entry;
+            }
+
+            var baseDirectory = string.IsNullOrWhiteSpace(playlistDirectory) ? Environment.CurrentDirectory : playlistDirectory;
+            return System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDirectory, entry));
+        }
+
         private void AddButton_Click(object sender, RoutedEventArgs e)
         {
             var dlg = new Microsoft.Win32.OpenFileDialog() { Filter = "Audio files|*.mp3;*.wav;*.m4a;*.flac|All files|*.*", Multiselect = true };
@@ -1388,61 +1479,13 @@ namespace SongRequestDesktopV2Rewrite
             {
                 foreach (var file in dlg.FileNames)
                 {
-                    try
+                    if (TryCreateSongFromFile(file, out var song, out var errorMessage) && song != null)
                     {
-                        using var afr = new AudioFileReader(file);
-                        var duration = afr.TotalTime;
-
-                        // Default values
-                        string title = System.IO.Path.GetFileNameWithoutExtension(file);
-                        string artist = "Unknown";
-                        var img = new Image();
-                        img.Source = new BitmapImage(new Uri("pack://application:,,,/SRshortLogo.png"));
-
-                        // Attempt to read metadata via TagLib
-                        try
-                        {
-                            var tfile = TagLib.File.Create(file);
-                            if (!string.IsNullOrWhiteSpace(tfile.Tag.Title)) title = tfile.Tag.Title;
-                            if (tfile.Tag.Performers != null && tfile.Tag.Performers.Length > 0)
-                            {
-                                artist = string.Join(", ", tfile.Tag.Performers.Where(p => !string.IsNullOrWhiteSpace(p)));
-                                if (string.IsNullOrWhiteSpace(artist)) artist = "Unknown";
-                            }
-
-                            // embedded picture -> use as thumbnail if present
-                            var pic = tfile.Tag.Pictures?.FirstOrDefault();
-                            if (pic != null && pic.Data != null && pic.Data.Data != null && pic.Data.Data.Length > 0)
-                            {
-                                using var ms = new MemoryStream(pic.Data.Data);
-                                var bmp = new BitmapImage();
-                                bmp.BeginInit();
-                                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                                bmp.StreamSource = ms;
-                                bmp.EndInit();
-                                bmp.Freeze();
-                                img.Source = bmp;
-                            }
-                        }
-                        catch
-                        {
-                            // ignore metadata failures and use defaults
-                        }
-
-                        var song = new Song(title, artist, img, duration, file);
-                        Queue.Add(song);
-                        AnimateListItem(song);
-
-                        // Calculate loudness in background if normalization is enabled
-                        var cfg = ConfigService.Instance.Current;
-                        if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
-                        {
-                            _ = Task.Run(() => CalculateSongLoudness(song));
-                        }
+                        AddSongToQueue(song);
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        MessageBox.Show("Unable to load file: " + ex.Message);
+                        MessageBox.Show("Unable to load file: " + errorMessage);
                     }
                 }
 
@@ -1460,64 +1503,123 @@ namespace SongRequestDesktopV2Rewrite
 
                 foreach (var file in dlg.FileNames)
                 {
-                    try
+                    if (TryCreateSongFromFile(file, out var song, out var errorMessage) && song != null)
                     {
-                        using var afr = new AudioFileReader(file);
-                        var duration = afr.TotalTime;
-
-                        // Default values
-                        string title = System.IO.Path.GetFileNameWithoutExtension(file);
-                        string artist = "Unknown";
-                        var img = new Image();
-                        img.Source = new BitmapImage(new Uri("pack://application:,,,/SRshortLogo.png"));
-
-                        // Attempt to read metadata via TagLib
-                        try
-                        {
-                            var tfile = TagLib.File.Create(file);
-                            if (!string.IsNullOrWhiteSpace(tfile.Tag.Title)) title = tfile.Tag.Title;
-                            if (tfile.Tag.Performers != null && tfile.Tag.Performers.Length > 0)
-                            {
-                                artist = string.Join(", ", tfile.Tag.Performers.Where(p => !string.IsNullOrWhiteSpace(p)));
-                                if (string.IsNullOrWhiteSpace(artist)) artist = "Unknown";
-                            }
-
-                            var pic = tfile.Tag.Pictures?.FirstOrDefault();
-                            if (pic != null && pic.Data != null && pic.Data.Data != null && pic.Data.Data.Length > 0)
-                            {
-                                using var ms = new MemoryStream(pic.Data.Data);
-                                var bmp = new BitmapImage();
-                                bmp.BeginInit();
-                                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                                bmp.StreamSource = ms;
-                                bmp.EndInit();
-                                bmp.Freeze();
-                                img.Source = bmp;
-                            }
-                        }
-                        catch
-                        {
-                            // ignore metadata failures
-                        }
-
-                        var song = new Song(title, artist, img, duration, file);
-                        if (insertIndex <= Queue.Count) { Queue.Insert(insertIndex, song); insertIndex++; AnimateListItem(song); }
-                        else { Queue.Add(song); AnimateListItem(song); }
-
-                        // Calculate loudness in background if normalization is enabled
-                        var cfg = ConfigService.Instance.Current;
-                        if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
-                        {
-                            _ = Task.Run(() => CalculateSongLoudness(song));
-                        }
+                        AddSongToQueue(song, insertIndex);
+                        if (insertIndex <= Queue.Count) insertIndex++;
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        MessageBox.Show("Unable to load file: " + ex.Message);
+                        MessageBox.Show("Unable to load file: " + errorMessage);
                     }
                 }
 
                 ComputeQueueTimings();
+            }
+        }
+
+        private void ImportPlaylistButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog()
+            {
+                Filter = "M3U8 playlist|*.m3u8|M3U playlist|*.m3u|All files|*.*",
+                Multiselect = false
+            };
+            if (dlg.ShowDialog() != true) return;
+
+            try
+            {
+                var playlistDirectory = System.IO.Path.GetDirectoryName(dlg.FileName) ?? string.Empty;
+                var entries = System.IO.File.ReadLines(dlg.FileName)
+                    .Select(line => line.Trim())
+                    .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("#"))
+                    .ToList();
+
+                int importedCount = 0;
+                int skippedCount = 0;
+
+                foreach (var entry in entries)
+                {
+                    string? resolvedPath;
+                    try
+                    {
+                        resolvedPath = ResolvePlaylistEntryPath(entry, playlistDirectory);
+                    }
+                    catch
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(resolvedPath) || !System.IO.File.Exists(resolvedPath))
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    if (TryCreateSongFromFile(resolvedPath, out var song, out _) && song != null)
+                    {
+                        AddSongToQueue(song);
+                        importedCount++;
+                    }
+                    else
+                    {
+                        skippedCount++;
+                    }
+                }
+
+                if (importedCount > 0)
+                {
+                    ComputeQueueTimings();
+                }
+
+                MessageBox.Show(
+                    $"Imported {importedCount} song(s). Skipped {skippedCount} entr{(skippedCount == 1 ? "y" : "ies")}.",
+                    "Import Playlist");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Unable to import playlist: " + ex.Message);
+            }
+        }
+
+        private void ExportPlaylistButton_Click(object sender, RoutedEventArgs e)
+        {
+            var exportableSongs = Queue.Where(song => !string.IsNullOrWhiteSpace(song.songPath)).ToList();
+            if (exportableSongs.Count == 0)
+            {
+                MessageBox.Show("The queue does not contain any exportable songs.", "Export Playlist");
+                return;
+            }
+
+            var dlg = new Microsoft.Win32.SaveFileDialog()
+            {
+                Filter = "M3U8 playlist|*.m3u8|M3U playlist|*.m3u|All files|*.*",
+                DefaultExt = ".m3u8",
+                AddExtension = true,
+                FileName = "playlist.m3u8"
+            };
+
+            if (dlg.ShowDialog() != true) return;
+
+            try
+            {
+                var lines = new List<string> { "#EXTM3U" };
+                foreach (var song in exportableSongs)
+                {
+                    var durationSeconds = Math.Max(0, (int)Math.Round(song.Duration.TotalSeconds));
+                    var title = string.IsNullOrWhiteSpace(song.Title) ? System.IO.Path.GetFileNameWithoutExtension(song.songPath) : song.Title;
+                    var artist = string.IsNullOrWhiteSpace(song.Artist) ? "Unknown" : song.Artist;
+                    lines.Add($"#EXTINF:{durationSeconds},{artist} - {title}");
+                    lines.Add(song.songPath);
+                }
+
+                System.IO.File.WriteAllLines(dlg.FileName, lines, new System.Text.UTF8Encoding(false));
+                MessageBox.Show($"Exported {exportableSongs.Count} song(s).", "Export Playlist");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Unable to export playlist: " + ex.Message);
             }
         }
 

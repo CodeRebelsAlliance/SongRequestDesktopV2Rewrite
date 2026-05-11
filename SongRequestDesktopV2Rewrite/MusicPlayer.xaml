@@ -911,6 +911,8 @@
                             <Button x:Name="AddButton" Content="Add" Width="50" Margin="6" Click="AddButton_Click" Style="{StaticResource SuccessButton}"/>
                             <Button x:Name="AddNextButton" Content="Add Next" Width="72" Margin="6" Click="AddNextButton_Click" Style="{StaticResource AccentButton}"/>
                             <Button x:Name="ShuffleButton" Content="Shuffle" Width="72" Margin="6" Click="ShuffleButton_Click" Style="{StaticResource SecondaryButton}"/>
+                            <Button x:Name="ImportPlaylistButton" Content="Import Playlist" Width="104" Margin="6" Click="ImportPlaylistButton_Click" Style="{StaticResource AccentButton}"/>
+                            <Button x:Name="ExportPlaylistButton" Content="Export Playlist" Width="104" Margin="6" Click="ExportPlaylistButton_Click" Style="{StaticResource SecondaryButton}"/>
                             <Button x:Name="ClearButton" Content="Clear" Width="72" Margin="6" Click="ClearButton_OnClickButton_Click" Style="{StaticResource DangerButton}"/>
                         </StackPanel>
                     </StackPanel>
