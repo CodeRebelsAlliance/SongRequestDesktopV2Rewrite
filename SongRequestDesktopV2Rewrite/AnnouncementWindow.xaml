@@ -241,8 +241,8 @@
                     </DockPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <CheckBox x:Name="PlaySoundCheckBox" Content="Play pre-announcement sound" IsChecked="True" Margin="0,0,0,6" Checked="AnnouncementControl_Changed" Unchecked="AnnouncementControl_Changed"/>
-                    <CheckBox x:Name="PushToTalkCheckBox" Content="Push to talk mode" IsChecked="True" Checked="AnnouncementControl_Changed" Unchecked="AnnouncementControl_Changed"/>
+                    <CheckBox x:Name="PlaySoundCheckBox" Content="Play pre-announcement sound" IsChecked="True" Margin="0,0,0,6" Checked="AnnouncementControl_Changed" Unchecked="AnnouncementControl_Changed" Foreground="White"/>
+                    <CheckBox x:Name="PushToTalkCheckBox" Content="Push to talk mode" IsChecked="True" Checked="AnnouncementControl_Changed" Unchecked="AnnouncementControl_Changed" Foreground="White"/>
                 </StackPanel>
             </Grid>
         </Border>

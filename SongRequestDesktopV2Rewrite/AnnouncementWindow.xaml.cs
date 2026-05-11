@@ -23,7 +23,7 @@ namespace SongRequestDesktopV2Rewrite
         private CancellationTokenSource? _announcementCts;
         private bool _isAnnouncementActive;
         private bool _isTransitioning;
-        private bool _isLoadingSettings;
+        private bool _isLoadingSettings = true;
         private Storyboard? _pulseStoryboard;
 
         public AnnouncementWindow(MusicPlayer musicPlayer)

@@ -44,6 +44,7 @@ namespace SongRequestDesktopV2Rewrite
         private double _targetLoudness = -14.0; // Target loudness in LUFS
         private readonly SemaphoreSlim _announcementVolumeGate = new SemaphoreSlim(1, 1);
         private float _announcementOutputFactor = 1f;
+        private DateTime _lastSecondaryPlaybackTickUtc = DateTime.MinValue;
 
         // Audio capture for Music Share
         private CapturingSampleProvider? _capturingProvider;
@@ -134,7 +135,7 @@ namespace SongRequestDesktopV2Rewrite
 
             VolumeSlider.ValueChanged += VolumeSlider_ValueChanged;
 
-            _positionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _positionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
             _positionTimer.Tick += PositionTimer_Tick;
 
             _format = WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
@@ -468,18 +469,31 @@ namespace SongRequestDesktopV2Rewrite
         {
             if (_currentReader != null && !_isUserSeeking)
             {
-                if (_currentReader.TotalTime.TotalSeconds > 0)
+                var totalTime = _currentReader.TotalTime;
+                if (totalTime.TotalSeconds > 0)
                 {
-                    ProgressSlider.Value = _currentReader.CurrentTime.TotalSeconds / _currentReader.TotalTime.TotalSeconds;
-                    ElapsedText.Text = _currentReader.CurrentTime.ToString(@"mm\:ss");
-                    RemainingText.Text = (_currentReader.TotalTime - _currentReader.CurrentTime).ToString(@"mm\:ss");
+                    var currentTime = _currentReader.CurrentTime;
+                    var remainingTime = totalTime - currentTime;
+                    if (remainingTime < TimeSpan.Zero) remainingTime = TimeSpan.Zero;
+
+                    ProgressSlider.Value = Math.Clamp(currentTime.TotalSeconds / totalTime.TotalSeconds, 0.0, 1.0);
+                    ElapsedText.Text = FormatMmSsRounded(currentTime);
+                    RemainingText.Text = FormatMmSsRounded(remainingTime);
+
+                    var nowUtc = DateTime.UtcNow;
+                    bool runSecondaryWork = (nowUtc - _lastSecondaryPlaybackTickUtc) >= TimeSpan.FromMilliseconds(250);
+                    if (!runSecondaryWork)
+                    {
+                        return;
+                    }
+                    _lastSecondaryPlaybackTickUtc = nowUtc;
 
                     // Automatic crossfade/start next behavior
                     if (!_isCrossfading && Queue.Count > 1)
                     {
                         double cross = CrossfadeSlider.Value;
                         if (cross <= 0) cross = 4;
-                        var remaining = (_currentReader.TotalTime - _currentReader.CurrentTime).TotalSeconds;
+                        var remaining = remainingTime.TotalSeconds;
 
                         // If remaining is less than or equal to crossfade seconds (start crossfade)
                         if (remaining <= cross && remaining > 0.15)
@@ -496,7 +510,7 @@ namespace SongRequestDesktopV2Rewrite
                     else if (Queue.Count == 1)
                     {
                         // Only one song left - check if it's ending
-                        var remaining = (_currentReader.TotalTime - _currentReader.CurrentTime).TotalSeconds;
+                        var remaining = remainingTime.TotalSeconds;
                         if (remaining <= 0.15)
                         {
                             // Last song ended - stop playback completely
@@ -553,13 +567,21 @@ namespace SongRequestDesktopV2Rewrite
                     }
                     catch(Exception ex)
                     {
-                        MessageBox.Show("Error " + ex.Message);
+                        System.Diagnostics.Debug.WriteLine($"NowPlaying tick failed: {ex.Message}");
                     }
 
                     
                     if(_currentReader != null) UpdateLyricHighlighting(_currentReader.CurrentTime);
                 }
             }
+        }
+
+        private static string FormatMmSsRounded(TimeSpan time)
+        {
+            if (time < TimeSpan.Zero) time = TimeSpan.Zero;
+            int seconds = (int)Math.Round(time.TotalSeconds, MidpointRounding.AwayFromZero);
+            if (seconds < 0) seconds = 0;
+            return TimeSpan.FromSeconds(seconds).ToString(@"mm\:ss");
         }
 
         private void UpdateLyricHighlighting(TimeSpan currentTime)
