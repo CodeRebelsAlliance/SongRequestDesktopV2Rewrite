@@ -13,10 +13,12 @@ namespace SongRequestDesktopV2Rewrite
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            RemoteControlService.Instance.Initialize();
         }
 
         protected override void OnExit(ExitEventArgs e)
         {
+            RemoteControlService.Instance.Dispose();
             base.OnExit(e);
         }
     }

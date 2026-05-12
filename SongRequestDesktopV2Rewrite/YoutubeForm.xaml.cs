@@ -90,6 +90,7 @@ namespace SongRequestDesktopV2Rewrite
 
             _musicPlayer = new MusicPlayer();
             _appManager = new AppManager(this, _musicPlayer);
+            RemoteControlService.Instance.RegisterMusicPlayer(_musicPlayer);
 
             // Setup periodic refresh timer using config value
             _refreshTimer = new DispatcherTimer

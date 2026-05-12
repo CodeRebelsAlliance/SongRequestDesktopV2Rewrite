@@ -1919,6 +1919,128 @@ namespace SongRequestDesktopV2Rewrite
             ComputeQueueTimings();
         }
 
+        public bool RemoteIsPlaying => _outputDevice?.PlaybackState == PlaybackState.Playing;
+        public bool RemoteCanControlVolume => ConfigService.Instance.Current?.NormalizeVolume != true;
+        public double RemoteVolumeValue => Math.Clamp(VolumeSlider.Value, 0.0, 1.0);
+        public bool RemoteAnnouncementIsActive => _announcementWindow?.IsLoaded == true && _announcementWindow.IsAnnouncementActive;
+        public double RemoteAnnouncementDimNormalized
+        {
+            get
+            {
+                double dimDb = ConfigService.Instance.Current?.AnnouncementDimDb ?? 20.0;
+                return Math.Clamp(dimDb / 50.0, 0.0, 1.0);
+            }
+        }
+        public bool RemoteAnnouncementPushToTalkEnabled => ConfigService.Instance.Current?.AnnouncementPushToTalk ?? true;
+        public double RemoteCrossfadeNormalized
+        {
+            get
+            {
+                double range = CrossfadeSlider.Maximum - CrossfadeSlider.Minimum;
+                if (range <= 0) return 0;
+                return Math.Clamp((CrossfadeSlider.Value - CrossfadeSlider.Minimum) / range, 0.0, 1.0);
+            }
+        }
+
+        public void RemoteTogglePlayPause()
+        {
+            PlayPauseButton_Click(PlayPauseButton, new RoutedEventArgs(Button.ClickEvent));
+        }
+
+        public void RemoteSkipNext()
+        {
+            NextButton_Click(NextButton, new RoutedEventArgs(Button.ClickEvent));
+        }
+
+        public void RemotePrevious()
+        {
+            PrevButton_Click(PrevButton, new RoutedEventArgs(Button.ClickEvent));
+        }
+
+        public void RemoteStop()
+        {
+            StopButton_Click(StopButton, new RoutedEventArgs(Button.ClickEvent));
+        }
+
+        public void RemoteAdjustVolume(double delta)
+        {
+            if (!RemoteCanControlVolume) return;
+            VolumeSlider.Value = Math.Clamp(VolumeSlider.Value + delta, VolumeSlider.Minimum, VolumeSlider.Maximum);
+        }
+
+        public void RemoteSetVolumeFromMidi(double normalizedValue)
+        {
+            if (!RemoteCanControlVolume) return;
+            double target = Math.Clamp(normalizedValue, 0.0, 1.0);
+            VolumeSlider.Value = VolumeSlider.Minimum + (VolumeSlider.Maximum - VolumeSlider.Minimum) * target;
+        }
+
+        public void RemoteAdjustCrossfade(double delta)
+        {
+            CrossfadeSlider.Value = Math.Clamp(CrossfadeSlider.Value + delta, CrossfadeSlider.Minimum, CrossfadeSlider.Maximum);
+        }
+
+        public void RemoteSetCrossfadeFromMidi(double normalizedValue)
+        {
+            double target = Math.Clamp(normalizedValue, 0.0, 1.0);
+            CrossfadeSlider.Value = CrossfadeSlider.Minimum + (CrossfadeSlider.Maximum - CrossfadeSlider.Minimum) * target;
+        }
+
+        public async Task RemoteAnnouncementActionAsync()
+        {
+            var window = EnsureAnnouncementWindowForRemote();
+            await window.RemotePressOrToggleAsync();
+        }
+
+        public async Task RemoteAnnouncementReleaseAsync()
+        {
+            if (_announcementWindow != null && _announcementWindow.IsLoaded)
+            {
+                await _announcementWindow.RemoteReleaseAsync();
+            }
+        }
+
+        public void RemoteToggleAnnouncementPlaySound()
+        {
+            bool enabled = !(ConfigService.Instance.Current?.AnnouncementPlaySound ?? true);
+            ConfigService.Instance.Update(cfg => cfg.AnnouncementPlaySound = enabled);
+            if (_announcementWindow != null && _announcementWindow.IsLoaded)
+            {
+                _announcementWindow.RemoteSetPlaySoundSetting(enabled);
+            }
+        }
+
+        public void RemoteToggleAnnouncementPushToTalk()
+        {
+            bool enabled = !(ConfigService.Instance.Current?.AnnouncementPushToTalk ?? true);
+            ConfigService.Instance.Update(cfg => cfg.AnnouncementPushToTalk = enabled);
+            if (_announcementWindow != null && _announcementWindow.IsLoaded)
+            {
+                _announcementWindow.RemoteSetPushToTalkSetting(enabled);
+            }
+        }
+
+        public void RemoteAdjustAnnouncementDimDb(double delta)
+        {
+            double current = ConfigService.Instance.Current?.AnnouncementDimDb ?? 20.0;
+            double target = Math.Clamp(current + delta, 0.0, 50.0);
+            ConfigService.Instance.Update(cfg => cfg.AnnouncementDimDb = target);
+            if (_announcementWindow != null && _announcementWindow.IsLoaded)
+            {
+                _announcementWindow.RemoteSetDimDb(target);
+            }
+        }
+
+        public void RemoteSetAnnouncementDimDbFromMidi(double normalizedValue)
+        {
+            double target = Math.Clamp(normalizedValue, 0.0, 1.0) * 50.0;
+            ConfigService.Instance.Update(cfg => cfg.AnnouncementDimDb = target);
+            if (_announcementWindow != null && _announcementWindow.IsLoaded)
+            {
+                _announcementWindow.RemoteSetDimDb(target);
+            }
+        }
+
         private void ClearButton_OnClickButton_Click(object sender, RoutedEventArgs e)
         {
             ClearQueue();
@@ -1978,6 +2100,12 @@ namespace SongRequestDesktopV2Rewrite
 
             _announcementWindow.Closed += (s, args) => { _announcementWindow = null; };
             _announcementWindow.Show();
+        }
+
+        private AnnouncementWindow EnsureAnnouncementWindowForRemote()
+        {
+            OpenAnnouncementWindow();
+            return _announcementWindow!;
         }
 
         private void VisualizationButton_Click(object sender, RoutedEventArgs e)

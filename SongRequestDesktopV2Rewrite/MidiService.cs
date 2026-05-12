@@ -13,6 +13,7 @@ namespace SongRequestDesktopV2Rewrite
         private MidiIn? _midiInput;
         private MidiOut? _midiOutput;
         private bool _isEnabled;
+        private readonly object _midiLock = new object();
 
         public event EventHandler<MidiInMessageEventArgs>? MidiMessageReceived;
         public event EventHandler<string>? ErrorOccurred;
@@ -22,8 +23,14 @@ namespace SongRequestDesktopV2Rewrite
             get => _isEnabled;
             set
             {
-                _isEnabled = value;
-                if (!_isEnabled)
+                bool disable;
+                lock (_midiLock)
+                {
+                    _isEnabled = value;
+                    disable = !_isEnabled;
+                }
+
+                if (disable)
                 {
                     DisconnectDevices();
                 }
@@ -110,20 +117,23 @@ namespace SongRequestDesktopV2Rewrite
         {
             try
             {
-                DisconnectInput();
-
-                if (deviceNumber < 0 || deviceNumber >= MidiIn.NumberOfDevices)
+                lock (_midiLock)
                 {
-                    ErrorOccurred?.Invoke(this, "Invalid MIDI input device number");
-                    return false;
+                    DisconnectInput_NoLock();
+
+                    if (deviceNumber < 0 || deviceNumber >= MidiIn.NumberOfDevices)
+                    {
+                        ErrorOccurred?.Invoke(this, "Invalid MIDI input device number");
+                        return false;
+                    }
+
+                    _midiInput = new MidiIn(deviceNumber);
+                    _midiInput.MessageReceived += MidiInput_MessageReceived;
+                    _midiInput.ErrorReceived += MidiInput_ErrorReceived;
+                    _midiInput.Start();
+
+                    InputDeviceNumber = deviceNumber;
                 }
-
-                _midiInput = new MidiIn(deviceNumber);
-                _midiInput.MessageReceived += MidiInput_MessageReceived;
-                _midiInput.ErrorReceived += MidiInput_ErrorReceived;
-                _midiInput.Start();
-
-                InputDeviceNumber = deviceNumber;
                 System.Diagnostics.Debug.WriteLine($"✓ Connected to MIDI input device {deviceNumber}: {MidiIn.DeviceInfo(deviceNumber).ProductName}");
                 return true;
             }
@@ -142,17 +152,33 @@ namespace SongRequestDesktopV2Rewrite
         {
             try
             {
-                DisconnectOutput();
-
-                if (deviceNumber < 0 || deviceNumber >= MidiOut.NumberOfDevices)
+                lock (_midiLock)
                 {
-                    ErrorOccurred?.Invoke(this, "Invalid MIDI output device number");
-                    return false;
+                    DisconnectOutput_NoLock();
+
+                    if (deviceNumber < 0 || deviceNumber >= MidiOut.NumberOfDevices)
+                    {
+                        ErrorOccurred?.Invoke(this, "Invalid MIDI output device number");
+                        return false;
+                    }
+
+                    // Retry once after a brief delay if device opens
+                    for (int attempt = 0; attempt < 2; attempt++)
+                    {
+                        try
+                        {
+                            _midiOutput = new MidiOut(deviceNumber);
+                            OutputDeviceNumber = deviceNumber;
+                            break;
+                        }
+                        catch (Exception retryEx) when (attempt == 0)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"⚠ MIDI output attempt {attempt + 1} failed: {retryEx.Message}");
+                            System.Threading.Thread.Sleep(100); // Brief delay before retry
+                        }
+                    }
                 }
 
-                _midiOutput = new MidiOut(deviceNumber);
-                OutputDeviceNumber = deviceNumber;
-                
                 System.Diagnostics.Debug.WriteLine($"✓ Connected to MIDI output device {deviceNumber}: {MidiOut.DeviceInfo(deviceNumber).ProductName}");
                 return true;
             }
@@ -169,24 +195,31 @@ namespace SongRequestDesktopV2Rewrite
         /// </summary>
         private void DisconnectInput()
         {
-            if (_midiInput != null)
+            lock (_midiLock)
             {
-                try
-                {
-                    _midiInput.Stop();
-                    _midiInput.MessageReceived -= MidiInput_MessageReceived;
-                    _midiInput.ErrorReceived -= MidiInput_ErrorReceived;
-                    _midiInput.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"⚠ Error disconnecting MIDI input: {ex.Message}");
-                }
-                finally
-                {
-                    _midiInput = null;
-                    InputDeviceNumber = null;
-                }
+                DisconnectInput_NoLock();
+            }
+        }
+
+        private void DisconnectInput_NoLock()
+        {
+            if (_midiInput == null) return;
+
+            try
+            {
+                _midiInput.Stop();
+                _midiInput.MessageReceived -= MidiInput_MessageReceived;
+                _midiInput.ErrorReceived -= MidiInput_ErrorReceived;
+                _midiInput.Dispose();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"⚠ Error disconnecting MIDI input: {ex.Message}");
+            }
+            finally
+            {
+                _midiInput = null;
+                InputDeviceNumber = null;
             }
         }
 
@@ -195,21 +228,28 @@ namespace SongRequestDesktopV2Rewrite
         /// </summary>
         private void DisconnectOutput()
         {
-            if (_midiOutput != null)
+            lock (_midiLock)
             {
-                try
-                {
-                    _midiOutput.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"⚠ Error disconnecting MIDI output: {ex.Message}");
-                }
-                finally
-                {
-                    _midiOutput = null;
-                    OutputDeviceNumber = null;
-                }
+                DisconnectOutput_NoLock();
+            }
+        }
+
+        private void DisconnectOutput_NoLock()
+        {
+            if (_midiOutput == null) return;
+
+            try
+            {
+                _midiOutput.Dispose();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"⚠ Error disconnecting MIDI output: {ex.Message}");
+            }
+            finally
+            {
+                _midiOutput = null;
+                OutputDeviceNumber = null;
             }
         }
 
@@ -218,8 +258,11 @@ namespace SongRequestDesktopV2Rewrite
         /// </summary>
         public void DisconnectDevices()
         {
-            DisconnectInput();
-            DisconnectOutput();
+            lock (_midiLock)
+            {
+                DisconnectInput_NoLock();
+                DisconnectOutput_NoLock();
+            }
         }
 
         /// <summary>
@@ -227,12 +270,14 @@ namespace SongRequestDesktopV2Rewrite
         /// </summary>
         public void SendNoteOn(int channel, int note, int velocity)
         {
-            if (_midiOutput == null || !_isEnabled) return;
-
             try
             {
                 var msg = new NoteOnEvent(0, channel, note, velocity, 0);
-                _midiOutput.Send(msg.GetAsShortMessage());
+                lock (_midiLock)
+                {
+                    if (_midiOutput == null || !_isEnabled) return;
+                    _midiOutput.Send(msg.GetAsShortMessage());
+                }
             }
             catch (Exception ex)
             {
@@ -245,12 +290,14 @@ namespace SongRequestDesktopV2Rewrite
         /// </summary>
         public void SendNoteOff(int channel, int note)
         {
-            if (_midiOutput == null || !_isEnabled) return;
-
             try
             {
                 var msg = new NoteEvent(0, channel, MidiCommandCode.NoteOff, note, 0);
-                _midiOutput.Send(msg.GetAsShortMessage());
+                lock (_midiLock)
+                {
+                    if (_midiOutput == null || !_isEnabled) return;
+                    _midiOutput.Send(msg.GetAsShortMessage());
+                }
             }
             catch (Exception ex)
             {
@@ -263,12 +310,14 @@ namespace SongRequestDesktopV2Rewrite
         /// </summary>
         public void SendControlChange(int channel, int controller, int value)
         {
-            if (_midiOutput == null || !_isEnabled) return;
-
             try
             {
                 var msg = new ControlChangeEvent(0, channel, (MidiController)controller, value);
-                _midiOutput.Send(msg.GetAsShortMessage());
+                lock (_midiLock)
+                {
+                    if (_midiOutput == null || !_isEnabled) return;
+                    _midiOutput.Send(msg.GetAsShortMessage());
+                }
             }
             catch (Exception ex)
             {
@@ -307,5 +356,10 @@ namespace SongRequestDesktopV2Rewrite
         public int DeviceNumber { get; set; }
         public string Name { get; set; } = string.Empty;
         public bool IsInput { get; set; }
+
+        public override string ToString()
+        {
+            return string.IsNullOrWhiteSpace(Name) ? $"Device {DeviceNumber}" : Name;
+        }
     }
 }

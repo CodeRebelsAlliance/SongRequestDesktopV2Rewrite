@@ -34,6 +34,8 @@ namespace SongRequestDesktopV2Rewrite
             SetMicState(MicIdleColor, MicIdleBorderColor, "Ready");
         }
 
+        public bool IsAnnouncementActive => _isAnnouncementActive;
+
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             Close();
@@ -125,6 +127,42 @@ namespace SongRequestDesktopV2Rewrite
                 _isTransitioning = false;
                 SetMicState(MicIdleColor, MicIdleBorderColor, "Ready");
             }
+        }
+
+        public async Task RemotePressOrToggleAsync()
+        {
+            if (PushToTalkCheckBox.IsChecked == true)
+            {
+                await StartAnnouncementAsync();
+            }
+            else
+            {
+                if (_isAnnouncementActive) await StopAnnouncementAsync();
+                else await StartAnnouncementAsync();
+            }
+        }
+
+        public async Task RemoteReleaseAsync()
+        {
+            if (PushToTalkCheckBox.IsChecked == true)
+            {
+                await StopAnnouncementAsync();
+            }
+        }
+
+        public void RemoteSetPlaySoundSetting(bool enabled)
+        {
+            PlaySoundCheckBox.IsChecked = enabled;
+        }
+
+        public void RemoteSetPushToTalkSetting(bool enabled)
+        {
+            PushToTalkCheckBox.IsChecked = enabled;
+        }
+
+        public void RemoteSetDimDb(double value)
+        {
+            DimDbSlider.Value = Math.Clamp(value, DimDbSlider.Minimum, DimDbSlider.Maximum);
         }
 
         private void SetMicState(Color backgroundColor, Color borderColor, string stateText)

@@ -25,6 +25,7 @@ namespace SongRequestDesktopV2Rewrite
         private double _announcementDimDb = 20.0;
         private bool _announcementPlaySound = true;
         private bool _announcementPushToTalk = true;
+        private RemoteControlConfiguration _remoteControl = new RemoteControlConfiguration();
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -124,6 +125,12 @@ namespace SongRequestDesktopV2Rewrite
             set => SetField(ref _announcementPushToTalk, value);
         }
 
+        public RemoteControlConfiguration RemoteControl
+        {
+            get => _remoteControl;
+            set => SetField(ref _remoteControl, RemoteControlConfiguration.Ensure(value));
+        }
+
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
         {
             if (EqualityComparer<T>.Default.Equals(field, value)) return false;
@@ -147,22 +154,23 @@ namespace SongRequestDesktopV2Rewrite
         {
             _configFilePath = GetDefaultConfigPath();
             Current = LoadOrCreateConfig();
+            SubscribeToAutoSave(Current);
+        }
 
-            // Auto-save on any property change
-            if (Current != null)
+        private void SubscribeToAutoSave(Config? config)
+        {
+            if (config == null) return;
+            config.PropertyChanged += (s, e) =>
             {
-                Current.PropertyChanged += (s, e) =>
+                try
                 {
-                    try
-                    {
-                        SaveConfig();
-                    }
-                    catch
-                    {
-                        // swallowing exceptions here to avoid UI disruption; callers can explicitly call SaveConfig
-                    }
-                };
-            }
+                    SaveConfig();
+                }
+                catch
+                {
+                    // swallowing exceptions here to avoid UI disruption; callers can explicitly call SaveConfig
+                }
+            };
         }
 
         private static string GetDefaultConfigPath()
@@ -208,6 +216,12 @@ namespace SongRequestDesktopV2Rewrite
                     if (string.IsNullOrWhiteSpace(cfg.Address)) { cfg.Address = "http://127.0.0.1:5000"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.DefaultSorting)) { cfg.DefaultSorting = "none"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.RequestUrl)) { cfg.RequestUrl = "https://example.com/request"; patched = true; }
+                    var ensuredRemote = RemoteControlConfiguration.Ensure(cfg.RemoteControl);
+                    if (!ReferenceEquals(cfg.RemoteControl, ensuredRemote))
+                    {
+                        cfg.RemoteControl = ensuredRemote;
+                        patched = true;
+                    }
 
                     if (patched)
                     {
@@ -248,6 +262,7 @@ namespace SongRequestDesktopV2Rewrite
             lock (_sync)
             {
                 Current = LoadOrCreateConfig();
+                SubscribeToAutoSave(Current);
             }
         }
 

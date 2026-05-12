@@ -120,6 +120,18 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="MappingAssignButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="Width" Value="84"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+
+        <Style x:Key="MappingClearButton" TargetType="Button" BasedOn="{StaticResource DangerButton}">
+            <Setter Property="Width" Value="84"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+
         <Style TargetType="TextBox" x:Key="RoundedTextBox">
             <Setter Property="Background" Value="#2A2A2A"/>
             <Setter Property="Foreground" Value="White"/>
@@ -180,6 +192,112 @@
         <Style TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="Background" Value="#2A2A2A"/>
+        </Style>
+
+        <Style x:Key="RemoteComboBoxItem" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Margin="2">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#2F2F2F"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#5038A1FF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="RemoteComboBox" TargetType="ComboBox" BasedOn="{StaticResource RoundedComboBox}">
+            <Setter Property="Background" Value="#2A2A2A"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource RemoteComboBoxItem}"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="DropdownToggle"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          Focusable="False"
+                                          ClickMode="Press">
+                                <Border x:Name="ComboBorder"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="8">
+                                    <Grid>
+                                        <ContentPresenter Margin="10,0,30,0"
+                                                          HorizontalAlignment="Left"
+                                                          VerticalAlignment="Center"
+                                                          Content="{TemplateBinding SelectionBoxItem}"
+                                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                          ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"/>
+                                        <Path HorizontalAlignment="Right"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,10,0"
+                                              Fill="White"
+                                              Data="M 0 0 L 8 0 L 4 5 Z"/>
+                                    </Grid>
+                                </Border>
+                            </ToggleButton>
+
+                            <Popup x:Name="Popup"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Slide">
+                                <Border x:Name="DropDownBorder"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Margin="0,4,0,0"
+                                        Background="{StaticResource PanelBackground}"
+                                        BorderBrush="{StaticResource ControlBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        SnapsToDevicePixels="True">
+                                    <ScrollViewer Margin="4" SnapsToDevicePixels="True">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ComboBorder" Property="BorderBrush" Value="#FF5B8DEF"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="ComboBorder" Property="BorderBrush" Value="#FF7AD1FF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="Border" x:Key="CardBorder">
@@ -466,6 +584,211 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Remote Control">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                        <StackPanel Margin="0,10,0,0">
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,10,10">
+                                <StackPanel>
+                                    <TextBlock Text="Music Player Mappings" FontWeight="Bold" FontSize="16"/>
+                                    <TextBlock Text="These mappings work globally across app windows. Use multi-key combinations for keyboard shortcuts."
+                                               Style="{StaticResource HintTextStyle}"/>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="180"/>
+                                            <ColumnDefinition Width="180"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Text="Action" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="1" Text="Key Bind" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="4" Text="MIDI Mapping" FontWeight="Bold"/>
+
+                                        <TextBlock Grid.Row="1" Margin="0,10,0,0" Text="Play / Pause"/>
+                                        <TextBlock x:Name="KeybindPlayPauseText" Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="1" Grid.Column="2" Margin="6,8,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="PlayPause" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="1" Grid.Column="3" Margin="6,8,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="PlayPause" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiPlayPauseText" Grid.Row="1" Grid.Column="4" Margin="0,10,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="1" Grid.Column="5" Margin="6,8,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="PlayPause" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="1" Grid.Column="6" Margin="6,8,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="PlayPause" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="2" Margin="0,8,0,0" Text="Skip Next"/>
+                                        <TextBlock x:Name="KeybindSkipNextText" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="2" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="SkipNext" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="2" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="SkipNext" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiSkipNextText" Grid.Row="2" Grid.Column="4" Margin="0,8,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="2" Grid.Column="5" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="SkipNext" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="2" Grid.Column="6" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="SkipNext" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="3" Margin="0,8,0,0" Text="Previous"/>
+                                        <TextBlock x:Name="KeybindPreviousText" Grid.Row="3" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="3" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="Previous" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="3" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="Previous" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiPreviousText" Grid.Row="3" Grid.Column="4" Margin="0,8,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="3" Grid.Column="5" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="Previous" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="3" Grid.Column="6" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="Previous" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="4" Margin="0,8,0,0" Text="Stop"/>
+                                        <TextBlock x:Name="KeybindStopText" Grid.Row="4" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="4" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="Stop" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="4" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="Stop" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiStopText" Grid.Row="4" Grid.Column="4" Margin="0,8,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="4" Grid.Column="5" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="Stop" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="4" Grid.Column="6" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="Stop" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="5" Margin="0,8,0,0" Text="Volume Up"/>
+                                        <TextBlock x:Name="KeybindVolumeUpText" Grid.Row="5" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="5" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="VolumeUp" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="5" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="VolumeUp" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiVolumeText" Grid.Row="5" Grid.Column="4" Margin="0,8,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="5" Grid.Column="5" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="Volume" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="5" Grid.Column="6" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="Volume" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="6" Margin="0,8,0,0" Text="Volume Down"/>
+                                        <TextBlock x:Name="KeybindVolumeDownText" Grid.Row="6" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="6" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="VolumeDown" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="6" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="VolumeDown" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock Grid.Row="6" Grid.Column="4" Margin="0,8,0,0" Text="(shares Volume MIDI row above)" Foreground="#AAAAAA"/>
+
+                                        <TextBlock Grid.Row="7" Margin="0,8,0,0" Text="Crossfade Up"/>
+                                        <TextBlock x:Name="KeybindCrossfadeUpText" Grid.Row="7" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="7" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="CrossfadeUp" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="7" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="CrossfadeUp" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiCrossfadeText" Grid.Row="7" Grid.Column="4" Margin="0,8,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="7" Grid.Column="5" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="Crossfade" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="7" Grid.Column="6" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="Crossfade" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="8" Margin="0,8,0,0" Text="Crossfade Down"/>
+                                        <TextBlock x:Name="KeybindCrossfadeDownText" Grid.Row="8" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="8" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="CrossfadeDown" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="8" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="CrossfadeDown" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock Grid.Row="8" Grid.Column="4" Margin="0,8,0,0" Text="(shares Crossfade MIDI row above)" Foreground="#AAAAAA"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,10,10">
+                                <StackPanel>
+                                    <TextBlock Text="Announcement Mappings" FontWeight="Bold" FontSize="16"/>
+                                    <TextBlock Text="Remote actions for announcement control and announcement settings."
+                                               Style="{StaticResource HintTextStyle}"/>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="240"/>
+                                            <ColumnDefinition Width="180"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Text="Action" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="1" Text="Key Bind" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="4" Text="MIDI Mapping" FontWeight="Bold"/>
+
+                                        <TextBlock Grid.Row="1" Margin="0,10,0,0" Text="Announcement (Start/Toggle)"/>
+                                        <TextBlock x:Name="KeybindAnnouncementText" Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="1" Grid.Column="2" Margin="6,8,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="Announcement" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="1" Grid.Column="3" Margin="6,8,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="Announcement" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiAnnouncementText" Grid.Row="1" Grid.Column="4" Margin="0,10,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="1" Grid.Column="5" Margin="6,8,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="Announcement" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="1" Grid.Column="6" Margin="6,8,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="Announcement" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="2" Margin="0,8,0,0" Text="Toggle pre-announcement sound"/>
+                                        <TextBlock x:Name="KeybindAnnouncementPlaySoundToggleText" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="2" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="AnnouncementPlaySoundToggle" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="2" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="AnnouncementPlaySoundToggle" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiAnnouncementPlaySoundToggleText" Grid.Row="2" Grid.Column="4" Margin="0,8,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="2" Grid.Column="5" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="AnnouncementPlaySoundToggle" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="2" Grid.Column="6" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="AnnouncementPlaySoundToggle" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="3" Margin="0,8,0,0" Text="Toggle push-to-talk mode"/>
+                                        <TextBlock x:Name="KeybindAnnouncementPushToTalkToggleText" Grid.Row="3" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="3" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="AnnouncementPushToTalkToggle" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="3" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="AnnouncementPushToTalkToggle" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiAnnouncementPushToTalkToggleText" Grid.Row="3" Grid.Column="4" Margin="0,8,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="3" Grid.Column="5" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="AnnouncementPushToTalkToggle" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="3" Grid.Column="6" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="AnnouncementPushToTalkToggle" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="4" Margin="0,8,0,0" Text="Dim level (dB) up/down"/>
+                                        <TextBlock x:Name="KeybindAnnouncementDimDbUpText" Grid.Row="4" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="4" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="AnnouncementDimDbUp" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="4" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="AnnouncementDimDbUp" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock x:Name="MidiAnnouncementDimDbText" Grid.Row="4" Grid.Column="4" Margin="0,8,0,0" Text="Not assigned" TextWrapping="Wrap"/>
+                                        <Button Grid.Row="4" Grid.Column="5" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="AnnouncementDimDb" Click="AssignMidiButton_Click"/>
+                                        <Button Grid.Row="4" Grid.Column="6" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="AnnouncementDimDb" Click="ClearMidiButton_Click"/>
+
+                                        <TextBlock Grid.Row="5" Margin="0,8,0,0" Text="Dim level (dB) down"/>
+                                        <TextBlock x:Name="KeybindAnnouncementDimDbDownText" Grid.Row="5" Grid.Column="1" Margin="0,8,0,0" Text="Not assigned"/>
+                                        <Button Grid.Row="5" Grid.Column="2" Margin="6,6,0,0" Content="Assign" Style="{StaticResource MappingAssignButton}" Tag="AnnouncementDimDbDown" Click="AssignKeybindButton_Click"/>
+                                        <Button Grid.Row="5" Grid.Column="3" Margin="6,6,0,0" Content="Clear" Style="{StaticResource MappingClearButton}" Tag="AnnouncementDimDbDown" Click="ClearKeybindButton_Click"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="4" Margin="0,8,0,0" Text="(shares Dim MIDI row above)" Foreground="#AAAAAA"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorder}" Margin="0,0,10,10">
+                                <StackPanel>
+                                    <TextBlock Text="MIDI Devices &amp; Live Feedback" FontWeight="Bold" FontSize="16"/>
+                                    <TextBlock Text="Select MIDI input/output devices for remote control. Feedback LEDs update live for play state and slider positions."
+                                               Style="{StaticResource HintTextStyle}"/>
+
+                                    <CheckBox x:Name="RemoteMidiEnabledCheckBox"
+                                              Content="Enable MIDI remote control"
+                                              Foreground="White"
+                                              Margin="0,4,0,10"
+                                              Checked="RemoteMidiDevice_SelectionChanged"
+                                              Unchecked="RemoteMidiDevice_SelectionChanged"/>
+
+                                    <TextBlock Text="MIDI Input Device" Style="{StaticResource FieldLabelStyle}"/>
+                                    <ComboBox x:Name="RemoteMidiInputCombo"
+                                              Style="{StaticResource RemoteComboBox}"
+                                              SelectionChanged="RemoteMidiCombo_SelectionChanged"/>
+
+                                    <TextBlock Text="MIDI Output Device" Style="{StaticResource FieldLabelStyle}"/>
+                                    <ComboBox x:Name="RemoteMidiOutputCombo"
+                                              Style="{StaticResource RemoteComboBox}"
+                                              SelectionChanged="RemoteMidiCombo_SelectionChanged"/>
+
+                                    <TextBlock x:Name="RemoteMidiStatusText"
+                                               Text="MIDI status unknown"
+                                               Foreground="#D0D0D0"
+                                               Margin="0,8,0,2"/>
+                                    <TextBlock x:Name="RemoteMidiLastMessageText"
+                                               Text="No MIDI activity yet."
+                                               Foreground="#9A9A9A"
+                                               FontSize="12"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </ScrollViewer>
                 </TabItem>
             </TabControl>
