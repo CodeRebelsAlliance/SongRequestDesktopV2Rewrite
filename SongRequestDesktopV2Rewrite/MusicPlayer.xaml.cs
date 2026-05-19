@@ -1305,12 +1305,42 @@ namespace SongRequestDesktopV2Rewrite
 
             int steps = 40;
             int delay = Math.Max(10, (int)(cross * 1000 / steps));
+            bool metadataUpdated = false;
+            int halfStep = steps / 2;
             for (int i = 0; i < steps; i++)
             {
                 float t = (i + 1f) / steps;
                 // Ramp up next to its normalized volume, ramp down current from its volume
                 try { _nextVolProvider.Volume = targetNextVolume * t; } catch { }
                 try { if (_currentVolProvider != null) _currentVolProvider.Volume = currentStartVolume * (1f - t); } catch { }
+
+                // At half the crossfade make visuals switch to the next song so UI feels responsive
+                if (!metadataUpdated && i >= halfStep)
+                {
+                    metadataUpdated = true;
+                    // Update UI to show next song metadata while audio is still crossfading
+                    try
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            // Show next song info immediately (do not modify Queue yet)
+                            NowTitle.Text = nextSong.Title;
+                            NowArtist.Text = nextSong.Artist;
+                            NowLength.Text = nextSong.length;
+                            if (nextSong.thumbnail?.Source != null) NowThumbnail.Source = nextSong.thumbnail.Source as BitmapSource;
+
+                            TryApplyThumbnailGradient(nextSong.thumbnail?.Source as BitmapSource);
+
+                            // Update audio info tags for the upcoming current song
+                            UpdateAudioInfoTags(nextSong.songPath);
+
+                            // Kick off lyrics fetch early to populate lyrics while crossfade completes
+                            _ = FetchAndDisplayLyricsFor(nextSong);
+                        });
+                    }
+                    catch { }
+                }
+
                 await Task.Delay(delay);
             }
 

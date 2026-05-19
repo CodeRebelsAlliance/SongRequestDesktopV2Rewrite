@@ -894,9 +894,15 @@
 
                         <StackPanel Orientation="Vertical" Margin="24,0">
                             <TextBlock Text="Volume" Foreground="#DDD" FontWeight="Bold" FontSize="18"/>
-                            <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" Value="0.9" Width="130" SmallChange="0.1" Style="{StaticResource CompactModernSlider}"/>
-                            <TextBlock Text="Crossfade (s)" Foreground="#DDD" FontWeight="Bold" FontSize="18"/>
-                            <Slider x:Name="CrossfadeSlider" Minimum="0" Maximum="10" Value="4" Width="130" Style="{StaticResource CompactModernSlider}"/>
+                            <DockPanel>
+                                <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" Value="0.9" Width="130" SmallChange="0.1" Style="{StaticResource CompactModernSlider}" DockPanel.Dock="Left"/>
+                                <TextBlock x:Name="VolumeValueText" Text="{Binding Value, ElementName=VolumeSlider, StringFormat={}{0:P0}}" Foreground="#DDD" FontSize="16" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </DockPanel>
+                            <TextBlock Text="Crossfade (s)" Foreground="#DDD" FontWeight="Bold" FontSize="18" Margin="0,8,0,0"/>
+                            <DockPanel>
+                                <Slider x:Name="CrossfadeSlider" Minimum="0" Maximum="10" Value="4" Width="130" Style="{StaticResource CompactModernSlider}" DockPanel.Dock="Left"/>
+                                <TextBlock x:Name="CrossfadeValueText" Text="{Binding Value, ElementName=CrossfadeSlider, StringFormat={}{0:0.0}s}" Foreground="#DDD" FontSize="16" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </DockPanel>
                         </StackPanel>
 
                         <StackPanel Orientation="Vertical" Margin="12,0">

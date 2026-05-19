@@ -55,43 +55,73 @@ namespace SongRequestDesktopV2Rewrite
             {
                 try
                 {
-                    // Parse MIDI message
-                    if (e.MidiEvent is NoteOnEvent noteOn && noteOn.Velocity > 0)
+                    var me = e.MidiEvent;
+                    if (me == null) return;
+
+                    int channel = 0;
+                    if (me is NoteOnEvent noev) channel = noev.Channel;
+                    else if (me is NoteEvent nev) channel = nev.Channel;
+                    else if (me is ControlChangeEvent ccev) channel = ccev.Channel;
+                    else if (me is PitchWheelChangeEvent pwev) channel = pwev.Channel;
+                    else
                     {
-                        _detectedChannel = noteOn.Channel;
-                        _detectedNote = noteOn.NoteNumber;
-                        _detectedMessageType = "NoteOn";
-
-                        StatusText.Text = $"✓ Detected MIDI Note On\n\nChannel: {_detectedChannel}\nNote: {_detectedNote}\n\nAdjust feedback LED colors below and click OK to confirm.";
-                        StatusText.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80)); // Green
-                        
-                        _isWaitingForInput = false;
-                        _timeoutTimer?.Stop();
-                        
-                        OkButton.IsEnabled = true;
-                        VelocityPressedSlider.IsEnabled = true;
-                        VelocityUnpressedSlider.IsEnabled = true;
-
-                        System.Diagnostics.Debug.WriteLine($"🎹 Detected MIDI: Channel {_detectedChannel}, Note {_detectedNote}");
+                        // Fallback: derive channel from raw status byte (lower 4 bits)
+                        int rawStatus = e.RawMessage & 0xFF;
+                        channel = (rawStatus & 0x0F);
                     }
-                    else if (e.MidiEvent is ControlChangeEvent cc)
+
+                    int value1 = 0;
+                    int value2 = 0;
+                    string msgType = me.CommandCode.ToString();
+
+                    if (me is NoteOnEvent noteOn && noteOn.Velocity > 0)
                     {
-                        _detectedChannel = cc.Channel;
-                        _detectedNote = (int)cc.Controller;
-                        _detectedMessageType = "ControlChange";
-                        
-                        StatusText.Text = $"✓ Detected MIDI Control Change\n\nChannel: {_detectedChannel}\nController: {_detectedNote}\n\nAdjust feedback values below and click OK to confirm.";
-                        StatusText.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80)); // Green
-                        
-                        _isWaitingForInput = false;
-                        _timeoutTimer?.Stop();
-                        
-                        OkButton.IsEnabled = true;
-                        VelocityPressedSlider.IsEnabled = true;
-                        VelocityUnpressedSlider.IsEnabled = true;
-
-                        System.Diagnostics.Debug.WriteLine($"🎹 Detected MIDI CC: Channel {_detectedChannel}, Controller {_detectedNote}");
+                        value1 = noteOn.NoteNumber;
+                        value2 = noteOn.Velocity;
+                        msgType = "NoteOn";
                     }
+                    else if (me is ControlChangeEvent cc)
+                    {
+                        value1 = (int)cc.Controller;
+                        value2 = cc.ControllerValue;
+                        msgType = "ControlChange";
+                    }
+                    else if (me is NoteEvent ne)
+                    {
+                        value1 = ne.NoteNumber;
+                        value2 = (ne is NoteOnEvent nOn) ? nOn.Velocity : 0;
+                        msgType = ne.CommandCode.ToString();
+                    }
+                    else if (me is PitchWheelChangeEvent pw)
+                    {
+                        value1 = pw.Pitch;
+                        value2 = 0;
+                        msgType = "PitchWheel";
+                    }
+                    else
+                    {
+                        // Fallback: parse raw message bytes so unusual devices are still detected (e.g., relative encoders)
+                        int raw = e.RawMessage;
+                        value1 = (raw >> 8) & 0xFF;
+                        value2 = (raw >> 16) & 0xFF;
+                        msgType = me.CommandCode.ToString();
+                    }
+
+                    _detectedChannel = channel;
+                    _detectedNote = value1;
+                    _detectedMessageType = msgType;
+
+                    StatusText.Text = $"✓ Detected MIDI {msgType}\n\nChannel: {_detectedChannel}\nValue1: {_detectedNote}\nValue2: {value2}\n\nAdjust feedback values below and click OK to confirm.";
+                    StatusText.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80)); // Green
+
+                    _isWaitingForInput = false;
+                    _timeoutTimer?.Stop();
+
+                    OkButton.IsEnabled = true;
+                    VelocityPressedSlider.IsEnabled = true;
+                    VelocityUnpressedSlider.IsEnabled = true;
+
+                    System.Diagnostics.Debug.WriteLine($"🎹 Detected MIDI {msgType}: Channel {_detectedChannel}, Value1 {_detectedNote}, Value2 {value2}");
                 }
                 catch (Exception ex)
                 {
