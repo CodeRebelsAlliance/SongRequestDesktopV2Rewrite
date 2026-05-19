@@ -16,6 +16,12 @@ namespace SongRequestDesktopV2Rewrite
         public FetchingService(string secretKey)
         {
             _httpClient = new HttpClient();
+            // Set a clear User-Agent so the requests web server can identify the app/version
+            try
+            {
+                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"SongRequest Desktop v{About.version}");
+            }
+            catch { }
             _secretKey = secretKey;
             _baseUrl = (ConfigService.Instance.Current?.Address ?? "http://127.0.0.1:5000") + "/fetch?method=";
         }

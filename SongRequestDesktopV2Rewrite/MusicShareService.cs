@@ -70,6 +70,12 @@ namespace SongRequestDesktopV2Rewrite
                 Timeout = TimeSpan.FromSeconds(30)
             };
 
+            // Set User-Agent to identify the app/version to the server
+            try
+            {
+                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"SongRequest Desktop v{About.version}");
+            }
+            catch { }
 
             // Add authorization header using the same bearer token as YouTube fetching
             if (!string.IsNullOrEmpty(cfg?.BearerToken))
