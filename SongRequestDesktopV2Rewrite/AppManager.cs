@@ -146,6 +146,16 @@ namespace SongRequestDesktopV2Rewrite
                         mainWindow.Focus();
                     }
                 }
+                else if (ConfigService.Instance.Current.UseNewUI && _ytform != null)
+                {
+                    var newUi = _ytform.NewUiRef;
+                    if (newUi != null && newUi.IsOpen)
+                        return;
+                    var interop = new YoutubeFormInterop(_ytform, _ytform.YoutubeService);
+                    var newUiWindow = new NewUiWindow(interop, _ytform);
+                    _ytform.NewUiRef = newUiWindow;
+                    newUiWindow.Show();
+                }
                 else
                 {
                     var mainWindow = _ytform;

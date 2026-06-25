@@ -22,6 +22,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _autoEnqueue = false;
         private bool _useCaptionLyricsFallback = true;
         private bool _enableAnnouncements = true;
+        private bool _useNewUI = false;
         private double _announcementDimDb = 20.0;
         private bool _announcementPlaySound = true;
         private bool _announcementPushToTalk = true;
@@ -99,6 +100,12 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _useCaptionLyricsFallback;
             set => SetField(ref _useCaptionLyricsFallback, value);
+        }
+
+        public bool UseNewUI
+        {
+            get => _useNewUI;
+            set => SetField(ref _useNewUI, value);
         }
 
         public bool EnableAnnouncements

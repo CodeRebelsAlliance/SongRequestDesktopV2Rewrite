@@ -19,7 +19,6 @@ namespace SongRequestDesktopV2Rewrite
         private bool _isLoadingRemoteUi;
         private bool _isApplyingRemoteMidiDevices;
         private RemoteControlConfiguration _remoteControlConfig = new RemoteControlConfiguration();
-
         public Settings()
         {
             InitializeComponent();
@@ -108,6 +107,9 @@ namespace SongRequestDesktopV2Rewrite
             _remoteControlConfig = CloneRemoteControlConfig(RemoteControlConfiguration.Ensure(cfg.RemoteControl));
             LoadRemoteControlUi();
 
+            var useNewUICheckBox = GetControl<CheckBox>("UseNewUICheckBox");
+            if (useNewUICheckBox != null) useNewUICheckBox.IsChecked = cfg.UseNewUI;
+
             _isTokenVisible = false;
             UpdateTokenVisibility();
 
@@ -127,6 +129,7 @@ namespace SongRequestDesktopV2Rewrite
             var autoEnqueueCheckBox = GetControl<CheckBox>("AutoEnqueueCheckBox");
             var captionFallbackCheckBox = GetControl<CheckBox>("CaptionFallbackCheckBox");
             var enableAnnouncementsCheckBox = GetControl<CheckBox>("EnableAnnouncementsCheckBox");
+            var useNewUICheckBox = GetControl<CheckBox>("UseNewUICheckBox");
             var statusTb = GetControl<TextBlock>("StatusText");
             var tokenValue = GetTokenValue();
 
@@ -148,6 +151,7 @@ namespace SongRequestDesktopV2Rewrite
                     cfg.AutoEnqueue = autoEnqueueCheckBox?.IsChecked ?? false;
                     cfg.UseCaptionLyricsFallback = captionFallbackCheckBox?.IsChecked ?? true;
                     cfg.EnableAnnouncements = enableAnnouncementsCheckBox?.IsChecked ?? true;
+                    cfg.UseNewUI = useNewUICheckBox?.IsChecked ?? false;
                     cfg.RemoteControl = CloneRemoteControlConfig(_remoteControlConfig);
 
                     // If normalization is turned off, deactivate it
@@ -220,6 +224,21 @@ namespace SongRequestDesktopV2Rewrite
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private YoutubeForm? FindYoutubeForm()
+        {
+            foreach (Window w in Application.Current.Windows)
+            {
+                if (w is YoutubeForm yf && yf.IsVisible)
+                    return yf;
+            }
+            foreach (Window w in Application.Current.Windows)
+            {
+                if (w is YoutubeForm yf)
+                    return yf;
+            }
+            return null;
         }
 
         protected override void OnClosed(EventArgs e)

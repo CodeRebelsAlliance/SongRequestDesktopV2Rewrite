@@ -29,6 +29,8 @@ namespace SongRequestDesktopV2Rewrite
         private DispatcherTimer _refreshTimer;
         private MusicPlayer _musicPlayer;
         private YoutubeService _youTubeService;
+        public YoutubeService YoutubeService => _youTubeService;
+        public MusicPlayer MusicPlayer => _musicPlayer;
         public static string downloadPath = @"data\downloadedvideos\";
         public string secID => ConfigService.Instance.Current.BearerToken;
         private bool currently_fetching = false;
@@ -36,6 +38,7 @@ namespace SongRequestDesktopV2Rewrite
         public static bool sendin_enabled = true;
         private List<string> wordsToCheck;
         private bool closing = false;
+        public Action? OnDataRefreshed;
         public int ConcurrentTaskNumber => ConfigService.Instance.Current.Threads;
         public HashSet<string> fetchedYtids = new HashSet<string>();
         public HashSet<string> fetchedBlacklist = new HashSet<string>();
@@ -206,6 +209,112 @@ namespace SongRequestDesktopV2Rewrite
             ShowSoundboard();
         }
 
+        public string? GetCachedTitle(string videoId)
+        {
+            lock (_videoCacheSync)
+            {
+                return fetchedVideoData.TryGetValue(videoId, out var data) ? data.Title : null;
+            }
+        }
+
+        public string? GetCachedCreator(string videoId)
+        {
+            lock (_videoCacheSync)
+            {
+                return fetchedVideoData.TryGetValue(videoId, out var data) ? data.Creator : null;
+            }
+        }
+
+        public long GetCachedDurationTicks(string videoId)
+        {
+            lock (_videoCacheSync)
+            {
+                return fetchedVideoData.TryGetValue(videoId, out var data) ? data.DurationTicks : 0;
+            }
+        }
+
+        public async Task QueueSongById(string videoId)
+        {
+            var mp3Path = System.IO.Path.Combine(downloadPath, $"{videoId}.mp3");
+            if (!File.Exists(mp3Path))
+            {
+                AppendConsoleText($"File not downloaded for {videoId}", Brushes.OrangeRed);
+                return;
+            }
+
+            var data = GetOrCreateVideoData(videoId);
+            var videoUrl = $"https://youtube.com/watch?v={videoId}";
+
+            string title, creator, length;
+            if (!string.IsNullOrWhiteSpace(data.Title) && !string.IsNullOrWhiteSpace(data.Creator) && data.DurationTicks > 0)
+            {
+                title = data.Title;
+                creator = data.Creator;
+                length = TimeSpan.FromTicks(data.DurationTicks).ToString(@"hh\:mm\:ss");
+            }
+            else
+            {
+                var (t, l, c) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
+                title = t ?? videoId;
+                creator = c ?? "";
+                length = l.ToString(@"hh\:mm\:ss");
+                data.Title = title;
+                data.Creator = creator;
+                data.DurationTicks = l.Ticks;
+                SaveVideoDataCache();
+            }
+
+            var thumbnail = new System.Windows.Controls.Image();
+            var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, data);
+            if (bmp != null) thumbnail.Source = bmp;
+
+            var song = new Song(title, creator, thumbnail, length, mp3Path);
+            _musicPlayer.Show();
+            _musicPlayer.AddSongExternal(song);
+            AppendConsoleText($"Queued: {title}", Brushes.LightGreen);
+        }
+
+        public async Task PlayNextById(string videoId)
+        {
+            var mp3Path = System.IO.Path.Combine(downloadPath, $"{videoId}.mp3");
+            if (!File.Exists(mp3Path))
+            {
+                AppendConsoleText($"File not downloaded for {videoId}", Brushes.OrangeRed);
+                return;
+            }
+
+            var data = GetOrCreateVideoData(videoId);
+            var videoUrl = $"https://youtube.com/watch?v={videoId}";
+
+            string title, creator, length;
+            if (!string.IsNullOrWhiteSpace(data.Title) && !string.IsNullOrWhiteSpace(data.Creator) && data.DurationTicks > 0)
+            {
+                title = data.Title;
+                creator = data.Creator;
+                length = TimeSpan.FromTicks(data.DurationTicks).ToString(@"hh\:mm\:ss");
+            }
+            else
+            {
+                var (t, l, c) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
+                title = t ?? videoId;
+                creator = c ?? "";
+                length = l.ToString(@"hh\:mm\:ss");
+                data.Title = title;
+                data.Creator = creator;
+                data.DurationTicks = l.Ticks;
+                SaveVideoDataCache();
+            }
+
+            var thumbnail = new System.Windows.Controls.Image();
+            var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, data);
+            if (bmp != null) thumbnail.Source = bmp;
+
+            var song = new Song(title, creator, thumbnail, length, mp3Path);
+            _musicPlayer.Show();
+            _musicPlayer.AddNextSongExternal(song);
+            AppendConsoleText($"Playing next: {title}", Brushes.LightGreen);
+        }
+
         public void ShowSoundboard()
         {
             // Only allow one Soundboard window at a time
@@ -218,10 +327,7 @@ namespace SongRequestDesktopV2Rewrite
             }
 
             // Create new Soundboard window
-            _soundboardWindow = new SoundboardWindow
-            {
-                Owner = this
-            };
+            _soundboardWindow = new SoundboardWindow();
 
             // Clean up reference when window closes
             _soundboardWindow.Closed += (s, args) => { _soundboardWindow = null; };
@@ -380,6 +486,7 @@ namespace SongRequestDesktopV2Rewrite
                 File.WriteAllText(tempPath, json);
                 File.Copy(tempPath, _videoMetadataCachePath, true);
                 File.Delete(tempPath);
+                OnDataRefreshed?.Invoke();
             }
             catch (Exception ex)
             {
@@ -1624,6 +1731,13 @@ namespace SongRequestDesktopV2Rewrite
                 e.Cancel = true;
                 this.Hide();
             }
+        }
+
+        private NewUiWindow? _newUiWindow;
+        public NewUiWindow? NewUiRef
+        {
+            get => _newUiWindow;
+            set => _newUiWindow = value;
         }
 
         private void LogoImage_MouseDown(object sender, MouseButtonEventArgs e)

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <Resource Include="Artboard1@3x.png" />
+    <Resource Include="newui\SRshortLogo.png" />
     <Resource Include="SRshortLogo.ico" />
   </ItemGroup>
 
@@ -26,6 +27,9 @@
     <PackageReference Include="CefSharp.Wpf.NETCore" Version="146.0.100" />
     <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="Photino.Native" Version="4.0.22" />
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+    <PackageReference Include="Photino.NET.Server" Version="4.0.12" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
     <PackageReference Include="YoutubeExplode" Version="6.6.0" />
@@ -42,9 +46,25 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\..\..\Documents\GitHub\schuelerapp\app\static\icons\icon-48.png" Link="newui\icon-48.png">
+	  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="SRshortLogo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="announcement.mp3">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="newui\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Remove="newui\SRshortLogo.png" />
   </ItemGroup>
 
   <ItemGroup>

@@ -803,6 +803,9 @@
                            VerticalAlignment="Center"
                            Margin="4,0,20,0"/>
 
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <CheckBox x:Name="UseNewUICheckBox" Content="Use New UI (restart required)" Foreground="LightGray" Margin="4,0" VerticalAlignment="Center"/>
+                </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="SaveButton" Content="Save" Width="110" Margin="6,0" Style="{StaticResource SuccessButton}" Click="SaveButton_Click"/>
                     <Button x:Name="ReloadButton" Content="Reload" Width="110" Margin="6,0" Style="{StaticResource SecondaryButton}" Click="ReloadButton_Click"/>

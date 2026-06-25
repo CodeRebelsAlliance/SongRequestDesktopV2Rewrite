@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Collections.Generic;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -93,6 +94,18 @@ namespace SongRequestDesktopV2Rewrite
 
         private async void LoadingProcess()
         {
+            if (ConfigService.Instance.Current.UseNewUI)
+            {
+                var ytForm = new YoutubeForm(new List<System.Net.Cookie>());
+                var interop = new YoutubeFormInterop(ytForm, ytForm.YoutubeService);
+                var newUi = new NewUiWindow(interop, ytForm);
+                ytForm.NewUiRef = newUi;
+                shown = true;
+                Hide();
+                newUi.Show();
+                return;
+            }
+
             // Simulate loading stages
             await Task.Delay(500);  // Initial delay
 
@@ -180,6 +193,16 @@ namespace SongRequestDesktopV2Rewrite
             if (shown)
             {
                 shown = false;
+
+                if (ConfigService.Instance.Current.UseNewUI)
+                {
+                    var ytForm = new YoutubeForm(cookies);
+                    var interop = new YoutubeFormInterop(ytForm, ytForm.YoutubeService);
+                    var newUi = new NewUiWindow(interop, ytForm);
+                    ytForm.NewUiRef = newUi;
+                    newUi.Show();
+                    return;
+                }
 
                 var youtubeForm = new YoutubeForm(cookies);
                 youtubeForm.Show();

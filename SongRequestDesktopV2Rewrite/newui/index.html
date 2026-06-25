@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SongRequest V2</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+</head>
+<body>
+<div id="app">
+  <div id="topbar" class="startup-hide">
+    <div id="top-left">
+      <img id="logo" src="../SRshortLogo.png"/>
+      <span id="title" style="font-weight: bold">Technik-AG <span style="color: yellow">Song</span><span style="color: orange">Request</span></span>
+      <span id="version-badge">v...</span>
+    </div>
+    <div id="top-actions">
+      <button id="btn-submit" class="top-btn"><i class="fas fa-plus-circle"></i> Submit Song</button>
+      <button id="btn-music-player" class="top-btn"><i class="fas fa-music"></i> Music Player</button>
+      <button id="btn-soundboard" class="top-btn"><i class="fas fa-volume-up"></i> Soundboard</button>
+      <button id="btn-settings" class="top-btn"><i class="fas fa-cog"></i> Settings</button>
+      <button id="btn-refresh" class="top-btn"><i class="fas fa-sync-alt"></i> Refresh</button>
+    </div>
+  </div>
+  <div id="tabbar" class="startup-hide">
+    <button class="tab-btn active" data-tab="all-songs">All Songs</button>
+    <button class="tab-btn" data-tab="pending">Pending Approval</button>
+    <button class="tab-btn" data-tab="blacklist">Blacklist</button>
+    <button class="tab-btn" data-tab="wordfilter">Word Filter</button>
+    <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+  </div>
+  <div id="main" class="startup-hide">
+    <div id="panel-all-songs" class="panel active">
+      <div class="list-toolbar">
+        <input type="text" class="search-input" data-list="all-songs" placeholder="Search videos...">
+        <select class="sort-select" data-list="all-songs">
+          <option value="date-desc">Newest First</option>
+          <option value="date-asc">Oldest First</option>
+          <option value="title-asc">Title A-Z</option>
+          <option value="title-desc">Title Z-A</option>
+          <option value="creator-asc">Creator A-Z</option>
+          <option value="creator-desc">Creator Z-A</option>
+        </select>
+      </div>
+      <div id="list-all-songs" class="song-list"></div>
+    </div>
+    <div id="panel-pending" class="panel">
+      <div class="list-toolbar">
+        <input type="text" class="search-input" data-list="pending" placeholder="Search pending...">
+        <select class="sort-select" data-list="pending">
+          <option value="date-desc">Newest First</option>
+          <option value="date-asc">Oldest First</option>
+          <option value="title-asc">Title A-Z</option>
+          <option value="title-desc">Title Z-A</option>
+          <option value="creator-asc">Creator A-Z</option>
+          <option value="creator-desc">Creator Z-A</option>
+        </select>
+      </div>
+      <div id="list-pending" class="song-list"></div>
+    </div>
+    <div id="panel-blacklist" class="panel">
+      <div class="list-toolbar">
+        <input type="text" class="search-input" data-list="blacklist" placeholder="Search blacklisted...">
+        <select class="sort-select" data-list="blacklist">
+          <option value="date-desc">Newest First</option>
+          <option value="date-asc">Oldest First</option>
+          <option value="title-asc">Title A-Z</option>
+          <option value="title-desc">Title Z-A</option>
+          <option value="creator-asc">Creator A-Z</option>
+          <option value="creator-desc">Creator Z-A</option>
+        </select>
+      </div>
+      <div id="list-blacklist" class="song-list"></div>
+    </div>
+    <div id="panel-wordfilter" class="panel">
+      <div id="wordfilter-controls">
+        <input type="text" id="wordfilter-input" placeholder="Enter a word...">
+        <button id="btn-wordfilter-add" class="action-btn"><i class="fas fa-plus"></i> Add</button>
+      </div>
+      <ul id="wordfilter-list"></ul>
+    </div>
+    <div id="panel-dashboard" class="panel">
+      <div id="dashboard-stats">
+        <div class="stat-card"><span class="stat-label"><i class="fas fa-video"></i> Total Videos</span><span id="stat-total" class="stat-value">0</span></div>
+        <div class="stat-card"><span class="stat-label"><i class="fas fa-check-circle"></i> Approved</span><span id="stat-approved" class="stat-value">0</span></div>
+        <div class="stat-card"><span class="stat-label"><i class="fas fa-hourglass-half"></i> Pending</span><span id="stat-pending" class="stat-value">0</span></div>
+        <div class="stat-card"><span class="stat-label"><i class="fas fa-ban"></i> Blacklisted</span><span id="stat-blacklisted" class="stat-value">0</span></div>
+        <div class="stat-card"><span class="stat-label"><i class="fas fa-filter"></i> Bad Words</span><span id="stat-badwords" class="stat-value">0</span></div>
+      </div>
+      <div id="dashboard-console">
+        <h3>Console</h3>
+        <div id="console-output"></div>
+      </div>
+    </div>
+  </div>
+  <div id="bottombar" class="startup-hide">
+    <span id="status-text">Ready</span>
+    <span id="clock">00:00:00</span>
+    <div id="bottom-right">
+      <span id="volume-pill" style="display:none"><i class="fas fa-volume-up"></i> Normalized</span>
+      <span id="autopilot-badge" style="display:none"><i class="fas fa-plane"></i> Autopilot</span>
+      <span id="connection-status" class="status-waiting"><i class="fas fa-circle"></i> Connecting...</span>
+    </div>
+  </div>
+</div>
+<div id="modal-overlay" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <span><i class="fas fa-plus-circle"></i> Submit Song</span>
+      <div class="modal-header-tabs">
+        <button class="modal-tab-btn active" data-mode="url">URL</button>
+        <button class="modal-tab-btn" data-mode="search">Search</button>
+      </div>
+      <button class="modal-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="submit-url-mode">
+        <input type="text" id="submit-url" placeholder="YouTube URL or video ID...">
+        <input type="text" id="submit-message" placeholder="Message (optional)...">
+        <button id="btn-submit-send" class="action-btn"><i class="fas fa-paper-plane"></i> Send</button>
+        <div id="submit-status"></div>
+      </div>
+      <div id="submit-search-mode" style="display:none">
+        <div class="search-controls">
+          <input type="text" id="submit-search-input" placeholder="Search YouTube...">
+          <button id="btn-submit-search" class="action-btn"><i class="fas fa-search"></i> Search</button>
+        </div>
+        <div id="submit-search-results"></div>
+        <div id="submit-search-status"></div>
+        <button id="btn-submit-search-send" class="action-btn" style="margin-top:8px"><i class="fas fa-paper-plane"></i> Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="about-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <span><i class="fas fa-info-circle"></i> About SongRequest</span>
+      <button class="modal-close" id="btn-about-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" id="about-body">
+      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px">
+        <img src="../SRshortLogo.png" style="width:80px;height:80px;border-radius:8px;flex-shrink:0" />
+        <div>
+            <div style="font-size:20px;font-weight:700;color:#fff; margin-bottom: 4px; font-weight: bold;">Technik-AG <span style="color: yellow">Song</span><span style="color: orange">Request</span></div>
+          <div id="about-version" style="font-size:13px;color:#ccc;margin-bottom:4px">Version ...</div>
+          <div style="font-size:13px;color:#aaa" onclick="window.open('https://songrequests.by-cra.net/', '_blank')">https://songrequests.by-cra.net/</div>
+        </div>
+      </div>
+      <div style="background:#0e0e0e;border-radius:8px;padding:14px;margin-bottom:12px">
+        <div style="color:#fff;font-weight:600;font-size:14px;margin-bottom:8px">About this application</div>
+        <div style="color:#bfbfbf;font-size:13px;line-height:1.4">Copyright &copy; 2026 &mdash; CodeRebelsAlliance. All rights reserved. This application is provided as-is. See the GitHub repository for source, issues and releases.</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+          <button id="btn-check-updates" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-sync-alt"></i> Check for updates</button>
+          <span id="about-update-status" style="font-size:12px;color:#aaa"></span>
+        </div>
+      </div>
+      <div id="about-badges" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        <img style="cursor:pointer" src="https://img.shields.io/github/v/release/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?label=release&style=flat" data-url="https://github.com/CodeRebelsAlliance/SongRequestDesktopV2Rewrite/releases" />
+        <img style="cursor:pointer" src="https://img.shields.io/github/license/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?style=flat" data-url="https://github.com/CodeRebelsAlliance/SongRequestDesktopV2Rewrite/blob/main/LICENSE" />
+        <img style="cursor:pointer" src="https://img.shields.io/github/stars/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?style=flat" data-url="https://github.com/CodeRebelsAlliance/SongRequestDesktopV2Rewrite/stargazers" />
+        <img style="cursor:pointer" src="https://img.shields.io/github/issues/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?style=flat" data-url="https://github.com/CodeRebelsAlliance/SongRequestDesktopV2Rewrite/issues" />
+      </div>
+    </div>
+  </div>
+</div>
+<div id="startup-overlay">
+  <!-- Phase 1: Loading splash -->
+  <div id="startup-splash">
+    <div id="startup-splash-inner">
+      <img id="startup-logo" src="../SRshortLogo.png" alt=""/>
+      <div id="startup-title">Technik-AG <span style="color:#FFD700">Song</span><span style="color:#FFA500">Request</span></div>
+      <div id="startup-version"></div>
+      <div id="startup-status">Initializing...</div>
+      <div id="startup-progress-track">
+        <div id="startup-progress-fill"></div>
+        <div id="startup-shimmer"></div>
+      </div>
+      <div id="startup-footer">© 2026 CodeRebelsAlliance (leMineGaming and Contributors)</div>
+    </div>
+  </div>
+
+  <!-- Phase 2: Update prompt -->
+  <div id="startup-update-panel" style="display:none">
+    <div id="startup-update-box">
+      <div id="startup-update-icon"><i class="fas fa-download" style="color:#4caf50;font-size:32px"></i></div>
+      <div id="startup-update-title">Update Available</div>
+      <div id="startup-update-info"></div>
+      <div id="startup-update-notes" style="margin-top:10px;background:#1a1a1a;border-radius:8px;padding:10px;max-height:120px;overflow-y:auto;font-size:12px;color:#aaa;text-align:left;font-family:Consolas,monospace;white-space:pre-wrap"></div>
+      <div id="startup-update-buttons" style="display:flex;gap:10px;justify-content:center;margin-top:14px">
+        <button id="startup-update-later" class="top-btn" style="font-size:13px;padding:8px 20px">Remind Me Later</button>
+        <button id="startup-update-now" class="action-btn" style="width:auto;padding:8px 24px;font-size:13px">Install Now</button>
+      </div>
+      <div id="startup-update-progress" style="display:none;margin-top:12px">
+        <div id="startup-update-progress-track"><div id="startup-update-progress-fill"></div></div>
+        <div id="startup-update-progress-text" style="font-size:12px;color:#888;margin-top:4px">Downloading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 3: Launch options -->
+  <div id="startup-launch-panel" style="display:none">
+    <div id="startup-launch-box">
+      <div id="startup-launch-bar">
+        <div id="startup-launch-bar-fill"></div>
+      </div>
+      <div id="startup-launch-title">Choose how you want to use SongRequests</div>
+      <div id="startup-launch-auto">Starting with <span id="startup-launch-auto-mode">Song Requests</span> in <span id="startup-launch-auto-sec">3</span>s</div>
+      <div id="startup-launch-grid">
+        <button class="startup-launch-btn active" data-mode="SongRequests">
+          <span class="startup-launch-emoji"><i class="fas fa-music"></i></span>
+          <span class="startup-launch-label">Song Requests</span>
+        </button>
+        <button class="startup-launch-btn" data-mode="MusicPlayer">
+          <span class="startup-launch-emoji"><i class="fas fa-play-circle"></i></span>
+          <span class="startup-launch-label">Music Player</span>
+        </button>
+        <button class="startup-launch-btn" data-mode="MusicShare">
+          <span class="startup-launch-emoji"><i class="fas fa-share-alt"></i></span>
+          <span class="startup-launch-label">Music Share</span>
+        </button>
+        <button class="startup-launch-btn" data-mode="Soundboard">
+          <span class="startup-launch-emoji"><i class="fas fa-sliders-h"></i></span>
+          <span class="startup-launch-label">Soundboard</span>
+        </button>
+      </div>
+      <label id="startup-launch-remember"><input type="checkbox" id="startup-launch-remember-cb"/> Remember selection</label>
+    </div>
+  </div>
+
+  <!-- Phase 4: Auth -->
+  <div id="startup-auth-panel" style="display:none">
+    <div id="startup-auth-box">
+      <div id="startup-auth-icon"><i class="fas fa-id-card" style="font-size:32px;color:#5b8def"></i></div>
+      <div id="startup-auth-title">YouTube Authentication</div>
+      <div id="startup-auth-desc">Sign in with your Google account to enable song requests.</div>
+      <div id="startup-auth-status"></div>
+    </div>
+  </div>
+</div>
+<div id="settings-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:700px;max-height:90vh;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <span><i class="fas fa-cog"></i> Settings</span>
+      <button class="modal-close" id="btn-settings-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0">
+      <div id="settings-tabs" style="display:flex;gap:4px;margin-bottom:12px;flex-shrink:0">
+        <button class="settings-tab active" data-tab="general">General</button>
+        <button class="settings-tab" data-tab="security">Security &amp; Server</button>
+        <button class="settings-tab" data-tab="remote">Remote Control</button>
+      </div>
+      <div id="settings-content" style="flex:1;overflow-y:auto;min-height:0">
+        <div id="settings-general" class="settings-panel active">
+          <div class="settings-card">
+            <div class="settings-card-title">Runtime</div>
+            <div class="settings-hint">Controls how often data is refreshed and how many parallel tasks run.</div>
+            <div class="settings-field">
+              <label>Fetching Timer (seconds)</label>
+              <input type="number" id="s-fetching-timer" class="settings-input" min="1" />
+              <div class="settings-hint">Lower values refresh more but increase API usage.</div>
+            </div>
+            <div class="settings-field">
+              <label>Concurrent Threads</label>
+              <input type="number" id="s-threads" class="settings-input" min="1" />
+              <div class="settings-hint">Higher values improve performance on high-end systems.</div>
+            </div>
+            <div class="settings-field">
+              <label>Default Sorting</label>
+              <input type="text" id="s-default-sorting" class="settings-input" />
+              <div class="settings-hint">Kept for compatibility. You do not need to change this.</div>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Playback &amp; Presentation</div>
+            <div class="settings-hint">Options that affect queueing, screen behavior, and audio handling.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-fullscreen" /> Open presentation in fullscreen mode</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-normalize-volume" /> Normalize volume between tracks</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-caption-fallback" /> Use YouTube captions as lyrics fallback</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-enable-announcements" /> Enable announcements</label>
+            <div class="settings-autopilot">
+              <label class="settings-checkbox"><input type="checkbox" id="s-autopilot" /> ✈ Autopilot Mode</label>
+              <div class="settings-hint" style="margin-left:24px">Automatically adds newly sent-in songs to the player queue.</div>
+            </div>
+          </div>
+        </div>
+        <div id="settings-security" class="settings-panel">
+          <div class="settings-card">
+            <div class="settings-card-title">Server Connection</div>
+            <div class="settings-hint">Base URL and request URL used by fetch and presentation features.</div>
+            <div class="settings-field">
+              <label>Server Address</label>
+              <input type="text" id="s-address" class="settings-input" />
+              <div class="settings-hint">Example: http://127.0.0.1:5000</div>
+            </div>
+            <div class="settings-field">
+              <label>Presentation Request URL (QR Code)</label>
+              <input type="text" id="s-request-url" class="settings-input" />
+              <div class="settings-hint">Shown to users for submitting requests from their devices.</div>
+            </div>
+            <div class="settings-field">
+              <label>Server-side Send-In Status</label>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+                <label class="settings-checkbox" style="margin:0"><input type="checkbox" id="s-sendin-allowed" disabled /> Sending Allowed</label>
+                <button id="s-toggle-sendin" class="action-btn warn" style="width:auto;padding:6px 14px;font-size:12px">Toggle</button>
+              </div>
+              <div class="settings-hint">Current server permission for receiving new song requests.</div>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Authentication</div>
+            <div class="settings-hint">Administrator authentication is required for SongRequest to work correctly.</div>
+            <div class="settings-field">
+              <label>Bearer Token / JWT</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="password" id="s-token" class="settings-input" style="flex:1" />
+                <button id="s-toggle-token" class="top-btn" style="padding:6px 10px;font-size:13px" title="Show/Hide token">👁</button>
+              </div>
+            </div>
+            <button id="s-auth-btn"><img src="sapp.png"/><span>Login with SchülerApp</span></button>
+          </div>
+        </div>
+        <div id="settings-remote" class="settings-panel">
+          <div class="settings-card">
+            <div class="settings-card-title">Music Player Mappings</div>
+            <div class="settings-hint">These mappings work globally across app windows. Use multi-key combinations for keyboard shortcuts.</div>
+            <div class="settings-remote-grid" id="r-music-mappings"></div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Announcement Mappings</div>
+            <div class="settings-hint">Remote actions for announcement control and announcement settings.</div>
+            <div class="settings-remote-grid" id="r-announce-mappings"></div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">MIDI Devices &amp; Live Feedback</div>
+            <div class="settings-hint">Select MIDI input/output devices for remote control. Feedback LEDs update live for play state and slider positions.</div>
+            <div class="settings-field">
+              <label class="settings-checkbox"><input type="checkbox" id="r-midi-enabled" disabled /> Enable MIDI remote control</label>
+            </div>
+            <div class="settings-field">
+              <label>MIDI Input Device</label>
+              <input type="text" id="r-midi-input" class="settings-input" readonly value="N/A" />
+            </div>
+            <div class="settings-field">
+              <label>MIDI Output Device</label>
+              <input type="text" id="r-midi-output" class="settings-input" readonly value="N/A" />
+            </div>
+          </div>
+          <div class="settings-card" style="text-align:center">
+            <p style="color:#888;font-size:12px;margin-bottom:8px">Assign and clear keybindings and MIDI mappings are managed in the legacy settings window.</p>
+            <button class="top-btn" id="r-open-legacy" style="font-size:12px"><i class="fas fa-external-link-alt"></i> Open Legacy Settings</button>
+          </div>
+        </div>
+      </div>
+      <div id="settings-status" style="font-size:12px;color:#888;margin-top:8px;flex-shrink:0"></div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:10px 18px;border-top:1px solid #333">
+      <button id="btn-settings-reload" class="top-btn" style="font-size:12px"><i class="fas fa-undo"></i> Reload</button>
+      <button id="btn-settings-save" class="action-btn" style="width:auto;padding:8px 18px;font-size:13px"><i class="fas fa-save"></i> Save</button>
+    </div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script src="app.js"></script>
+</body>
+</html>
