@@ -94,6 +94,17 @@
       </div>
     </div>
   </div>
+  <div id="auth-required" style="display:none">
+    <div id="auth-required-content">
+      <i class="fas fa-lock" id="auth-required-icon"></i>
+      <div id="auth-required-title">Authentication Required</div>
+      <div id="auth-required-desc">Your credentials are invalid or expired. Update your bearer token in Settings to continue.</div>
+      <div id="auth-required-actions">
+        <button id="btn-auth-settings" class="action-btn"><i class="fas fa-cog"></i> Open Settings</button>
+        <button id="btn-auth-retry" class="top-btn"><i class="fas fa-sync-alt"></i> Retry</button>
+      </div>
+    </div>
+  </div>
   <div id="bottombar" class="startup-hide">
     <span id="status-text">Ready</span>
     <span id="clock">00:00:00</span>

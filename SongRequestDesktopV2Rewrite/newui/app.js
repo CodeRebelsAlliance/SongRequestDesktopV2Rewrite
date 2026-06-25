@@ -9,6 +9,7 @@
   let _fetchingLock = false;
   let _fetchStartTime = 0;
   const thumbCache = {};
+  let _authOverlayVisible = false;
 
   function postMessageToHost(msg) {
     try {
@@ -29,11 +30,51 @@
       const id = ++requestId;
       pending[id] = { resolve, reject, timeout: setTimeout(() => {
         delete pending[id];
+        if (!_authOverlayVisible) showAuthOverlay('server');
         reject(new Error('Request timeout: ' + method));
       }, 60000) };
       const msg = JSON.stringify({ type: 'request', id, method, ...params });
       postMessageToHost(msg);
     });
+  }
+
+  function classifyError(err) {
+    if (typeof err !== 'string') return null;
+    if (err.includes('401') || err.includes('Unauthorized')) return 'auth';
+    if (err.includes('404') || err.includes('timeout') || err.includes('timed out') ||
+        err.includes('connect') || err.includes('refused') || err.includes('ECONNREFUSED') ||
+        err.includes('No such host') || err.includes('DNS') || err.includes('ENOTFOUND') ||
+        err.includes('network')) return 'server';
+    return null;
+  }
+
+  function showAuthOverlay(type) {
+    if (_authOverlayVisible) return;
+    _authOverlayVisible = true;
+    const icon = document.getElementById('auth-required-icon');
+    const title = document.getElementById('auth-required-title');
+    const desc = document.getElementById('auth-required-desc');
+    if (type === 'auth') {
+      icon.className = 'fas fa-lock';
+      icon.style.color = '#f44';
+      title.textContent = 'Authentication Required';
+      desc.textContent = 'Your credentials are invalid or expired. Update your bearer token in Settings to continue.';
+    } else {
+      icon.className = 'fas fa-exclamation-triangle';
+      icon.style.color = '#fa0';
+      title.textContent = 'Server Unreachable';
+      desc.textContent = 'Server configuration invalid or can\'t connect to server. Check your server address in Settings.';
+    }
+    document.getElementById('tabbar').style.display = 'none';
+    document.getElementById('main').style.display = 'none';
+    document.getElementById('auth-required').style.display = 'flex';
+  }
+
+  function hideAuthOverlay() {
+    _authOverlayVisible = false;
+    document.getElementById('tabbar').style.display = '';
+    document.getElementById('main').style.display = '';
+    document.getElementById('auth-required').style.display = 'none';
   }
 
   function handleIncoming(json) {
@@ -45,6 +86,10 @@
           clearTimeout(p.timeout);
           delete pending[msg.id];
           if (msg.result && msg.result.error) {
+            if (!_authOverlayVisible) {
+              const type = classifyError(msg.result.error);
+              if (type) showAuthOverlay(type);
+            }
             p.reject(new Error(msg.result.error));
           } else {
             p.resolve(msg.result);
@@ -297,6 +342,16 @@
 
   document.getElementById('s-auth-btn').onclick = () => { send('openAuthUrl'); };
   document.getElementById('r-open-legacy').onclick = () => { send('showSettings'); };
+
+  // Auth / server error overlay buttons
+  document.getElementById('btn-auth-settings').addEventListener('click', () => {
+    showSettings();
+    hideAuthOverlay();
+  });
+  document.getElementById('btn-auth-retry').addEventListener('click', () => {
+    hideAuthOverlay();
+    loadData();
+  });
 
   document.querySelectorAll('#about-badges img').forEach(img => {
     img.addEventListener('click', function() {

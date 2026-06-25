@@ -1,11 +1,15 @@
 using Photino.NET;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace SongRequestDesktopV2Rewrite;
 
 public class NewUiWindow
 {
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
     private PhotinoWindow? _window;
     private Thread? _thread;
     private readonly YoutubeFormInterop _interop;
@@ -29,8 +33,13 @@ public class NewUiWindow
         {
             var htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "newui", "index.html");
 
-            var w = new PhotinoWindow()
-                .SetTitle("SongRequest V2")
+            var w = new PhotinoWindow();
+            w.WindowCreated += (_, _) =>
+            {
+                if (w.WindowHandle != IntPtr.Zero)
+                    SetForegroundWindow(w.WindowHandle);
+            };
+            w.SetTitle("SongRequest V2")
                 .SetSize(1280, 761)
                 .Center()
                 .RegisterWebMessageReceivedHandler((sender, message) =>
