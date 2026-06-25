@@ -57,6 +57,9 @@ public class YoutubeFormInterop
                     ShowMusicPlayer();
                     SendResponse(id, new { success = true });
                     return;
+                case "closeMusicPlayer":
+                    CloseNewMusicPlayer();
+                    return;
                 case "showSoundboard":
                     ShowSoundboard();
                     SendResponse(id, new { success = true });
@@ -451,7 +454,19 @@ public class YoutubeFormInterop
 
     private void ShowMusicPlayer()
     {
-        _ytForm.Dispatcher.Invoke(() => _ytForm.ShowMusicPlayer());
+        if (ConfigService.Instance.Current.UseNewUI)
+        {
+            _ytForm.NewUiRef?.ShowMusicPlayerWindow();
+        }
+        else
+        {
+            _ytForm.Dispatcher.Invoke(() => _ytForm.ShowMusicPlayer());
+        }
+    }
+
+    private void CloseNewMusicPlayer()
+    {
+        _ytForm.NewUiRef?.CloseMusicPlayerWindow();
     }
 
     private void ShowSoundboard()

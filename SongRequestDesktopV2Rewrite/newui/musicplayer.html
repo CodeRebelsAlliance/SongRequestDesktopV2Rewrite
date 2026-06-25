@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Player - SongRequest V2</title>
+<link rel="stylesheet" href="musicplayer.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+</head>
+<body>
+<div id="app">
+  <!-- Top bar -->
+  <div id="topbar">
+    <div id="top-left">
+      <span id="title"><i class="fas fa-music"></i> Music Player</span>
+    </div>
+    <div id="top-actions">
+      <button id="btn-search" class="top-btn"><i class="fas fa-search"></i> Search</button>
+      <button id="btn-settings" class="top-btn"><i class="fas fa-cog"></i> Settings</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <!-- Left sidebar -->
+    <div id="left-sidebar">
+      <div id="sidebar-tabs">
+        <button class="sidebar-tab active" data-view="now-playing"><i class="fas fa-play-circle"></i> Now Playing</button>
+        <button class="sidebar-tab" data-view="playlists"><i class="fas fa-list"></i> Playlists</button>
+        <button class="sidebar-tab" data-view="library"><i class="fas fa-album"></i> Library</button>
+      </div>
+      <div id="playlist-list">
+        <div class="playlist-section-title">Your Playlists</div>
+        <div class="playlist-item"><i class="fas fa-music"></i> Favorites</div>
+        <div class="playlist-item"><i class="fas fa-heart"></i> Liked Songs</div>
+        <div class="playlist-item"><i class="fas fa-clock"></i> Recently Played</div>
+        <div class="playlist-item"><i class="fas fa-plus-circle"></i> Create Playlist</div>
+      </div>
+    </div>
+
+    <!-- Center content -->
+    <div id="center">
+      <div id="view-now-playing" class="view active">
+        <div id="np-artwork">
+          <div id="np-artwork-placeholder"><i class="fas fa-music"></i></div>
+        </div>
+        <div id="np-info">
+          <div id="np-title">No track playing</div>
+          <div id="np-artist">—</div>
+        </div>
+      </div>
+      <div id="view-playlists" class="view">
+        <div class="view-header">Playlists</div>
+        <div id="playlist-grid">
+          <div class="playlist-card">
+            <div class="playlist-card-thumb"><i class="fas fa-music"></i></div>
+            <div class="playlist-card-name">Favorites</div>
+            <div class="playlist-card-count">0 songs</div>
+          </div>
+          <div class="playlist-card">
+            <div class="playlist-card-thumb"><i class="fas fa-heart"></i></div>
+            <div class="playlist-card-name">Liked Songs</div>
+            <div class="playlist-card-count">0 songs</div>
+          </div>
+          <div class="playlist-card create">
+            <div class="playlist-card-thumb"><i class="fas fa-plus"></i></div>
+            <div class="playlist-card-name">Create Playlist</div>
+          </div>
+        </div>
+      </div>
+      <div id="view-library" class="view">
+        <div class="view-header">Library</div>
+        <div id="library-content">
+          <div class="library-empty"><i class="fas fa-album"></i><p>Your library is empty. Add songs to get started.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right sidebar (queue) -->
+    <div id="right-sidebar">
+      <div id="queue-header">
+        <span><i class="fas fa-list-ol"></i> Queue</span>
+        <button id="btn-clear-queue" class="top-btn" style="padding:4px 8px;font-size:11px">Clear</button>
+      </div>
+      <div id="queue-list">
+        <div class="queue-empty">Queue is empty</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom player bar -->
+  <div id="player-bar">
+    <!-- Collapsed mode layout -->
+    <div id="player-bar-left">
+      <div id="player-bar-thumb"><i class="fas fa-music"></i></div>
+      <div id="player-bar-info">
+        <div id="player-bar-title">No track playing</div>
+        <div id="player-bar-artist">—</div>
+      </div>
+    </div>
+    <div id="player-bar-center">
+      <div id="player-bar-controls">
+        <button id="btn-shuffle" class="player-ctrl-btn" title="Shuffle"><i class="fas fa-random"></i></button>
+        <button id="btn-prev" class="player-ctrl-btn" title="Previous"><i class="fas fa-step-backward"></i></button>
+        <button id="btn-play" class="player-ctrl-btn play-btn" title="Play"><i class="fas fa-play"></i></button>
+        <button id="btn-next" class="player-ctrl-btn" title="Next"><i class="fas fa-step-forward"></i></button>
+        <button id="btn-repeat" class="player-ctrl-btn" title="Repeat"><i class="fas fa-redo"></i></button>
+      </div>
+      <div id="player-bar-progress">
+        <span id="progress-current">0:00</span>
+        <div id="progress-track"><div id="progress-fill" style="width:0%"></div></div>
+        <span id="progress-total">0:00</span>
+      </div>
+    </div>
+    <div id="player-bar-right">
+      <button id="btn-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
+      <div id="volume-slider-wrap">
+        <input type="range" id="volume-slider" min="0" max="100" value="80">
+      </div>
+      <button id="btn-expand" class="player-ctrl-btn" title="Expand"><i class="fas fa-chevron-up"></i></button>
+    </div>
+
+    <!-- Expanded mode content (full screen) -->
+    <div id="player-expanded-content">
+      <!-- Top: artwork + info side by side -->
+      <div id="expanded-top">
+        <div id="expanded-artwork"><i class="fas fa-music"></i></div>
+        <div id="expanded-info">
+          <div id="expanded-title">No track playing</div>
+          <div id="expanded-artist">—</div>
+        </div>
+      </div>
+      <!-- Middle: lyrics -->
+      <div id="expanded-lyrics">
+        <div class="lyrics-line" data-time="0">When the night has come</div>
+        <div class="lyrics-line" data-time="3">And the land is dark</div>
+        <div class="lyrics-line" data-time="6">And the moon is the only light we'll see</div>
+        <div class="lyrics-line" data-time="10">No I won't be afraid</div>
+        <div class="lyrics-line" data-time="13">No I won't be afraid</div>
+        <div class="lyrics-line" data-time="16">Just as long as you stand, stand by me</div>
+        <div class="lyrics-line" data-time="21">So darlin', darlin'</div>
+        <div class="lyrics-line" data-time="24">Stand by me, oh stand by me</div>
+        <div class="lyrics-line" data-time="28">Oh stand, stand by me</div>
+        <div class="lyrics-line" data-time="31">Stand by me</div>
+      </div>
+      <!-- Bottom: seekbar + controls -->
+      <div id="expanded-bottom">
+        <div id="expanded-progress">
+          <span id="exp-progress-current">0:00</span>
+          <div id="exp-progress-track"><div id="exp-progress-fill" style="width:0%"></div></div>
+          <span id="exp-progress-total">0:00</span>
+        </div>
+        <div id="expanded-controls">
+          <button id="btn-exp-shuffle" class="player-ctrl-btn" title="Shuffle"><i class="fas fa-random"></i></button>
+          <button id="btn-exp-prev" class="player-ctrl-btn" title="Previous"><i class="fas fa-step-backward"></i></button>
+          <button id="btn-exp-play" class="player-ctrl-btn play-btn" title="Play"><i class="fas fa-play"></i></button>
+          <button id="btn-exp-next" class="player-ctrl-btn" title="Next"><i class="fas fa-step-forward"></i></button>
+          <button id="btn-exp-repeat" class="player-ctrl-btn" title="Repeat"><i class="fas fa-redo"></i></button>
+          <div id="expanded-volume">
+            <button id="btn-exp-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
+            <input type="range" id="exp-volume-slider" min="0" max="100" value="80">
+          </div>
+          <button id="btn-exp-collapse" class="player-ctrl-btn" title="Minimize"><i class="fas fa-chevron-down"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="musicplayer.js"></script>
+</body>
+</html>
