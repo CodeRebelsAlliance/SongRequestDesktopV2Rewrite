@@ -1511,7 +1511,7 @@ namespace SongRequestDesktopV2Rewrite
             ComputeQueueTimings();
         }
 
-        private bool TryCreateSongFromFile(string filePath, out Song? song, out string errorMessage)
+        public bool TryCreateSongFromFile(string filePath, out Song? song, out string errorMessage)
         {
             song = null;
             errorMessage = string.Empty;
@@ -1942,6 +1942,35 @@ namespace SongRequestDesktopV2Rewrite
         }
 
         // Public helper to clear queue; optionally stop playback
+        public void RemoveQueueItem(int index)
+        {
+            if (index >= 0 && index < Queue.Count)
+            {
+                Queue.RemoveAt(index);
+            }
+        }
+
+        public void MoveQueueItem(int fromIndex, int toIndex)
+        {
+            if (fromIndex < 0 || fromIndex >= Queue.Count) return;
+            if (toIndex < 0 || toIndex >= Queue.Count) return;
+            if (fromIndex == toIndex) return;
+            if (toIndex == 0) return; // never move into now-playing slot
+            Queue.Move(fromIndex, toIndex);
+        }
+
+        public void RemoteShuffleQueue()
+        {
+            var rnd = new Random();
+            var items = Queue.ToList();
+            var nowPlaying = items.Count > 0 ? items[0] : null;
+            Queue.Clear();
+            var remaining = items.Where(s => s != nowPlaying).OrderBy(x => rnd.Next()).ToList();
+            if (nowPlaying != null) Queue.Add(nowPlaying);
+            foreach (var song in remaining) Queue.Add(song);
+            ComputeQueueTimings();
+        }
+
         public void ClearQueue(bool stopPlayback = false)
         {
             if (stopPlayback) StopPlayback();
@@ -1950,6 +1979,7 @@ namespace SongRequestDesktopV2Rewrite
         }
 
         public bool RemoteIsPlaying => _outputDevice?.PlaybackState == PlaybackState.Playing;
+        public bool RemoteIsPlaybackActive => _outputDevice?.PlaybackState != PlaybackState.Stopped;
         public bool RemoteCanControlVolume => ConfigService.Instance.Current?.NormalizeVolume != true;
         public double RemoteVolumeValue => Math.Clamp(VolumeSlider.Value, 0.0, 1.0);
         public bool RemoteAnnouncementIsActive => _announcementWindow?.IsLoaded == true && _announcementWindow.IsAnnouncementActive;

@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
 
 namespace SongRequestDesktopV2Rewrite;
 
@@ -17,6 +18,9 @@ public class YoutubeFormInterop
 
     public Action<string>? SendMessage { get; set; }
     public YoutubeForm YtForm => _ytForm;
+
+    private string? _currentSongPath;
+    private bool _musicPlayerSubscribed;
 
     public YoutubeFormInterop(YoutubeForm ytForm, YoutubeService ytService)
     {
@@ -66,6 +70,133 @@ public class YoutubeFormInterop
                     return;
                 case "showSettings":
                     ShowSettings();
+                    SendResponse(id, new { success = true });
+                    return;
+                case "playPause":
+                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteTogglePlayPause());
+                    SendResponse(id, new { success = true });
+                    return;
+                case "skipNext":
+                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteSkipNext());
+                    SendResponse(id, new { success = true });
+                    return;
+                case "skipPrevious":
+                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemotePrevious());
+                    SendResponse(id, new { success = true });
+                    return;
+                case "stop":
+                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteStop());
+                    SendResponse(id, new { success = true });
+                    return;
+                case "clearQueue":
+                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.ClearQueue(false));
+                    SendResponse(id, new { success = true });
+                    return;
+                case "musicPlayerReady":
+                {
+                    _ytForm.Dispatcher.BeginInvoke(() => SendQueueUpdate());
+                    double volInit = 0.8, cfInit = 4.0;
+                    bool canControlInit = true;
+                    _ytForm.Dispatcher.Invoke(() =>
+                    {
+                        var mp = _ytForm.MusicPlayer;
+                        if (mp != null)
+                        {
+                            volInit = mp.RemoteVolumeValue;
+                            cfInit = mp.CrossfadeSlider.Value;
+                            canControlInit = mp.RemoteCanControlVolume;
+                        }
+                    });
+                    SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit });
+                    return;
+                }
+                case "shuffleQueue":
+                {
+                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteShuffleQueue());
+                    SendResponse(id, new { success = true });
+                    return;
+                }
+                case "setVolume":
+                {
+                    var volVal = msg["value"]?.ToObject<double>() ?? -1;
+                    if (volVal >= 0)
+                        _ytForm.Dispatcher.BeginInvoke(() =>
+                        {
+                            if (_ytForm.MusicPlayer != null)
+                                _ytForm.MusicPlayer.VolumeSlider.Value = Math.Clamp(volVal, 0.0, 1.0);
+                        });
+                    SendResponse(id, new { success = true });
+                    return;
+                }
+                case "setCrossfade":
+                {
+                    var cfVal = msg["value"]?.ToObject<double>() ?? -1;
+                    if (cfVal >= 0)
+                        _ytForm.Dispatcher.BeginInvoke(() =>
+                        {
+                            if (_ytForm.MusicPlayer != null)
+                                _ytForm.MusicPlayer.CrossfadeSlider.Value = Math.Clamp(cfVal, 0.0, 10.0);
+                        });
+                    SendResponse(id, new { success = true });
+                    return;
+                }
+                case "getVolumeCrossfade":
+                {
+                    double volVal = 0.8, cfVal2 = 4.0;
+                    bool canControlVal = true;
+                    _ytForm.Dispatcher.Invoke(() =>
+                    {
+                        var mp = _ytForm.MusicPlayer;
+                        if (mp != null)
+                        {
+                            volVal = mp.RemoteVolumeValue;
+                            cfVal2 = mp.CrossfadeSlider.Value;
+                            canControlVal = mp.RemoteCanControlVolume;
+                        }
+                    });
+                    SendResponse(id, new { volume = volVal, crossfade = cfVal2, canControlVolume = canControlVal });
+                    return;
+                }
+                case "addLocalFiles":
+                    var mode = msg["mode"]?.ToString() ?? "add";
+                    _ytForm.Dispatcher.BeginInvoke(() =>
+                    {
+                        var dialog = new Microsoft.Win32.OpenFileDialog
+                        {
+                            Filter = "Audio files|*.mp3;*.wav;*.m4a;*.flac|All files|*.*",
+                            Multiselect = true
+                        };
+                        if (dialog.ShowDialog() == true)
+                        {
+                            var mp = _ytForm.MusicPlayer;
+                            if (mp != null)
+                            {
+                                foreach (var filePath in dialog.FileNames)
+                                {
+                                    if (mp.TryCreateSongFromFile(filePath, out var song, out _))
+                                    {
+                                        if (mode == "addNext")
+                                            mp.AddNextSongExternal(song);
+                                        else
+                                            mp.AddSongExternal(song);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    SendResponse(id, new { success = true });
+                    return;
+                case "removeQueueItem":
+                    var idx = msg["index"]?.ToObject<int>() ?? -1;
+                    if (idx >= 0)
+                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoveQueueItem(idx));
+                    SendResponse(id, new { success = true });
+                    return;
+                case "moveQueueItem":
+                    var fromIdx = msg["fromIndex"]?.ToObject<int>() ?? -1;
+                    var toIdx = msg["toIndex"]?.ToObject<int>() ?? -1;
+                    if (fromIdx >= 0 && toIdx >= 0)
+                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.MoveQueueItem(fromIdx, toIdx));
                     SendResponse(id, new { success = true });
                     return;
             }
@@ -456,6 +587,7 @@ public class YoutubeFormInterop
     {
         if (ConfigService.Instance.Current.UseNewUI)
         {
+            SubscribeToMusicPlayer();
             _ytForm.NewUiRef?.ShowMusicPlayerWindow();
         }
         else
@@ -467,6 +599,153 @@ public class YoutubeFormInterop
     private void CloseNewMusicPlayer()
     {
         _ytForm.NewUiRef?.CloseMusicPlayerWindow();
+    }
+
+    private void SubscribeToMusicPlayer()
+    {
+        if (_musicPlayerSubscribed) return;
+        var mp = _ytForm.MusicPlayer;
+        if (mp == null) return;
+        _musicPlayerSubscribed = true;
+        mp.NowPlayingTick += OnNowPlayingTick;
+        mp.QueueChanged += OnQueueChanged;
+    }
+
+    private void OnNowPlayingTick(object? sender, MusicPlayer.NowPlayingEventArgs args)
+    {
+        var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
+        if (mpSend == null) return;
+
+        try
+        {
+            var data = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["currentTime"] = args.CurrentTime.TotalSeconds,
+                ["totalTime"] = args.TotalTime.TotalSeconds,
+                ["isPlaying"] = _ytForm.MusicPlayer?.RemoteIsPlaying ?? false,
+                ["isPlaybackActive"] = _ytForm.MusicPlayer?.RemoteIsPlaybackActive ?? false
+            };
+
+            var current = args.Current;
+            if (current != null && current.songPath != _currentSongPath)
+            {
+                _currentSongPath = current.songPath;
+                data["title"] = current.Title ?? "";
+                data["artist"] = current.Artist ?? "";
+                data["duration"] = current.length ?? "";
+
+                var thumb = GetThumbnailForSongPath(current.songPath);
+                if (thumb != null)
+                    data["thumbnail"] = thumb;
+            }
+
+            if (current == null)
+                _currentSongPath = null;
+
+            var json = JsonConvert.SerializeObject(new
+            {
+                type = "event",
+                eventName = "nowPlayingUpdate",
+                data
+            });
+            mpSend(json);
+        }
+        catch { }
+    }
+
+    private void OnQueueChanged(object? sender, EventArgs e)
+    {
+        SendQueueUpdate();
+    }
+
+    private void SendQueueUpdate()
+    {
+        var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
+        if (mpSend == null) return;
+
+        try
+        {
+            var mp = _ytForm.MusicPlayer;
+            if (mp == null) return;
+
+            var queueData = mp.Queue.Select((song, i) =>
+            {
+                string? thumb = null;
+                if (!string.IsNullOrEmpty(song.songPath))
+                    thumb = GetThumbnailForSongPath(song.songPath);
+                return new
+                {
+                    title = song.Title ?? "",
+                    artist = song.Artist ?? "",
+                    duration = song.length ?? "",
+                    songPath = song.songPath ?? "",
+                    estimatedStart = song.EstimatedStartDisplay ?? "",
+                    index = i,
+                    thumbnail = thumb
+                };
+            }).ToList();
+
+            var json = JsonConvert.SerializeObject(new
+            {
+                type = "event",
+                eventName = "queueUpdate",
+                data = new
+                {
+                    queue = queueData,
+                    currentSongPath = _currentSongPath,
+                    isPlaying = mp.RemoteIsPlaybackActive
+                }
+            });
+            mpSend(json);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SendQueueUpdate] {ex.Message}");
+        }
+    }
+
+    private string? GetThumbnailForSongPath(string songPath)
+    {
+        try
+        {
+            // 1. Try embedded album art (local files and YouTube downloads with embedded art)
+            try
+            {
+                using var tfile = global::TagLib.File.Create(songPath);
+                var pic = tfile.Tag.Pictures?.FirstOrDefault();
+                if (pic != null && pic.Data != null && pic.Data.Data != null && pic.Data.Data.Length > 0)
+                {
+                    var mime = pic.MimeType ?? "image/jpeg";
+                    var b64 = Convert.ToBase64String(pic.Data.Data);
+                    return "data:" + mime + ";base64," + b64;
+                }
+            }
+            catch { /* no embedded art, fall through */ }
+
+            // 2. Try YouTube thumbnail cache
+            var videoId = System.IO.Path.GetFileNameWithoutExtension(songPath);
+            if (string.IsNullOrEmpty(videoId)) return null;
+
+            var cacheDir = System.IO.Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "data", "downloadedvideos", "thumbnail-cache");
+            var cachePath = System.IO.Path.Combine(cacheDir, $"{videoId}.png");
+
+            if (File.Exists(cachePath))
+            {
+                var bytes = File.ReadAllBytes(cachePath);
+                return "data:image/png;base64," + Convert.ToBase64String(bytes);
+            }
+
+            var jpgPath = System.IO.Path.Combine(cacheDir, $"{videoId}.jpg");
+            if (File.Exists(jpgPath))
+            {
+                var bytes = File.ReadAllBytes(jpgPath);
+                return "data:image/jpeg;base64," + Convert.ToBase64String(bytes);
+            }
+        }
+        catch { }
+        return null;
     }
 
     private void ShowSoundboard()
@@ -806,5 +1085,16 @@ public class YoutubeFormInterop
             kv.Value.TrySetCanceled();
         }
         _pendingRequests.Clear();
+
+        if (_musicPlayerSubscribed)
+        {
+            var mp = _ytForm.MusicPlayer;
+            if (mp != null)
+            {
+                mp.NowPlayingTick -= OnNowPlayingTick;
+                mp.QueueChanged -= OnQueueChanged;
+            }
+            _musicPlayerSubscribed = false;
+        }
     }
 }

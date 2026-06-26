@@ -79,7 +79,11 @@
     <div id="right-sidebar">
       <div id="queue-header">
         <span><i class="fas fa-list-ol"></i> Queue</span>
-        <button id="btn-clear-queue" class="top-btn" style="padding:4px 8px;font-size:11px">Clear</button>
+        <div id="queue-header-actions">
+          <button id="btn-add-files" class="top-btn" style="padding:4px 8px;font-size:11px" title="Add local audio files"><i class="fas fa-plus"></i> Add</button>
+          <button id="btn-add-next" class="top-btn" style="padding:4px 8px;font-size:11px" title="Add local audio files to play next"><i class="fas fa-step-forward"></i> Next</button>
+          <button id="btn-clear-queue" class="top-btn" style="padding:4px 8px;font-size:11px" title="Clear queue"><i class="fas fa-trash"></i></button>
+        </div>
       </div>
       <div id="queue-list">
         <div class="queue-empty">Queue is empty</div>
@@ -115,6 +119,10 @@
       <button id="btn-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
       <div id="volume-slider-wrap">
         <input type="range" id="volume-slider" min="0" max="100" value="80">
+      </div>
+      <div id="crossfade-slider-wrap">
+        <span class="ctrl-label">XF</span>
+        <input type="range" id="crossfade-slider" min="0" max="100" value="40" title="Crossfade duration">
       </div>
       <button id="btn-expand" class="player-ctrl-btn" title="Expand"><i class="fas fa-chevron-up"></i></button>
     </div>
@@ -158,6 +166,10 @@
           <div id="expanded-volume">
             <button id="btn-exp-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
             <input type="range" id="exp-volume-slider" min="0" max="100" value="80">
+          </div>
+          <div id="exp-crossfade-wrap">
+            <span class="ctrl-label">XF</span>
+            <input type="range" id="exp-crossfade-slider" min="0" max="100" value="40" title="Crossfade duration">
           </div>
           <button id="btn-exp-collapse" class="player-ctrl-btn" title="Minimize"><i class="fas fa-chevron-down"></i></button>
         </div>

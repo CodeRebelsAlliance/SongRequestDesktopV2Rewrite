@@ -23,6 +23,8 @@ public class NewUiWindow
 
     public bool IsOpen => _window != null;
 
+    public Action<string>? MusicPlayerSendMessage { get; set; }
+
     public NewUiWindow(YoutubeFormInterop interop, YoutubeForm ytForm)
     {
         _interop = interop;
@@ -151,9 +153,20 @@ public class NewUiWindow
                 _interop.HandleMessage(message);
             });
 
+            // Set up send channel targeting this music player window
+            MusicPlayerSendMessage = json =>
+            {
+                try
+                {
+                    mp.Invoke(() => mp.SendWebMessage(json));
+                }
+                catch { }
+            };
+
             mp.WindowClosing += (_, _) =>
             {
                 _musicPlayerWindow = null;
+                MusicPlayerSendMessage = null;
                 return true;
             };
 
