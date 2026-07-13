@@ -116,7 +116,7 @@ public class YoutubeFormInterop
                         }
                     });
                     SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit });
-                    SendCurrentNowPlayingToNewUI();
+                    _ytForm.Dispatcher.BeginInvoke(() => SendCurrentNowPlayingToNewUI());
                     return;
                 }
                 case "shuffleQueue":
