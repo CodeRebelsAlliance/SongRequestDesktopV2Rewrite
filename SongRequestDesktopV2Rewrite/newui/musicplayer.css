@@ -391,7 +391,7 @@ body { background: #121212; color: #e0e0e0; }
   align-items: center;
   gap: 10px;
   width: 100%;
-  max-width: 800px;
+  max-width: calc(100% - 20px);
   margin: 0 auto;
 }
 #exp-progress-current,
