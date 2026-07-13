@@ -102,12 +102,12 @@ public class YoutubeFormInterop
                     return;
                 case "musicPlayerReady":
                 {
-                    SubscribeToMusicPlayer();
-                    _ytForm.Dispatcher.BeginInvoke(() => SendQueueUpdate());
-                    double volInit = 0.8, cfInit = 4.0;
-                    bool canControlInit = true;
-                    _ytForm.Dispatcher.Invoke(() =>
+                    _ytForm.Dispatcher.BeginInvoke(() =>
                     {
+                        SubscribeToMusicPlayer();
+                        SendQueueUpdate();
+                        double volInit = 0.8, cfInit = 4.0;
+                        bool canControlInit = true;
                         var mp = _ytForm.MusicPlayer;
                         if (mp != null)
                         {
@@ -115,9 +115,9 @@ public class YoutubeFormInterop
                             cfInit = mp.CrossfadeSlider.Value;
                             canControlInit = mp.RemoteCanControlVolume;
                         }
+                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit });
+                        SendCurrentNowPlayingToNewUI();
                     });
-                    SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit });
-                    _ytForm.Dispatcher.BeginInvoke(() => SendCurrentNowPlayingToNewUI());
                     return;
                 }
                 case "shuffleQueue":
