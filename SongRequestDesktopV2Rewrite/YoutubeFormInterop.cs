@@ -102,6 +102,7 @@ public class YoutubeFormInterop
                     return;
                 case "musicPlayerReady":
                 {
+                    SubscribeToMusicPlayer();
                     _ytForm.Dispatcher.BeginInvoke(() => SendQueueUpdate());
                     double volInit = 0.8, cfInit = 4.0;
                     bool canControlInit = true;
