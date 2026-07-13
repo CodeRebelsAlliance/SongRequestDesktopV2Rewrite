@@ -110,10 +110,16 @@
 
       // Remove .expanded — collapsed sections fade in (opacity:1), expanded content fades out
       playerBar.classList.remove('expanded');
+
+      // Re-pin to fullscreen so top transitions from 0 to target (auto→pixel doesn't animate)
+      playerBar.style.position = 'fixed';
+      playerBar.style.top = '0';
+      playerBar.style.left = '0';
+      playerBar.style.right = '0';
+      playerBar.style.bottom = '0';
       playerBar.offsetHeight;
 
-      // Animate to collapsed position (no .animating class — collapsed sections stay visible)
-      playerBar.style.position = 'fixed';
+      // Animate to collapsed position
       playerBar.style.top = target.top + 'px';
       playerBar.style.left = target.left + 'px';
       playerBar.style.right = (window.innerWidth - target.right) + 'px';
