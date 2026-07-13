@@ -193,9 +193,16 @@ namespace SongRequestDesktopV2Rewrite
 
         public void ShowMusicPlayer()
         {
-            _musicPlayer.Show();
-            _musicPlayer.Activate();
-            _musicPlayer.Focus();
+            if (ConfigService.Instance.Current?.UseNewUI == true && NewUiRef != null)
+            {
+                NewUiRef.ShowMusicPlayerWindow();
+            }
+            else
+            {
+                _musicPlayer.Show();
+                _musicPlayer.Activate();
+                _musicPlayer.Focus();
+            }
         }
 
         public void ShowMusicShare()
@@ -269,7 +276,7 @@ namespace SongRequestDesktopV2Rewrite
             if (bmp != null) thumbnail.Source = bmp;
 
             var song = new Song(title, creator, thumbnail, length, mp3Path);
-            _musicPlayer.Show();
+            ShowMusicPlayer();
             _musicPlayer.AddSongExternal(song);
             AppendConsoleText($"Queued: {title}", Brushes.LightGreen);
         }
@@ -310,7 +317,7 @@ namespace SongRequestDesktopV2Rewrite
             if (bmp != null) thumbnail.Source = bmp;
 
             var song = new Song(title, creator, thumbnail, length, mp3Path);
-            _musicPlayer.Show();
+            ShowMusicPlayer();
             _musicPlayer.AddNextSongExternal(song);
             AppendConsoleText($"Playing next: {title}", Brushes.LightGreen);
         }
@@ -1102,7 +1109,7 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     try
                     {
-                        _musicPlayer.Show();
+                        ShowMusicPlayer();
                         _musicPlayer.AddSongExternal(new Song(titleG, creatorG, thumbnail, lengthG, downloadedFilePath));
                     }
                     catch (Exception ex)
@@ -1116,7 +1123,7 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     try
                     {
-                        _musicPlayer.Show();
+                        ShowMusicPlayer();
                         _musicPlayer.AddNextSongExternal(new Song(titleG, creatorG, thumbnail, lengthG, downloadedFilePath));
                     }
                     catch (Exception ex)
