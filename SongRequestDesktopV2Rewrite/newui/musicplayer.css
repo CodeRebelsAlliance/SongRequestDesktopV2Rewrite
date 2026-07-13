@@ -334,7 +334,7 @@ body { background: #121212; color: #e0e0e0; }
   line-height: 1.5;
   transition: font-size 0.4s ease, color 0.4s ease, opacity 0.4s ease, font-weight 0.4s ease;
   opacity: 0.5;
-  max-width: 900px;
+  max-width: calc(100% - var(--lyric-base));
   width: 100%;
 }
 .lyrics-line.active {
