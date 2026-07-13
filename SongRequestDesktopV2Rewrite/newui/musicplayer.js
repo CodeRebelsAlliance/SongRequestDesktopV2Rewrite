@@ -47,7 +47,10 @@
       rightSidebar.classList.add('collapsed');
       topbar.style.display = 'none';
       bodyEl.style.display = 'none';
-      if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+      requestAnimationFrame(function() {
+        updateLyricFontSizes();
+        if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+      });
     } else {
       leftSidebar.classList.remove('collapsed');
       rightSidebar.classList.remove('collapsed');
@@ -55,6 +58,12 @@
       bodyEl.style.display = '';
     }
   }
+
+  var _lyricResizeTimer = null;
+  window.addEventListener('resize', function() {
+    if (_lyricResizeTimer) clearTimeout(_lyricResizeTimer);
+    _lyricResizeTimer = setTimeout(updateLyricFontSizes, 150);
+  });
 
   expandBtn.addEventListener('click', () => setExpanded(true));
   collapseBtn.addEventListener('click', () => setExpanded(false));
@@ -440,6 +449,22 @@
     return 0;
   }
 
+  function updateLyricFontSizes() {
+    if (!playerBar.classList.contains('expanded')) return;
+    var rect = lyricsContainer.getBoundingClientRect();
+    var h = rect.height;
+    if (h <= 0) return;
+    var active = Math.round(h * 0.055);
+    active = Math.max(22, Math.min(active, 52));
+    var base = Math.round(active * 0.7);
+    base = Math.max(16, Math.min(base, 38));
+    var prev = Math.round(active * 0.78);
+    prev = Math.max(16, Math.min(prev, 42));
+    lyricsContainer.style.setProperty('--lyric-active', active + 'px');
+    lyricsContainer.style.setProperty('--lyric-base', base + 'px');
+    lyricsContainer.style.setProperty('--lyric-prev', prev + 'px');
+  }
+
   function renderLyricsLoading() {
     lyricsContainer.innerHTML = '<div class="lyrics-loading"><i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div></div>';
     if (lyricsProvider) lyricsProvider.textContent = '';
@@ -497,6 +522,7 @@
 
     if (lyricsProvider) lyricsProvider.textContent = data.provider ? 'Lyrics: ' + data.provider : '';
     lastHighlightIndex = -1;
+    updateLyricFontSizes();
     if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
   }
 
