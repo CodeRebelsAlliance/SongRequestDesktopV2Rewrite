@@ -485,6 +485,10 @@
     topSpacer.className = 'lyrics-spacer';
     lyricsContainer.appendChild(topSpacer);
 
+    var emptyLine = document.createElement('div');
+    emptyLine.className = 'lyrics-line';
+    lyricsContainer.appendChild(emptyLine);
+
     if (data.syncedLyrics && data.syncedLyrics.length > 0) {
       syncedLyrics = data.syncedLyrics;
       hasSyncedLyrics = true;
@@ -537,25 +541,26 @@
         if (syncedLyrics[i].time <= currentTime) index = i;
         else break;
       }
-      if (index < 0) index = 0;
     } else if (plainLyricLines.length > 0) {
       var total = totalTimeSecs || 1;
       var progress = Math.min(currentTime / total, 1);
       index = Math.round(progress * Math.max(0, plainLyricLines.length - 1));
     }
 
-    if (index < 0 || index >= lines.length) return;
-    if (index === lastHighlightIndex) return;
+    var domIndex = index + 1;
 
-    lastHighlightIndex = index;
+    if (domIndex < 0 || domIndex >= lines.length) return;
+    if (domIndex === lastHighlightIndex) return;
+
+    lastHighlightIndex = domIndex;
 
     lines.forEach(function(line, i) {
-      if (i === index) {
+      if (i === domIndex) {
         line.className = 'lyrics-line active';
         if (playerBar.classList.contains('expanded')) {
           line.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-      } else if (i === index - 1) {
+      } else if (i === domIndex - 1) {
         line.className = 'lyrics-line prev';
       } else {
         line.className = 'lyrics-line';
