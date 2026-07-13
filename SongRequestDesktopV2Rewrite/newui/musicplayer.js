@@ -221,6 +221,7 @@
       colThumb.innerHTML = imgHtml;
       // Expanded
       expArtwork.innerHTML = imgHtml;
+      extractAccentColors(data.thumbnail);
     }
 
     // Duration (total time)
@@ -560,6 +561,81 @@
         line.className = 'lyrics-line';
       }
     });
+  }
+
+  // --- Accent color extraction from thumbnail ---
+  function resetAccentColors() {
+    playerBar.style.removeProperty('--accent-1');
+    playerBar.style.removeProperty('--accent-2');
+    playerBar.style.removeProperty('--accent-3');
+  }
+
+  function extractAccentColors(src) {
+    var img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+      try {
+        var canvas = document.createElement('canvas');
+        var ctx = canvas.getContext('2d');
+        var S = 40;
+        canvas.width = S; canvas.height = S;
+        ctx.drawImage(img, 0, 0, S, S);
+        var data = ctx.getImageData(0, 0, S, S).data;
+
+        var buckets = {};
+        for (var i = 0; i < data.length; i += 4) {
+          var r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+          if (a < 128) continue;
+          var lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (lum < 20 || lum > 240) continue;
+          var sat = Math.max(r, g, b) - Math.min(r, g, b);
+          if (sat < 20) continue;
+          var br = Math.round(r / 48) * 48;
+          var bg = Math.round(g / 48) * 48;
+          var bb = Math.round(b / 48) * 48;
+          var key = br + ',' + bg + ',' + bb;
+          if (!buckets[key]) buckets[key] = { r: 0, g: 0, b: 0, n: 0, lum: 0 };
+          buckets[key].r += r;
+          buckets[key].g += g;
+          buckets[key].b += b;
+          buckets[key].lum += lum;
+          buckets[key].n++;
+        }
+
+        var sorted = Object.values(buckets)
+          .filter(function(b) { return b.n >= 3; })
+          .sort(function(a, b) { return b.n - a.n; });
+
+        if (sorted.length < 1) { resetAccentColors(); return; }
+
+        var c1 = sorted[0];
+        var c1r = Math.round(c1.r / c1.n), c1g = Math.round(c1.g / c1.n), c1b = Math.round(c1.b / c1.n);
+
+        var c2 = null;
+        for (var j = 1; j < sorted.length; j++) {
+          var d = sorted[j];
+          var dr = Math.round(d.r / d.n), dg = Math.round(d.g / d.n), db = Math.round(d.b / d.n);
+          var dist = Math.abs(dr - c1r) + Math.abs(dg - c1g) + Math.abs(db - c1b);
+          if (dist > 60) { c2 = { r: dr, g: dg, b: db }; break; }
+        }
+        if (!c2) {
+          c2 = { r: Math.max(0, c1r - 40), g: Math.max(0, c1g - 40), b: Math.max(0, c1b - 40) };
+        }
+
+        var dark = 0.35;
+        var a1 = 'rgb(' + Math.round(c1r * dark) + ',' + Math.round(c1g * dark) + ',' + Math.round(c1b * dark) + ')';
+        var a2 = 'rgb(' + Math.round(c2.r * dark) + ',' + Math.round(c2.g * dark) + ',' + Math.round(c2.b * dark) + ')';
+        var a3 = 'rgb(' + Math.round((c1r + c2.r) / 2 * dark * 0.7) + ',' + Math.round((c1g + c2.g) / 2 * dark * 0.7) + ',' + Math.round((c1b + c2.b) / 2 * dark * 0.7) + ')';
+
+        playerBar.style.setProperty('--accent-1', a1);
+        playerBar.style.setProperty('--accent-2', a2);
+        playerBar.style.setProperty('--accent-3', a3);
+      } catch(e) {
+        resetAccentColors();
+      }
+    };
+    img.onerror = function() { resetAccentColors(); };
+    img.src = src;
   }
 
 })();

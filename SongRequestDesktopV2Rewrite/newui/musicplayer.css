@@ -1,3 +1,9 @@
+@property --grad-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; }
 body { background: #121212; color: #e0e0e0; }
@@ -183,11 +189,24 @@ body { background: #121212; color: #e0e0e0; }
    ===================================================== */
 #player-bar {
   display: flex; align-items: center;
-  background: #1e1e1e; border-top: 1px solid #333; flex-shrink: 0;
+  border-top: 1px solid #333; flex-shrink: 0;
   padding: 8px 15px; gap: 12px;
   border-radius: 0 0 15px 15px; margin: 0 5px 5px;
   position: relative; z-index: 10;
   min-height: 60px;
+  --accent-1: #1e1e1e; --accent-2: #1e1e1e; --accent-3: #1a1a1a;
+  background: linear-gradient(var(--grad-angle), var(--accent-1), var(--accent-2), var(--accent-3));
+  background-size: 400% 400%;
+  animation: gradientDrift 8s ease infinite;
+  transition: background 1.2s ease;
+}
+
+@keyframes gradientDrift {
+  0% { background-position: 0% 50%; }
+  25% { background-position: 100% 0%; }
+  50% { background-position: 100% 100%; }
+  75% { background-position: 0% 100%; }
+  100% { background-position: 0% 50%; }
 }
 
 /* Expanded mode: fills entire viewport */
@@ -195,10 +214,12 @@ body { background: #121212; color: #e0e0e0; }
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   margin: 0; border-radius: 0; z-index: 100;
   flex-direction: column; justify-content: flex-start;
-  background: #0e0e0e;
   padding: 0;
   min-height: 0;
   display: flex;
+  background: linear-gradient(var(--grad-angle), var(--accent-1), var(--accent-2), var(--accent-3));
+  background-size: 400% 400%;
+  animation: gradientDrift 12s ease infinite;
 }
 
 /* Hide collapsed sections when expanded */
