@@ -455,15 +455,28 @@
     plainLyricLines = [];
     hasSyncedLyrics = false;
 
+    var topSpacer = document.createElement('div');
+    topSpacer.className = 'lyrics-spacer';
+    lyricsContainer.appendChild(topSpacer);
+
     if (data.syncedLyrics && data.syncedLyrics.length > 0) {
       syncedLyrics = data.syncedLyrics;
       hasSyncedLyrics = true;
-      data.syncedLyrics.forEach(function(line) {
+      for (var i = 0; i < data.syncedLyrics.length; i++) {
+        var line = data.syncedLyrics[i];
+        if (i > 0) {
+          var gap = line.time - data.syncedLyrics[i - 1].time;
+          if (gap > 3.5) {
+            var gapDiv = document.createElement('div');
+            gapDiv.className = 'lyrics-gap';
+            lyricsContainer.appendChild(gapDiv);
+          }
+        }
         var div = document.createElement('div');
         div.className = 'lyrics-line';
         div.textContent = line.text;
         lyricsContainer.appendChild(div);
-      });
+      }
     } else if (data.plainLyrics && data.plainLyrics.length > 0) {
       plainLyricLines = data.plainLyrics;
       data.plainLyrics.forEach(function(text) {
@@ -477,6 +490,10 @@
       if (lyricsProvider) lyricsProvider.textContent = '';
       return;
     }
+
+    var bottomSpacer = document.createElement('div');
+    bottomSpacer.className = 'lyrics-spacer';
+    lyricsContainer.appendChild(bottomSpacer);
 
     if (lyricsProvider) lyricsProvider.textContent = data.provider ? 'Lyrics: ' + data.provider : '';
     lastHighlightIndex = -1;
