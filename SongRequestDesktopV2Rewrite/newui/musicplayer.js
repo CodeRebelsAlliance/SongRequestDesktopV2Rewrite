@@ -42,16 +42,32 @@
   var _animating = false;
   var _savedCollapsedRect = null;
 
+  function clearPlayerBarInlineStyles() {
+    var a1 = playerBar.style.getPropertyValue('--accent-1');
+    var a2 = playerBar.style.getPropertyValue('--accent-2');
+    var a3 = playerBar.style.getPropertyValue('--accent-3');
+    playerBar.style.cssText = '';
+    if (a1) playerBar.style.setProperty('--accent-1', a1);
+    if (a2) playerBar.style.setProperty('--accent-2', a2);
+    if (a3) playerBar.style.setProperty('--accent-3', a3);
+  }
+
   function setExpanded(expanded) {
     if (_animating) return;
 
     if (expanded) {
       var rect = playerBar.getBoundingClientRect();
       _savedCollapsedRect = rect;
-      playerBar.classList.add('animating');
       _animating = true;
 
-      // Pin to current position
+      // Hide sidebars/topbar immediately
+      leftSidebar.classList.add('collapsed');
+      rightSidebar.classList.add('collapsed');
+      topbar.style.display = 'none';
+      bodyEl.style.display = 'none';
+
+      // Start fade-out of collapsed sections + pin to current position
+      playerBar.classList.add('animating');
       playerBar.style.position = 'fixed';
       playerBar.style.top = rect.top + 'px';
       playerBar.style.left = rect.left + 'px';
@@ -59,41 +75,45 @@
       playerBar.style.bottom = (window.innerHeight - rect.bottom) + 'px';
       playerBar.style.margin = '0';
       playerBar.style.zIndex = '100';
-
-      leftSidebar.classList.add('collapsed');
-      rightSidebar.classList.add('collapsed');
-      topbar.style.display = 'none';
-      bodyEl.style.display = 'none';
-
-      // Force reflow
-      playerBar.offsetHeight;
-
-      // Animate to fullscreen
-      playerBar.classList.add('expanded');
-      playerBar.style.top = '0';
-      playerBar.style.left = '0';
-      playerBar.style.right = '0';
-      playerBar.style.bottom = '0';
-      playerBar.style.borderRadius = '0';
-      playerBar.style.padding = '0';
       expandBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
 
-      playerBar.addEventListener('transitionend', function onEnd(e) {
-        if (e.propertyName !== 'top') return;
-        playerBar.removeEventListener('transitionend', onEnd);
-        playerBar.classList.remove('animating');
-        playerBar.style.cssText = '';
-        _animating = false;
-        requestAnimationFrame(function() {
-          updateLyricFontSizes();
-          if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+      // Force reflow for start position
+      playerBar.offsetHeight;
+
+      // After collapsed sections fade out, add .expanded to remove from layout
+      setTimeout(function() {
+        playerBar.classList.add('expanded');
+        playerBar.style.top = '0';
+        playerBar.style.left = '0';
+        playerBar.style.right = '0';
+        playerBar.style.bottom = '0';
+        playerBar.style.borderRadius = '0';
+        playerBar.style.padding = '0';
+
+        playerBar.addEventListener('transitionend', function onEnd(e) {
+          if (e.propertyName !== 'top') return;
+          playerBar.removeEventListener('transitionend', onEnd);
+          playerBar.classList.remove('animating');
+          clearPlayerBarInlineStyles();
+          _animating = false;
+          requestAnimationFrame(function() {
+            updateLyricFontSizes();
+            if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+          });
         });
-      });
+      }, 200);
 
     } else {
       var target = _savedCollapsedRect || { top: window.innerHeight - 68, left: 5, right: window.innerWidth - 5, bottom: window.innerHeight - 5 };
-      playerBar.classList.add('animating');
+
+      // Remove .expanded first so collapsed sections reappear
+      playerBar.classList.remove('expanded');
+
+      // Force reflow so collapsed sections are back in layout
+      playerBar.offsetHeight;
+
       _animating = true;
+      playerBar.classList.add('animating');
 
       // Force reflow
       playerBar.offsetHeight;
@@ -111,8 +131,8 @@
       playerBar.addEventListener('transitionend', function onEnd(e) {
         if (e.propertyName !== 'top') return;
         playerBar.removeEventListener('transitionend', onEnd);
-        playerBar.classList.remove('animating', 'expanded');
-        playerBar.style.cssText = '';
+        playerBar.classList.remove('animating');
+        clearPlayerBarInlineStyles();
         leftSidebar.classList.remove('collapsed');
         rightSidebar.classList.remove('collapsed');
         topbar.style.display = '';

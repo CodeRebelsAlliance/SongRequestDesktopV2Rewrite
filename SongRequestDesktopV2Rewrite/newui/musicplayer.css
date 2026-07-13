@@ -231,14 +231,16 @@ body { background: #121212; color: #e0e0e0; }
 /* Hide collapsed sections when expanded */
 #player-bar.animating #player-bar-left,
 #player-bar.animating #player-bar-center,
-#player-bar.animating #player-bar-right,
+#player-bar.animating #player-bar-right {
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+}
+#player-bar-left, #player-bar-center, #player-bar-right {
+  opacity: 1; transition: opacity 0.2s ease;
+}
 #player-bar.expanded #player-bar-left,
 #player-bar.expanded #player-bar-center,
 #player-bar.expanded #player-bar-right {
-  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
-}
-#player-bar-left, #player-bar-center, #player-bar-right {
-  opacity: 1; transition: opacity 0.25s ease;
+  display: none;
 }
 
 /* Expanded content fade */
