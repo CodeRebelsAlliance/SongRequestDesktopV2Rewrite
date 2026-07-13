@@ -206,6 +206,12 @@ body { background: #121212; color: #e0e0e0; }
               border-radius 0.4s cubic-bezier(0.4,0,0.2,1), margin 0.4s cubic-bezier(0.4,0,0.2,1),
               padding 0.4s cubic-bezier(0.4,0,0.2,1), background 1.2s ease;
 }
+#player-bar.collapsing {
+  transition: top 0.4s cubic-bezier(0.4,0,0.2,1), left 0.4s cubic-bezier(0.4,0,0.2,1),
+              right 0.4s cubic-bezier(0.4,0,0.2,1), bottom 0.4s cubic-bezier(0.4,0,0.2,1),
+              border-radius 0.4s cubic-bezier(0.4,0,0.2,1), margin 0.4s cubic-bezier(0.4,0,0.2,1),
+              padding 0.4s cubic-bezier(0.4,0,0.2,1), background 1.2s ease;
+}
 
 @keyframes gradientDrift {
   0% { background-position: 0% 50%; }

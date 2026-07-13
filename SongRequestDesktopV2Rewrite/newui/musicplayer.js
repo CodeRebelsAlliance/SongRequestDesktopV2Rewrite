@@ -112,6 +112,7 @@
       playerBar.classList.remove('expanded');
 
       // Re-pin to fullscreen so top transitions from 0 to target (auto→pixel doesn't animate)
+      playerBar.classList.add('collapsing');
       playerBar.style.position = 'fixed';
       playerBar.style.top = '0';
       playerBar.style.left = '0';
@@ -132,6 +133,7 @@
       playerBar.addEventListener('transitionend', function onEnd(e) {
         if (e.propertyName !== 'top') return;
         playerBar.removeEventListener('transitionend', onEnd);
+        playerBar.classList.remove('collapsing');
         clearPlayerBarInlineStyles();
         leftSidebar.classList.remove('collapsed');
         rightSidebar.classList.remove('collapsed');
