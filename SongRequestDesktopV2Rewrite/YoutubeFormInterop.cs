@@ -209,7 +209,7 @@ public class YoutubeFormInterop
                     return;
                 case "requestLyrics":
                 {
-                    _ = FetchAndSendLyricsForCurrentSongAsync();
+                    _ytForm.Dispatcher.BeginInvoke(() => _ = FetchAndSendLyricsForSongAsync());
                     SendResponse(id, new { success = true });
                     return;
                 }
@@ -651,6 +651,8 @@ public class YoutubeFormInterop
                 var thumb = GetThumbnailForSongPath(current.songPath);
                 if (thumb != null)
                     data["thumbnail"] = thumb;
+
+                _ = FetchAndSendLyricsForSongAsync(current);
             }
 
             if (current == null)
@@ -1092,24 +1094,26 @@ public class YoutubeFormInterop
         }
     }
 
-    private async Task FetchAndSendLyricsForCurrentSongAsync()
+    private async Task FetchAndSendLyricsForSongAsync(Song? song = null)
     {
         var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
         if (mpSend == null) return;
 
-        Song? currentSong = null;
-        _ytForm.Dispatcher.Invoke(() =>
+        if (song == null)
         {
-            currentSong = _ytForm.MusicPlayer?.Queue?.FirstOrDefault();
-        });
+            _ytForm.Dispatcher.Invoke(() =>
+            {
+                song = _ytForm.MusicPlayer?.Queue?.FirstOrDefault();
+            });
+        }
 
-        if (currentSong == null)
+        if (song == null)
         {
             SendEmptyLyrics(mpSend);
             return;
         }
 
-        var songKey = $"{currentSong.songPath}|{currentSong.Artist}|{currentSong.Title}";
+        var songKey = $"{song.songPath}|{song.Artist}|{song.Title}";
         lock (_musicPlayerLyricsCacheLock)
         {
             if (_musicPlayerLyricsCache.TryGetValue(songKey, out var cached))
@@ -1124,11 +1128,11 @@ public class YoutubeFormInterop
 
         try
         {
-            var query = LyricsQueryNormalizer.Build(currentSong);
-            result = await lyricsService.GetCachedLyricsAsync(query.Artist, query.Title, currentSong.Duration).ConfigureAwait(false);
+            var query = LyricsQueryNormalizer.Build(song);
+            result = await lyricsService.GetCachedLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
             if (!result.Found)
             {
-                result = await lyricsService.GetLyricsAsync(query.Artist, query.Title, currentSong.Duration).ConfigureAwait(false);
+                result = await lyricsService.GetLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
             }
         }
         catch
@@ -1139,7 +1143,7 @@ public class YoutubeFormInterop
         var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
         if (fallbackEnabled
             && (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
-            && TryGetCachedSubtitleFallback(currentSong.songPath, out var timedSub, out var plainSub))
+            && TryGetCachedSubtitleFallback(song.songPath, out var timedSub, out var plainSub))
         {
             result = new LyricsResult
             {

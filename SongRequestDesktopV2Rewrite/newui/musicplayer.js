@@ -203,7 +203,6 @@
       lastHighlightIndex = -1;
       lastCurrentTime = 0;
       renderLyricsLoading();
-      hostSend('requestLyrics');
     }
 
     // Thumbnail
