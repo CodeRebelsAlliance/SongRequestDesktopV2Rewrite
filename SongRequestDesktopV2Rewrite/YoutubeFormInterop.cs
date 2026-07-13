@@ -651,8 +651,6 @@ public class YoutubeFormInterop
                 var thumb = GetThumbnailForSongPath(current.songPath);
                 if (thumb != null)
                     data["thumbnail"] = thumb;
-
-                _ = FetchAndSendLyricsForSongAsync(current);
             }
 
             if (current == null)
@@ -665,6 +663,11 @@ public class YoutubeFormInterop
                 data
             });
             mpSend(json);
+
+            if (current != null && current.songPath == _currentSongPath && data.ContainsKey("title"))
+            {
+                _ = FetchAndSendLyricsForSongAsync(current);
+            }
         }
         catch { }
     }
