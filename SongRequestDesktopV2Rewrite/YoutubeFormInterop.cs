@@ -717,6 +717,7 @@ public class YoutubeFormInterop
     private void OnQueueChanged(object? sender, EventArgs e)
     {
         SendQueueUpdate();
+        _ = PrefetchNextLyricsAsync();
     }
 
     private void SendQueueUpdate()
@@ -1204,6 +1205,59 @@ public class YoutubeFormInterop
         }
 
         SendLyricsResult(mpSend, result);
+
+        _ = PrefetchNextLyricsAsync();
+    }
+
+    private async Task PrefetchNextLyricsAsync()
+    {
+        try
+        {
+            var mp = _ytForm.MusicPlayer;
+            if (mp == null) return;
+
+            Song? next = null;
+            _ytForm.Dispatcher.Invoke(() =>
+            {
+                if (mp.Queue.Count > 1)
+                    next = mp.Queue[1];
+            });
+
+            if (next == null) return;
+
+            var songKey = $"{next.songPath}|{next.Artist}|{next.Title}";
+            lock (_musicPlayerLyricsCacheLock)
+            {
+                if (_musicPlayerLyricsCache.ContainsKey(songKey)) return;
+            }
+
+            var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
+            var query = LyricsQueryNormalizer.Build(next);
+            var result = await lyricsService.GetCachedLyricsAsync(query.Artist, query.Title, next.Duration).ConfigureAwait(false);
+            if (!result.Found)
+            {
+                result = await lyricsService.GetLyricsAsync(query.Artist, query.Title, next.Duration).ConfigureAwait(false);
+            }
+
+            var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
+            if (fallbackEnabled
+                && (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
+                && TryGetCachedSubtitleFallback(next.songPath, out var timedSub, out var plainSub))
+            {
+                result = new LyricsResult
+                {
+                    Found = true,
+                    SyncedLyrics = timedSub ?? string.Empty,
+                    PlainLyrics = plainSub ?? string.Empty
+                };
+            }
+
+            lock (_musicPlayerLyricsCacheLock)
+            {
+                _musicPlayerLyricsCache[songKey] = result;
+            }
+        }
+        catch { }
     }
 
     private void SendLyricsResult(Action<string> mpSend, LyricsResult result)
