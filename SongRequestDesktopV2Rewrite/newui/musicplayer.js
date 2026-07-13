@@ -39,23 +39,86 @@
   let lastCurrentTime = 0;
 
   // --- Expand / collapse ---
+  var _animating = false;
+  var _savedCollapsedRect = null;
+
   function setExpanded(expanded) {
-    playerBar.classList.toggle('expanded', expanded);
-    expandBtn.innerHTML = expanded ? '<i class="fas fa-chevron-down"></i>' : '<i class="fas fa-chevron-up"></i>';
+    if (_animating) return;
+
     if (expanded) {
+      var rect = playerBar.getBoundingClientRect();
+      _savedCollapsedRect = rect;
+      playerBar.classList.add('animating');
+      _animating = true;
+
+      // Pin to current position
+      playerBar.style.position = 'fixed';
+      playerBar.style.top = rect.top + 'px';
+      playerBar.style.left = rect.left + 'px';
+      playerBar.style.right = (window.innerWidth - rect.right) + 'px';
+      playerBar.style.bottom = (window.innerHeight - rect.bottom) + 'px';
+      playerBar.style.margin = '0';
+      playerBar.style.zIndex = '100';
+
       leftSidebar.classList.add('collapsed');
       rightSidebar.classList.add('collapsed');
       topbar.style.display = 'none';
       bodyEl.style.display = 'none';
-      requestAnimationFrame(function() {
-        updateLyricFontSizes();
-        if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+
+      // Force reflow
+      playerBar.offsetHeight;
+
+      // Animate to fullscreen
+      playerBar.classList.add('expanded');
+      playerBar.style.top = '0';
+      playerBar.style.left = '0';
+      playerBar.style.right = '0';
+      playerBar.style.bottom = '0';
+      playerBar.style.borderRadius = '0';
+      playerBar.style.padding = '0';
+      expandBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+
+      playerBar.addEventListener('transitionend', function onEnd(e) {
+        if (e.propertyName !== 'top') return;
+        playerBar.removeEventListener('transitionend', onEnd);
+        playerBar.classList.remove('animating');
+        playerBar.style.cssText = '';
+        _animating = false;
+        requestAnimationFrame(function() {
+          updateLyricFontSizes();
+          if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+        });
       });
+
     } else {
-      leftSidebar.classList.remove('collapsed');
-      rightSidebar.classList.remove('collapsed');
-      topbar.style.display = '';
-      bodyEl.style.display = '';
+      var target = _savedCollapsedRect || { top: window.innerHeight - 68, left: 5, right: window.innerWidth - 5, bottom: window.innerHeight - 5 };
+      playerBar.classList.add('animating');
+      _animating = true;
+
+      // Force reflow
+      playerBar.offsetHeight;
+
+      // Animate to collapsed position
+      playerBar.style.top = target.top + 'px';
+      playerBar.style.left = target.left + 'px';
+      playerBar.style.right = (window.innerWidth - target.right) + 'px';
+      playerBar.style.bottom = (window.innerHeight - target.bottom) + 'px';
+      playerBar.style.borderRadius = '0 0 15px 15px';
+      playerBar.style.margin = '0 5px 5px';
+      playerBar.style.padding = '8px 15px';
+      expandBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
+
+      playerBar.addEventListener('transitionend', function onEnd(e) {
+        if (e.propertyName !== 'top') return;
+        playerBar.removeEventListener('transitionend', onEnd);
+        playerBar.classList.remove('animating', 'expanded');
+        playerBar.style.cssText = '';
+        leftSidebar.classList.remove('collapsed');
+        rightSidebar.classList.remove('collapsed');
+        topbar.style.display = '';
+        bodyEl.style.display = '';
+        _animating = false;
+      });
     }
   }
 

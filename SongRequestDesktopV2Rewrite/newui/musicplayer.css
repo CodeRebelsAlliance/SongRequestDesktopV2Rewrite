@@ -198,7 +198,13 @@ body { background: #121212; color: #e0e0e0; }
   background: linear-gradient(var(--grad-angle), var(--accent-1), var(--accent-2), var(--accent-3));
   background-size: 400% 400%;
   animation: gradientDrift 8s ease infinite;
-  transition: background 1.2s ease;
+  transition: background 1.2s ease, border-radius 0.4s ease;
+}
+#player-bar.animating {
+  transition: top 0.4s cubic-bezier(0.4,0,0.2,1), left 0.4s cubic-bezier(0.4,0,0.2,1),
+              right 0.4s cubic-bezier(0.4,0,0.2,1), bottom 0.4s cubic-bezier(0.4,0,0.2,1),
+              border-radius 0.4s cubic-bezier(0.4,0,0.2,1), margin 0.4s cubic-bezier(0.4,0,0.2,1),
+              padding 0.4s cubic-bezier(0.4,0,0.2,1), background 1.2s ease;
 }
 
 @keyframes gradientDrift {
@@ -223,10 +229,33 @@ body { background: #121212; color: #e0e0e0; }
 }
 
 /* Hide collapsed sections when expanded */
+#player-bar.animating #player-bar-left,
+#player-bar.animating #player-bar-center,
+#player-bar.animating #player-bar-right,
 #player-bar.expanded #player-bar-left,
 #player-bar.expanded #player-bar-center,
 #player-bar.expanded #player-bar-right {
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+#player-bar-left, #player-bar-center, #player-bar-right {
+  opacity: 1; transition: opacity 0.25s ease;
+}
+
+/* Expanded content fade */
+#player-expanded-content {
   display: none;
+  opacity: 0; transition: opacity 0.3s ease 0.15s;
+}
+#player-bar.expanded #player-expanded-content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+#player-bar.animating.expanded #player-expanded-content,
+#player-bar.expanded #player-expanded-content {
+  opacity: 1;
 }
 
 /* Collapsed sections */
@@ -277,16 +306,6 @@ body { background: #121212; color: #e0e0e0; }
 /* =====================================================
    Expanded mode content
    ===================================================== */
-#player-expanded-content {
-  display: none;
-}
-#player-bar.expanded #player-expanded-content {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
 
 /* ── Top section: artwork + info side by side ── */
 #expanded-top {
