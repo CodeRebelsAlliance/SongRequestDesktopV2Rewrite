@@ -106,19 +106,14 @@
     } else {
       var target = _savedCollapsedRect || { top: window.innerHeight - 68, left: 5, right: window.innerWidth - 5, bottom: window.innerHeight - 5 };
 
-      // Remove .expanded first so collapsed sections reappear
-      playerBar.classList.remove('expanded');
-
-      // Force reflow so collapsed sections are back in layout
-      playerBar.offsetHeight;
-
       _animating = true;
-      playerBar.classList.add('animating');
 
-      // Force reflow
+      // Remove .expanded — collapsed sections fade in (opacity:1), expanded content fades out
+      playerBar.classList.remove('expanded');
       playerBar.offsetHeight;
 
-      // Animate to collapsed position
+      // Animate to collapsed position (no .animating class — collapsed sections stay visible)
+      playerBar.style.position = 'fixed';
       playerBar.style.top = target.top + 'px';
       playerBar.style.left = target.left + 'px';
       playerBar.style.right = (window.innerWidth - target.right) + 'px';
@@ -131,7 +126,6 @@
       playerBar.addEventListener('transitionend', function onEnd(e) {
         if (e.propertyName !== 'top') return;
         playerBar.removeEventListener('transitionend', onEnd);
-        playerBar.classList.remove('animating');
         clearPlayerBarInlineStyles();
         leftSidebar.classList.remove('collapsed');
         rightSidebar.classList.remove('collapsed');
