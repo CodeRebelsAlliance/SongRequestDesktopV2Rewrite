@@ -21,6 +21,14 @@ public class YoutubeFormInterop
 
     private string? _currentSongPath;
     private bool _musicPlayerSubscribed;
+    private LyricsService? _musicPlayerLyricsService;
+    private readonly object _musicPlayerLyricsCacheLock = new();
+    private readonly System.Collections.Generic.Dictionary<string, LyricsResult> _musicPlayerLyricsCache = new(StringComparer.OrdinalIgnoreCase);
+    private sealed class CachedSubtitleData
+    {
+        public string SubtitleText { get; set; } = string.Empty;
+        public string SubtitleTimedText { get; set; } = string.Empty;
+    }
 
     public YoutubeFormInterop(YoutubeForm ytForm, YoutubeService ytService)
     {
@@ -199,6 +207,12 @@ public class YoutubeFormInterop
                         _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.MoveQueueItem(fromIdx, toIdx));
                     SendResponse(id, new { success = true });
                     return;
+                case "requestLyrics":
+                {
+                    _ = FetchAndSendLyricsForCurrentSongAsync();
+                    SendResponse(id, new { success = true });
+                    return;
+                }
             }
 
             object result;
@@ -1078,6 +1092,158 @@ public class YoutubeFormInterop
         }
     }
 
+    private async Task FetchAndSendLyricsForCurrentSongAsync()
+    {
+        var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
+        if (mpSend == null) return;
+
+        Song? currentSong = null;
+        _ytForm.Dispatcher.Invoke(() =>
+        {
+            currentSong = _ytForm.MusicPlayer?.Queue?.FirstOrDefault();
+        });
+
+        if (currentSong == null)
+        {
+            SendEmptyLyrics(mpSend);
+            return;
+        }
+
+        var songKey = $"{currentSong.songPath}|{currentSong.Artist}|{currentSong.Title}";
+        lock (_musicPlayerLyricsCacheLock)
+        {
+            if (_musicPlayerLyricsCache.TryGetValue(songKey, out var cached))
+            {
+                SendLyricsResult(mpSend, cached);
+                return;
+            }
+        }
+
+        var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
+        LyricsResult result;
+
+        try
+        {
+            var query = LyricsQueryNormalizer.Build(currentSong);
+            result = await lyricsService.GetCachedLyricsAsync(query.Artist, query.Title, currentSong.Duration).ConfigureAwait(false);
+            if (!result.Found)
+            {
+                result = await lyricsService.GetLyricsAsync(query.Artist, query.Title, currentSong.Duration).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            result = new LyricsResult();
+        }
+
+        var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
+        if (fallbackEnabled
+            && (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
+            && TryGetCachedSubtitleFallback(currentSong.songPath, out var timedSub, out var plainSub))
+        {
+            result = new LyricsResult
+            {
+                Found = true,
+                SyncedLyrics = timedSub ?? string.Empty,
+                PlainLyrics = plainSub ?? string.Empty
+            };
+        }
+
+        lock (_musicPlayerLyricsCacheLock)
+        {
+            _musicPlayerLyricsCache[songKey] = result;
+        }
+
+        SendLyricsResult(mpSend, result);
+    }
+
+    private void SendLyricsResult(Action<string> mpSend, LyricsResult result)
+    {
+        string provider = "";
+        var data = new System.Collections.Generic.Dictionary<string, object>();
+
+        if (result.Found && result.HasSynced)
+        {
+            var syncedLines = result.ParseSyncedLines();
+            data["syncedLyrics"] = syncedLines.Select(l => new { time = l.Time.TotalSeconds, text = l.Text }).ToList();
+            data["hasSynced"] = true;
+            provider = "LRCLIB";
+        }
+        else if (result.Found && !string.IsNullOrWhiteSpace(result.PlainLyrics))
+        {
+            var plainLines = result.PlainLyrics
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(l => l.Trim())
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .ToList();
+            data["plainLyrics"] = plainLines;
+            data["hasSynced"] = false;
+            provider = "LRCLIB";
+        }
+        else
+        {
+            data["hasSynced"] = false;
+        }
+
+        data["provider"] = provider;
+
+        try
+        {
+            var json = JsonConvert.SerializeObject(new
+            {
+                type = "event",
+                eventName = "lyricsUpdate",
+                data
+            });
+            mpSend(json);
+        }
+        catch { }
+    }
+
+    private void SendEmptyLyrics(Action<string> mpSend)
+    {
+        try
+        {
+            var json = JsonConvert.SerializeObject(new
+            {
+                type = "event",
+                eventName = "lyricsUpdate",
+                data = new { provider = "", hasSynced = false, syncedLyrics = new object[0], plainLyrics = new string[0] }
+            });
+            mpSend(json);
+        }
+        catch { }
+    }
+
+    private static bool TryGetCachedSubtitleFallback(string? songPath, out string timedSubtitleText, out string plainSubtitleText)
+    {
+        timedSubtitleText = string.Empty;
+        plainSubtitleText = string.Empty;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(songPath)) return false;
+            var videoId = Path.GetFileNameWithoutExtension(songPath);
+            if (string.IsNullOrWhiteSpace(videoId)) return false;
+
+            var cachePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, YoutubeForm.downloadPath, "video-metadata-cache.json"));
+            if (!File.Exists(cachePath)) return false;
+
+            var json = File.ReadAllText(cachePath);
+            var cache = JsonConvert.DeserializeObject<System.Collections.Generic.Dictionary<string, CachedSubtitleData>>(json);
+            if (cache == null) return false;
+            if (!cache.TryGetValue(videoId, out var cached)) return false;
+            if (string.IsNullOrWhiteSpace(cached?.SubtitleText) && string.IsNullOrWhiteSpace(cached?.SubtitleTimedText)) return false;
+
+            timedSubtitleText = cached.SubtitleTimedText;
+            plainSubtitleText = cached.SubtitleText;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         foreach (var kv in _pendingRequests)
@@ -1085,6 +1251,11 @@ public class YoutubeFormInterop
             kv.Value.TrySetCanceled();
         }
         _pendingRequests.Clear();
+
+        lock (_musicPlayerLyricsCacheLock)
+        {
+            _musicPlayerLyricsCache.Clear();
+        }
 
         if (_musicPlayerSubscribed)
         {

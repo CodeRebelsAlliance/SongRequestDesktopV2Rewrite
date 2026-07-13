@@ -30,10 +30,13 @@
 
   // Lyrics
   const lyricsContainer = document.getElementById('expanded-lyrics');
-  const lyricLines = Array.from(document.querySelectorAll('.lyrics-line'));
-  let lyricsTimer = null;
-  let lyricsPaused = false;
-  let currentLineIndex = -1;
+  const lyricsProvider = document.getElementById('lyrics-provider');
+  let syncedLyrics = [];
+  let plainLyricLines = [];
+  let hasSyncedLyrics = false;
+  let totalTimeSecs = 0;
+  let lastHighlightIndex = -1;
+  let lastCurrentTime = 0;
 
   // --- Expand / collapse ---
   function setExpanded(expanded) {
@@ -44,13 +47,12 @@
       rightSidebar.classList.add('collapsed');
       topbar.style.display = 'none';
       bodyEl.style.display = 'none';
-      startLyricsTimer();
+      if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
     } else {
       leftSidebar.classList.remove('collapsed');
       rightSidebar.classList.remove('collapsed');
       topbar.style.display = '';
       bodyEl.style.display = '';
-      stopLyricsTimer();
     }
   }
 
@@ -81,7 +83,6 @@
         b.innerHTML = `<i class="fas fa-${icon}"></i>`;
       }
     });
-    if (playing) resumeLyricsTimer(); else pauseLyricsTimer();
     hostSend('playPause');
   }
 
@@ -179,6 +180,9 @@
       case 'queueUpdate':
         updateQueue(data);
         break;
+      case 'lyricsUpdate':
+        renderLyrics(data);
+        break;
     }
   }
 
@@ -191,6 +195,15 @@
       // Expanded mode
       expTitle.textContent = data.title;
       expArtist.textContent = data.artist || '—';
+
+      // Reset lyrics for new song
+      syncedLyrics = [];
+      plainLyricLines = [];
+      hasSyncedLyrics = false;
+      lastHighlightIndex = -1;
+      lastCurrentTime = 0;
+      renderLyricsLoading();
+      hostSend('requestLyrics');
     }
 
     // Thumbnail
@@ -206,30 +219,31 @@
     if (data.duration) {
       colProgressTotal.textContent = data.duration;
       expProgressTotal.textContent = data.duration;
+      totalTimeSecs = parseDurationString(data.duration);
     } else if (data.totalTime != null) {
       const fmt = formatTime(data.totalTime);
       colProgressTotal.textContent = fmt;
       expProgressTotal.textContent = fmt;
+      totalTimeSecs = data.totalTime;
     }
 
     // Current position
     if (data.currentTime != null) {
-      const pct = data.totalTime > 0 ? (data.currentTime / data.totalTime * 100) : 0;
+      lastCurrentTime = data.currentTime;
+      const effectiveTotal = data.totalTime || totalTimeSecs;
+      const pct = effectiveTotal > 0 ? (data.currentTime / effectiveTotal * 100) : 0;
       colProgressFill.style.width = pct + '%';
       expProgressFill.style.width = pct + '%';
       const fmt = formatTime(data.currentTime);
       colProgressCurrent.textContent = fmt;
       expProgressCurrent.textContent = fmt;
+
+      updateLyricHighlighting(data.currentTime);
     }
 
     // Play state
     if (data.isPlaying != null) {
       syncPlayButtons(data.isPlaying);
-      if (data.isPlaying) {
-        resumeLyricsTimer();
-      } else {
-        pauseLyricsTimer();
-      }
     }
     // Sync queue now-playing header when playback active state changes
     if (data.isPlaybackActive != null) {
@@ -418,62 +432,92 @@
     sendReady();
   }
 
-  // --- Timed lyrics ---
-  function startLyricsTimer() {
-    if (lyricLines.length === 0) return;
-    currentLineIndex = -1;
-    lyricsPaused = false;
-    lyricLines.forEach(el => { el.className = 'lyrics-line'; });
-    advanceToNextLine();
+  // --- Lyrics rendering & highlighting ---
+  function parseDurationString(str) {
+    if (!str) return 0;
+    var parts = str.split(':').map(Number);
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
   }
 
-  function advanceToNextLine() {
-    if (lyricsPaused) return;
-    lyricLines.forEach(el => { el.className = 'lyrics-line'; });
+  function renderLyricsLoading() {
+    lyricsContainer.innerHTML = '<div class="lyrics-loading"><i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div></div>';
+    if (lyricsProvider) lyricsProvider.textContent = '';
+  }
 
-    currentLineIndex++;
-    if (currentLineIndex >= lyricLines.length) {
-      currentLineIndex = 0;
+  function renderNoLyrics() {
+    lyricsContainer.innerHTML = '<div class="lyrics-no-lyrics"><i class="fas fa-music"></i><div>No lyrics available</div></div>';
+  }
+
+  function renderLyrics(data) {
+    lyricsContainer.innerHTML = '';
+    syncedLyrics = [];
+    plainLyricLines = [];
+    hasSyncedLyrics = false;
+
+    if (data.syncedLyrics && data.syncedLyrics.length > 0) {
+      syncedLyrics = data.syncedLyrics;
+      hasSyncedLyrics = true;
+      data.syncedLyrics.forEach(function(line) {
+        var div = document.createElement('div');
+        div.className = 'lyrics-line';
+        div.textContent = line.text;
+        lyricsContainer.appendChild(div);
+      });
+    } else if (data.plainLyrics && data.plainLyrics.length > 0) {
+      plainLyricLines = data.plainLyrics;
+      data.plainLyrics.forEach(function(text) {
+        var div = document.createElement('div');
+        div.className = 'lyrics-line';
+        div.textContent = text;
+        lyricsContainer.appendChild(div);
+      });
+    } else {
+      renderNoLyrics();
+      if (lyricsProvider) lyricsProvider.textContent = '';
+      return;
     }
 
-    if (currentLineIndex > 0) {
-      lyricLines[currentLineIndex - 1].classList.add('prev');
+    if (lyricsProvider) lyricsProvider.textContent = data.provider ? 'Lyrics: ' + data.provider : '';
+    lastHighlightIndex = -1;
+    if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+  }
+
+  function updateLyricHighlighting(currentTime) {
+    var lines = lyricsContainer.querySelectorAll('.lyrics-line');
+    if (lines.length === 0) return;
+
+    var index = -1;
+    if (hasSyncedLyrics && syncedLyrics.length > 0) {
+      for (var i = 0; i < syncedLyrics.length; i++) {
+        if (syncedLyrics[i].time <= currentTime) index = i;
+        else break;
+      }
+      if (index < 0) index = 0;
+    } else if (plainLyricLines.length > 0) {
+      var total = totalTimeSecs || 1;
+      var progress = Math.min(currentTime / total, 1);
+      index = Math.round(progress * Math.max(0, plainLyricLines.length - 1));
     }
 
-    lyricLines[currentLineIndex].classList.add('active');
-    lyricLines[currentLineIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (index < 0 || index >= lines.length) return;
+    if (index === lastHighlightIndex) return;
 
-    const timeStr = lyricLines[currentLineIndex].dataset.time;
-    const duration = timeStr ? parseFloat(timeStr) * 1000 : 3000;
+    lastHighlightIndex = index;
 
-    const nextTimeStr = currentLineIndex + 1 < lyricLines.length ? lyricLines[currentLineIndex + 1].dataset.time : null;
-    let delay = duration;
-    if (nextTimeStr) {
-      const currentTime = parseFloat(timeStr || '0');
-      const nextTime = parseFloat(nextTimeStr);
-      delay = (nextTime - currentTime) * 1000;
-    }
-
-    lyricsTimer = setTimeout(() => {
-      advanceToNextLine();
-    }, Math.max(delay, 1500));
-  }
-
-  function pauseLyricsTimer() {
-    lyricsPaused = true;
-    if (lyricsTimer) { clearTimeout(lyricsTimer); lyricsTimer = null; }
-  }
-
-  function resumeLyricsTimer() {
-    if (!lyricsPaused) return;
-    lyricsPaused = false;
-    advanceToNextLine();
-  }
-
-  function stopLyricsTimer() {
-    lyricsPaused = true;
-    if (lyricsTimer) { clearTimeout(lyricsTimer); lyricsTimer = null; }
-    lyricLines.forEach(el => { el.className = 'lyrics-line'; });
+    lines.forEach(function(line, i) {
+      if (i === index) {
+        line.className = 'lyrics-line active';
+        if (playerBar.classList.contains('expanded')) {
+          line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else if (i === index - 1) {
+        line.className = 'lyrics-line prev';
+      } else {
+        line.className = 'lyrics-line';
+      }
+    });
   }
 
 })();
