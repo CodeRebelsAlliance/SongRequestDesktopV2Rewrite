@@ -116,6 +116,7 @@ public class YoutubeFormInterop
                         }
                     });
                     SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit });
+                    SendCurrentNowPlayingToNewUI();
                     return;
                 }
                 case "shuffleQueue":
@@ -668,6 +669,47 @@ public class YoutubeFormInterop
             {
                 _ = FetchAndSendLyricsForSongAsync(current);
             }
+        }
+        catch { }
+    }
+
+    private void SendCurrentNowPlayingToNewUI()
+    {
+        var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
+        if (mpSend == null) return;
+
+        try
+        {
+            var mp = _ytForm.MusicPlayer;
+            if (mp == null) return;
+
+            Song? current = null;
+            _ytForm.Dispatcher.Invoke(() => { current = mp.Queue?.FirstOrDefault(); });
+
+            if (current == null) return;
+
+            var data = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["title"] = current.Title ?? "",
+                ["artist"] = current.Artist ?? "",
+                ["duration"] = current.length ?? "",
+                ["isPlaying"] = mp.RemoteIsPlaying,
+                ["isPlaybackActive"] = mp.RemoteIsPlaybackActive
+            };
+
+            var thumb = GetThumbnailForSongPath(current.songPath);
+            if (thumb != null)
+                data["thumbnail"] = thumb;
+
+            var json = JsonConvert.SerializeObject(new
+            {
+                type = "event",
+                eventName = "nowPlayingUpdate",
+                data
+            });
+            mpSend(json);
+
+            _ = FetchAndSendLyricsForSongAsync(current);
         }
         catch { }
     }
