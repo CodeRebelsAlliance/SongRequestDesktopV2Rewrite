@@ -343,6 +343,8 @@
           s.track.classList.remove('seek-pulse');
         }, { once: true });
         hostSend('seek', { position: finalPos });
+        lastHighlightIndex = -1;
+        updateLyricHighlighting(finalPos * totalTimeSecs);
       }
 
       document.addEventListener('mousemove', onMove);
@@ -411,7 +413,7 @@
     if (data.currentTime != null) {
       lastCurrentTime = data.currentTime;
       const effectiveTotal = data.totalTime || totalTimeSecs;
-      const pct = effectiveTotal > 0 ? (data.currentTime / effectiveTotal * 100) : 0;
+      const pct = effectiveTotal > 0 ? Math.min(data.currentTime / effectiveTotal * 100, 100) : 0;
       if (!isSeeking) {
         colProgressFill.style.width = pct + '%';
         expProgressFill.style.width = pct + '%';
