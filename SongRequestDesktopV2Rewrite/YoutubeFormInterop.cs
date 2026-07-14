@@ -98,9 +98,10 @@ public class YoutubeFormInterop
                     return;
                 case "seek":
                 {
-                    var posVal = msg["position"];
-                    if (posVal != null && double.TryParse(posVal.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pos))
+                    var posVal = msg["position"]?.ToObject<double>();
+                    if (posVal != null)
                     {
+                        double pos = posVal.Value;
                         _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteSeek(pos));
                     }
                     SendResponse(id, new { success = true });
