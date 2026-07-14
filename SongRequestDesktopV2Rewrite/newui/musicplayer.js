@@ -173,6 +173,33 @@
   expandBtn.addEventListener('click', () => setExpanded(true));
   collapseBtn.addEventListener('click', () => setExpanded(false));
 
+  // --- Sidebar tab switching ---
+  document.querySelectorAll('.sidebar-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      var view = this.getAttribute('data-view');
+      document.querySelectorAll('.sidebar-tab').forEach(function(t) { t.classList.remove('active'); });
+      this.classList.add('active');
+      document.querySelectorAll('#center .view').forEach(function(v) { v.classList.remove('active'); });
+      var target = document.getElementById('view-' + view);
+      if (target) target.classList.add('active');
+    });
+  });
+
+  // --- Home action buttons ---
+  document.getElementById('home-btn-queue').addEventListener('click', function() {
+    var right = document.getElementById('right-sidebar');
+    if (right) right.classList.toggle('collapsed');
+  });
+  document.getElementById('home-btn-playlists').addEventListener('click', function() {
+    document.querySelectorAll('.sidebar-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelector('[data-view="playlists"]').classList.add('active');
+    document.querySelectorAll('#center .view').forEach(function(v) { v.classList.remove('active'); });
+    document.getElementById('view-playlists').classList.add('active');
+  });
+  document.getElementById('home-btn-settings').addEventListener('click', function() {
+    document.getElementById('btn-settings').click();
+  });
+
   // --- Play button sync ---
   function syncPlayButtons(playing) {
     const btnPairs = [

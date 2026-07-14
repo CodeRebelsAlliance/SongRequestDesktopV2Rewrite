@@ -12,10 +12,16 @@
   <!-- Top bar -->
   <div id="topbar">
     <div id="top-left">
-      <span id="title"><i class="fas fa-music"></i> Music Player</span>
+      <img id="logo" src="../SRshortLogo.png"/>
+      <span id="title"><span style="color: yellow">Song</span><span style="color: orange">Request</span></span>
+    </div>
+    <div id="top-center">
+      <div id="search-bar">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="Search songs...">
+      </div>
     </div>
     <div id="top-actions">
-      <button id="btn-search" class="top-btn"><i class="fas fa-search"></i> Search</button>
       <button id="btn-settings" class="top-btn"><i class="fas fa-cog"></i> Settings</button>
     </div>
   </div>
@@ -24,7 +30,7 @@
     <!-- Left sidebar -->
     <div id="left-sidebar">
       <div id="sidebar-tabs">
-        <button class="sidebar-tab active" data-view="now-playing"><i class="fas fa-play-circle"></i> Now Playing</button>
+        <button class="sidebar-tab active" data-view="home"><i class="fas fa-home"></i> Home</button>
         <button class="sidebar-tab" data-view="playlists"><i class="fas fa-list"></i> Playlists</button>
         <button class="sidebar-tab" data-view="library"><i class="fas fa-album"></i> Library</button>
       </div>
@@ -39,13 +45,29 @@
 
     <!-- Center content -->
     <div id="center">
-      <div id="view-now-playing" class="view active">
-        <div id="np-artwork">
-          <div id="np-artwork-placeholder"><i class="fas fa-music"></i></div>
+      <div id="view-home" class="view active">
+        <div id="home-welcome">
+          <img src="../SRshortLogo.png" id="home-logo" alt="SongRequest">
+          <div id="home-title"><span style="color: yellow">Song</span><span style="color: orange">Request</span></div>
+          <div id="home-subtitle">Submit songs, control playback, enjoy music.</div>
         </div>
-        <div id="np-info">
-          <div id="np-title">No track playing</div>
-          <div id="np-artist">—</div>
+        <div id="home-actions">
+          <button class="home-action-card" id="home-btn-submit">
+            <i class="fas fa-plus-circle"></i>
+            <span class="home-action-label">Submit Song</span>
+          </button>
+          <button class="home-action-card" id="home-btn-queue">
+            <i class="fas fa-list-ol"></i>
+            <span class="home-action-label">View Queue</span>
+          </button>
+          <button class="home-action-card" id="home-btn-playlists">
+            <i class="fas fa-list"></i>
+            <span class="home-action-label">Playlists</span>
+          </button>
+          <button class="home-action-card" id="home-btn-settings">
+            <i class="fas fa-cog"></i>
+            <span class="home-action-label">Settings</span>
+          </button>
         </div>
       </div>
       <div id="view-playlists" class="view">

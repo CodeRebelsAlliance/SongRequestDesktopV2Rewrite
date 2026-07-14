@@ -16,10 +16,25 @@ body { background: #121212; color: #e0e0e0; }
   background: #1e1e1e; padding: 8px 15px;
   border-bottom: 1px solid #333; flex-shrink: 0;
   border-radius: 15px 15px 0 0; margin: 5px 5px 0 5px;
+  gap: 12px;
 }
-#top-left { display: flex; align-items: center; gap: 10px; }
+#top-left { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+#top-left #logo { width: 28px; height: 28px; border-radius: 4px; flex-shrink: 0; }
 #top-left #title { color: #fff; font-size: 18px; font-weight: 700; }
-#top-actions { display: flex; gap: 8px; }
+#top-center { flex: 1; display: flex; justify-content: center; max-width: 480px; margin: 0 auto; }
+#search-bar {
+  display: flex; align-items: center; gap: 8px;
+  background: #2a2a2a; border: 1px solid #444; border-radius: 20px;
+  padding: 6px 14px; width: 100%; transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+#search-bar:focus-within { border-color: #888; box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+#search-bar i { color: #666; font-size: 13px; flex-shrink: 0; }
+#search-bar #search-input {
+  background: transparent; border: none; outline: none; color: #e0e0e0;
+  font-size: 13px; width: 100%; padding: 0;
+}
+#search-bar #search-input::placeholder { color: #666; }
+#top-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .top-btn { background: #2a2a2a; color: #ccc; border: 1px solid #444; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; transition: all 0.2s ease; }
 .top-btn:hover { background: #3a3a3a; color: #fff; border-color: #666; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 .top-btn:active { transform: translateY(0); }
@@ -68,16 +83,24 @@ body { background: #121212; color: #e0e0e0; }
 
 .view-header { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 16px; }
 
-/* Now Playing view */
-#np-artwork {
-  width: 240px; height: 240px; border-radius: 12px; overflow: hidden;
-  background: #1e1e1e; margin: 0 auto 20px; display: flex;
-  align-items: center; justify-content: center; flex-shrink: 0;
+/* Home view */
+#view-home { align-items: center; justify-content: center; gap: 32px; }
+#home-welcome { text-align: center; }
+#home-logo { width: 72px; height: 72px; border-radius: 12px; margin-bottom: 14px; }
+#home-title { font-size: 32px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+#home-subtitle { font-size: 14px; color: #888; }
+#home-actions {
+  display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; max-width: 420px;
 }
-#np-artwork-placeholder i { font-size: 72px; color: #444; }
-#np-info { text-align: center; }
-#np-title { font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 4px; }
-#np-artist { font-size: 16px; color: #888; }
+.home-action-card {
+  background: #1e1e1e; border: 1px solid #333; border-radius: 12px;
+  padding: 20px 24px; cursor: pointer; text-align: center; min-width: 100px;
+  transition: all 0.2s ease; color: #ccc; display: flex; flex-direction: column;
+  align-items: center; gap: 8px; font-size: 13px;
+}
+.home-action-card i { font-size: 22px; color: #888; transition: color 0.2s ease; }
+.home-action-card:hover { border-color: #555; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.home-action-card:hover i { color: #fff; }
 
 /* Playlists view */
 #playlist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
