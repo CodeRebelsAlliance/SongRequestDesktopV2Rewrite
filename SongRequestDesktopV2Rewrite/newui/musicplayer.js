@@ -235,6 +235,7 @@
   repeatBtns.forEach(function(btn) {
     if (!btn) return;
     btn.addEventListener('click', function() {
+      setRepeatState(!repeatEnabled);
       hostSend('toggleRepeat');
     });
   });
@@ -628,9 +629,6 @@
           cfSliders.forEach(sl => { if (sl) sl.value = c; });
           const iconName = v == 0 ? 'fa-volume-mute' : 'fa-volume-up';
           volIcons.forEach(ic => { if (ic) ic.className = `fas ${iconName}`; });
-        }
-        if (msg.repeat != null) {
-          setRepeatState(msg.repeat);
         }
       }
     } catch (_) {}

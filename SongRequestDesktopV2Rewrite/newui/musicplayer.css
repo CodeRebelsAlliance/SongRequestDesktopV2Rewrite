@@ -287,6 +287,10 @@ body { background: #121212; color: #e0e0e0; }
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; color: #555;
   aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+#player-bar-thumb img {
+  width: 100%; height: 100%; object-fit: cover;
 }
 #player-bar-title { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #player-bar-artist { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
