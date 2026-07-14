@@ -46,6 +46,18 @@
   const syncBackBtn = document.getElementById('sync-back');
   const syncForwardBtn = document.getElementById('sync-forward');
 
+  // Lyrics font size (per-song)
+  let lyricsFontScale = 1.0;
+  let fontAnimFrame = null;
+  const fontValueEl = document.getElementById('font-size-value');
+  const fontResetEl = document.getElementById('font-reset');
+  const fontDecreaseBtn = document.getElementById('font-decrease');
+  const fontIncreaseBtn = document.getElementById('font-increase');
+
+  // Slider value labels
+  const volumeValueEls = [document.getElementById('volume-value'), document.getElementById('exp-volume-value')];
+  const crossfadeValueEls = [document.getElementById('crossfade-value'), document.getElementById('exp-crossfade-value')];
+
   // --- Expand / collapse ---
   var _animating = false;
   var _savedCollapsedRect = null;
@@ -384,6 +396,7 @@
       lastHighlightIndex = -1;
       lastCurrentTime = 0;
       animateSyncToZero();
+      animateFontToDefault();
       renderLyricsLoading();
     }
 
@@ -630,7 +643,7 @@
     var rect = lyricsContainer.getBoundingClientRect();
     var h = rect.height;
     if (h <= 0) return;
-    var active = Math.round(h * 0.055);
+    var active = Math.round(h * 0.055 * lyricsFontScale);
     active = Math.max(22, Math.min(active, 52));
     var base = Math.round(active * 0.7);
     base = Math.max(16, Math.min(base, 38));
@@ -785,6 +798,62 @@
   syncForwardBtn.addEventListener('click', function() { setSyncOffset(lyricsSyncOffset + 0.25); });
   syncResetEl.addEventListener('click', function() { animateSyncToZero(); });
   updateSyncDisplay();
+
+  // --- Lyrics font size controls ---
+  function updateFontDisplay() {
+    var pct = Math.round(lyricsFontScale * 100);
+    fontValueEl.textContent = pct + '%';
+    fontValueEl.classList.toggle('nonzero', lyricsFontScale !== 1.0);
+    fontResetEl.classList.toggle('visible', lyricsFontScale !== 1.0);
+  }
+
+  function setFontScale(newScale) {
+    lyricsFontScale = Math.max(0.5, Math.min(2.0, Math.round(newScale * 40) / 40));
+    updateFontDisplay();
+    updateLyricFontSizes();
+  }
+
+  function animateFontToDefault() {
+    if (fontAnimFrame) cancelAnimationFrame(fontAnimFrame);
+    var startScale = lyricsFontScale;
+    if (startScale === 1.0) return;
+    var duration = 300;
+    var startTime = performance.now();
+    function tick(now) {
+      var elapsed = now - startTime;
+      var t = Math.min(elapsed / duration, 1);
+      var eased = 1 - Math.pow(1 - t, 3);
+      lyricsFontScale = startScale + (1.0 - startScale) * eased;
+      if (Math.abs(lyricsFontScale - 1.0) < 0.001) lyricsFontScale = 1.0;
+      updateFontDisplay();
+      updateLyricFontSizes();
+      if (t < 1) fontAnimFrame = requestAnimationFrame(tick);
+      else { lyricsFontScale = 1.0; updateFontDisplay(); updateLyricFontSizes(); fontAnimFrame = null; }
+    }
+    fontAnimFrame = requestAnimationFrame(tick);
+  }
+
+  fontDecreaseBtn.addEventListener('click', function() { setFontScale(lyricsFontScale - 0.1); });
+  fontIncreaseBtn.addEventListener('click', function() { setFontScale(lyricsFontScale + 0.1); });
+  fontResetEl.addEventListener('click', function() { animateFontToDefault(); });
+  updateFontDisplay();
+
+  // --- Slider value label updates ---
+  function updateSliderLabels() {
+    volSliders.forEach(function(sl, i) {
+      if (sl && volumeValueEls[i]) volumeValueEls[i].textContent = sl.value;
+    });
+    cfSliders.forEach(function(sl, i) {
+      if (sl && crossfadeValueEls[i]) crossfadeValueEls[i].textContent = (sl.value / 10).toFixed(1);
+    });
+  }
+  volSliders.forEach(function(sl) {
+    if (sl) sl.addEventListener('input', updateSliderLabels);
+  });
+  cfSliders.forEach(function(sl) {
+    if (sl) sl.addEventListener('input', updateSliderLabels);
+  });
+  updateSliderLabels();
 
   // --- Accent color extraction from thumbnail ---
   function resetAccentColors() {

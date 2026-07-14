@@ -119,13 +119,15 @@
         <span id="progress-total">0:00</span>
       </div>
     </div>
-    <div id="player-bar-right">
+      <div id="player-bar-right">
       <button id="btn-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
       <div id="volume-slider-wrap">
+        <span id="volume-value" class="slider-value">80</span>
         <input type="range" id="volume-slider" min="0" max="100" value="80">
       </div>
       <div id="crossfade-slider-wrap">
         <span class="ctrl-label">XF</span>
+        <span id="crossfade-value" class="slider-value">4.0</span>
         <input type="range" id="crossfade-slider" min="0" max="100" value="40" title="Crossfade duration">
       </div>
       <button id="btn-expand" class="player-ctrl-btn" title="Expand"><i class="fas fa-chevron-up"></i></button>
@@ -150,6 +152,11 @@
           <span id="sync-value">0.00s</span>
           <button id="sync-forward" class="sync-btn" title="Offset lyrics forward by 0.25s"><i class="fas fa-plus"></i></button>
           <button id="sync-reset" class="sync-btn sync-reset-btn" title="Reset offset"><i class="fas fa-undo"></i></button>
+          <div class="sync-divider"></div>
+          <button id="font-decrease" class="sync-btn font-btn" title="Decrease lyrics font size">A<span class="font-btn-sub">-</span></button>
+          <span id="font-size-value">100%</span>
+          <button id="font-increase" class="sync-btn font-btn" title="Increase lyrics font size">A<span class="font-btn-sub">+</span></button>
+          <button id="font-reset" class="sync-btn sync-reset-btn" title="Reset font size"><i class="fas fa-undo"></i></button>
         </div>
       </div>
       <!-- Bottom: seekbar + controls -->
@@ -171,10 +178,12 @@
           <button id="btn-exp-repeat" class="player-ctrl-btn" title="Repeat"><i class="fas fa-redo"></i></button>
           <div id="expanded-volume">
             <button id="btn-exp-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
+            <span id="exp-volume-value" class="slider-value">80</span>
             <input type="range" id="exp-volume-slider" min="0" max="100" value="80">
           </div>
           <div id="exp-crossfade-wrap">
             <span class="ctrl-label">XF</span>
+            <span id="exp-crossfade-value" class="slider-value">4.0</span>
             <input type="range" id="exp-crossfade-slider" min="0" max="100" value="40" title="Crossfade duration">
           </div>
           <button id="btn-exp-collapse" class="player-ctrl-btn" title="Minimize"><i class="fas fa-chevron-down"></i></button>

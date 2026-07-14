@@ -565,11 +565,21 @@ body { background: #121212; color: #e0e0e0; }
 #exp-progress-current,
 #exp-progress-total {
   font-size: 12px;
-  color: #888;
+  color: #aaa;
   font-family: Consolas, monospace;
   flex-shrink: 0;
-  width: 40px;
+  width: 48px;
   text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 3px 6px;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+#exp-progress-current:hover,
+#exp-progress-total:hover {
+  opacity: 1;
 }
 #exp-progress-track {
   flex: 1;
@@ -656,3 +666,46 @@ body { background: #121212; color: #e0e0e0; }
 
 .view { animation: fadeIn 0.25s ease; }
 .playlist-card { animation: slideUp 0.3s ease; }
+
+/* Font size controls in lyrics sync panel */
+.sync-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+.font-btn {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: -0.5px;
+  width: auto;
+  padding: 0 6px;
+}
+.font-btn-sub {
+  font-size: 9px;
+  vertical-align: super;
+  margin-left: -1px;
+}
+#font-size-value {
+  font-size: 11px;
+  font-family: Consolas, monospace;
+  color: #999;
+  min-width: 38px;
+  text-align: center;
+  transition: color 0.2s;
+}
+#font-size-value.nonzero {
+  color: #5b8def;
+}
+
+/* Slider value labels */
+.slider-value {
+  font-size: 11px;
+  font-family: Consolas, monospace;
+  color: #888;
+  min-width: 26px;
+  text-align: center;
+  flex-shrink: 0;
+}
