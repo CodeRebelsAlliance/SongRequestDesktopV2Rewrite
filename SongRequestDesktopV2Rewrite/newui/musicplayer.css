@@ -369,6 +369,64 @@ body { background: #121212; color: #e0e0e0; }
   --lyric-base: 18px;
   --lyric-active: 30px;
   --lyric-prev: 22px;
+  position: relative;
+}
+#lyrics-sync-controls {
+  position: sticky;
+  bottom: 12px;
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(30, 30, 30, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #444;
+  border-radius: 20px;
+  padding: 4px 10px;
+  margin-top: auto;
+  z-index: 10;
+}
+.sync-btn {
+  background: transparent;
+  color: #aaa;
+  border: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.15s, color 0.15s;
+}
+.sync-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.sync-btn:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+#sync-value {
+  font-size: 12px;
+  font-family: Consolas, monospace;
+  color: #999;
+  min-width: 48px;
+  text-align: center;
+  transition: color 0.2s;
+}
+#sync-value.nonzero {
+  color: #5b8def;
+}
+.sync-reset-btn {
+  font-size: 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, background 0.15s, color 0.15s;
+}
+.sync-reset-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 .lyrics-spacer {
   flex-shrink: 0;

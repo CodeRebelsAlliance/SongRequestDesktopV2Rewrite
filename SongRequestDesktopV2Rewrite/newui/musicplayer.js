@@ -38,6 +38,14 @@
   let lastHighlightIndex = -1;
   let lastCurrentTime = 0;
 
+  // Lyrics sync offset
+  let lyricsSyncOffset = 0;
+  let syncAnimFrame = null;
+  const syncValueEl = document.getElementById('sync-value');
+  const syncResetEl = document.getElementById('sync-reset');
+  const syncBackBtn = document.getElementById('sync-back');
+  const syncForwardBtn = document.getElementById('sync-forward');
+
   // --- Expand / collapse ---
   var _animating = false;
   var _savedCollapsedRect = null;
@@ -296,6 +304,7 @@
       hasSyncedLyrics = false;
       lastHighlightIndex = -1;
       lastCurrentTime = 0;
+      animateSyncToZero();
       renderLyricsLoading();
     }
 
@@ -551,17 +560,30 @@
     lyricsContainer.style.setProperty('--lyric-prev', prev + 'px');
   }
 
+  const lyricsSyncControls = document.getElementById('lyrics-sync-controls');
+
   function renderLyricsLoading() {
-    lyricsContainer.innerHTML = '<div class="lyrics-loading"><i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div></div>';
+    lyricsContainer.innerHTML = '';
+    lyricsContainer.appendChild(lyricsSyncControls);
+    var loading = document.createElement('div');
+    loading.className = 'lyrics-loading';
+    loading.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div>';
+    lyricsContainer.appendChild(loading);
     if (lyricsProvider) lyricsProvider.textContent = '';
   }
 
   function renderNoLyrics() {
-    lyricsContainer.innerHTML = '<div class="lyrics-no-lyrics"><i class="fas fa-music"></i><div>No lyrics available</div></div>';
+    lyricsContainer.innerHTML = '';
+    lyricsContainer.appendChild(lyricsSyncControls);
+    var empty = document.createElement('div');
+    empty.className = 'lyrics-no-lyrics';
+    empty.innerHTML = '<i class="fas fa-music"></i><div>No lyrics available</div>';
+    lyricsContainer.appendChild(empty);
   }
 
   function renderLyrics(data) {
     lyricsContainer.innerHTML = '';
+    lyricsContainer.appendChild(lyricsSyncControls);
     syncedLyrics = [];
     plainLyricLines = [];
     hasSyncedLyrics = false;
@@ -620,15 +642,16 @@
     var lines = lyricsContainer.querySelectorAll('.lyrics-line');
     if (lines.length === 0) return;
 
+    var adjustedTime = currentTime + lyricsSyncOffset;
     var index = -1;
     if (hasSyncedLyrics && syncedLyrics.length > 0) {
       for (var i = 0; i < syncedLyrics.length; i++) {
-        if (syncedLyrics[i].time <= currentTime) index = i;
+        if (syncedLyrics[i].time <= adjustedTime) index = i;
         else break;
       }
     } else if (plainLyricLines.length > 0) {
       var total = totalTimeSecs || 1;
-      var progress = Math.min(currentTime / total, 1);
+      var progress = Math.min(adjustedTime / total, 1);
       index = Math.round(progress * Math.max(0, plainLyricLines.length - 1));
     }
 
@@ -652,6 +675,48 @@
       }
     });
   }
+
+  // --- Lyrics sync offset controls ---
+  function updateSyncDisplay() {
+    var sign = lyricsSyncOffset >= 0 ? '+' : '';
+    syncValueEl.textContent = sign + lyricsSyncOffset.toFixed(2) + 's';
+    syncValueEl.classList.toggle('nonzero', lyricsSyncOffset !== 0);
+    syncResetEl.classList.toggle('visible', lyricsSyncOffset !== 0);
+  }
+
+  function setSyncOffset(newOffset) {
+    lyricsSyncOffset = Math.round(newOffset * 4) / 4;
+    lyricsSyncOffset = Math.max(-5, Math.min(5, lyricsSyncOffset));
+    updateSyncDisplay();
+    lastHighlightIndex = -1;
+    if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+  }
+
+  function animateSyncToZero() {
+    if (syncAnimFrame) cancelAnimationFrame(syncAnimFrame);
+    var startOffset = lyricsSyncOffset;
+    if (startOffset === 0) return;
+    var duration = 300;
+    var startTime = performance.now();
+    function tick(now) {
+      var elapsed = now - startTime;
+      var t = Math.min(elapsed / duration, 1);
+      var eased = 1 - Math.pow(1 - t, 3);
+      lyricsSyncOffset = Math.round((startOffset * (1 - eased)) * 4) / 4;
+      if (Math.abs(lyricsSyncOffset) < 0.001) lyricsSyncOffset = 0;
+      updateSyncDisplay();
+      lastHighlightIndex = -1;
+      if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
+      if (t < 1) syncAnimFrame = requestAnimationFrame(tick);
+      else { lyricsSyncOffset = 0; updateSyncDisplay(); syncAnimFrame = null; }
+    }
+    syncAnimFrame = requestAnimationFrame(tick);
+  }
+
+  syncBackBtn.addEventListener('click', function() { setSyncOffset(lyricsSyncOffset - 0.25); });
+  syncForwardBtn.addEventListener('click', function() { setSyncOffset(lyricsSyncOffset + 0.25); });
+  syncResetEl.addEventListener('click', function() { animateSyncToZero(); });
+  updateSyncDisplay();
 
   // --- Accent color extraction from thumbnail ---
   function resetAccentColors() {
