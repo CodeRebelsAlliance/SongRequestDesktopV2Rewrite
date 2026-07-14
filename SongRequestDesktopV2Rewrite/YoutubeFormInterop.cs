@@ -96,6 +96,16 @@ public class YoutubeFormInterop
                     _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteStop());
                     SendResponse(id, new { success = true });
                     return;
+                case "seek":
+                {
+                    var posVal = msg["position"];
+                    if (posVal != null && double.TryParse(posVal.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pos))
+                    {
+                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteSeek(pos));
+                    }
+                    SendResponse(id, new { success = true });
+                    return;
+                }
                 case "clearQueue":
                     _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.ClearQueue(false));
                     SendResponse(id, new { success = true });

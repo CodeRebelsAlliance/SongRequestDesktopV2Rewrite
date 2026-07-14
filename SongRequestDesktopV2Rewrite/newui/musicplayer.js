@@ -273,6 +273,83 @@
     return `${m}:${s.toString().padStart(2, '0')}`;
   }
 
+  // --- Seekbar interaction ---
+  const seekTracks = [
+    { track: document.getElementById('progress-track'), fill: document.getElementById('progress-fill'), hoverFill: document.getElementById('progress-hover-fill'), tooltip: document.getElementById('progress-tooltip') },
+    { track: document.getElementById('exp-progress-track'), fill: document.getElementById('exp-progress-fill'), hoverFill: document.getElementById('exp-progress-hover-fill'), tooltip: document.getElementById('exp-progress-tooltip') }
+  ];
+  let isSeeking = false;
+
+  function getSeekPosition(e, trackEl) {
+    var rect = trackEl.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  }
+
+  seekTracks.forEach(function(s) {
+    if (!s.track) return;
+
+    // Hover preview
+    s.track.addEventListener('mousemove', function(e) {
+      if (isSeeking) return;
+      var pos = getSeekPosition(e, s.track);
+      s.hoverFill.style.width = (pos * 100) + '%';
+      s.tooltip.textContent = formatTime(pos * totalTimeSecs);
+      s.tooltip.style.left = (pos * 100) + '%';
+      s.tooltip.classList.add('visible');
+    });
+
+    s.track.addEventListener('mouseleave', function() {
+      if (isSeeking) return;
+      s.hoverFill.style.width = '0%';
+      s.tooltip.classList.remove('visible');
+    });
+
+    // Click to seek
+    s.track.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      isSeeking = true;
+      s.track.classList.add('seeking');
+      var pos = getSeekPosition(e, s.track);
+      s.hoverFill.style.width = (pos * 100) + '%';
+      s.fill.style.transition = 'none';
+      s.fill.style.width = (pos * 100) + '%';
+      s.tooltip.textContent = formatTime(pos * totalTimeSecs);
+      s.tooltip.style.left = (pos * 100) + '%';
+      s.tooltip.classList.add('visible');
+
+      function onMove(ev) {
+        var p = getSeekPosition(ev, s.track);
+        s.hoverFill.style.width = (p * 100) + '%';
+        s.fill.style.width = (p * 100) + '%';
+        s.tooltip.textContent = formatTime(p * totalTimeSecs);
+        s.tooltip.style.left = (p * 100) + '%';
+      }
+
+      function onUp(ev) {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        var finalPos = getSeekPosition(ev, s.track);
+        s.track.classList.remove('seeking');
+        s.tooltip.classList.remove('visible');
+        s.hoverFill.style.width = '0%';
+        s.fill.style.transition = '';
+        s.fill.style.width = (finalPos * 100) + '%';
+        isSeeking = false;
+        // Pulse animation
+        s.track.classList.remove('seek-pulse');
+        void s.track.offsetWidth;
+        s.track.classList.add('seek-pulse');
+        s.track.addEventListener('animationend', function() {
+          s.track.classList.remove('seek-pulse');
+        }, { once: true });
+        hostSend('seek', { position: finalPos });
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
   // --- Receive events from C# ---
   function onEvent(eventName, data) {
     switch (eventName) {
@@ -335,11 +412,13 @@
       lastCurrentTime = data.currentTime;
       const effectiveTotal = data.totalTime || totalTimeSecs;
       const pct = effectiveTotal > 0 ? (data.currentTime / effectiveTotal * 100) : 0;
-      colProgressFill.style.width = pct + '%';
-      expProgressFill.style.width = pct + '%';
-      const fmt = formatTime(data.currentTime);
-      colProgressCurrent.textContent = fmt;
-      expProgressCurrent.textContent = fmt;
+      if (!isSeeking) {
+        colProgressFill.style.width = pct + '%';
+        expProgressFill.style.width = pct + '%';
+        const fmt = formatTime(data.currentTime);
+        colProgressCurrent.textContent = fmt;
+        expProgressCurrent.textContent = fmt;
+      }
 
       updateLyricHighlighting(data.currentTime);
     }

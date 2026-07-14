@@ -290,9 +290,59 @@ body { background: #121212; color: #e0e0e0; }
 
 #player-bar-progress { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 500px; }
 #progress-current, #progress-total { font-size: 11px; color: #888; font-family: Consolas, monospace; flex-shrink: 0; width: 36px; }
-#progress-track { flex: 1; height: 4px; background: #333; border-radius: 2px; cursor: pointer; position: relative; }
-#progress-fill { height: 100%; background: #aaa; border-radius: 2px; transition: width 0.1s linear; }
+#progress-track {
+  flex: 1; height: 4px; background: #333; border-radius: 2px;
+  cursor: pointer; position: relative; overflow: visible;
+}
+#progress-track, #exp-progress-track { transition: height 0.2s ease, transform 0.2s ease; }
+#progress-track:hover, #exp-progress-track:hover { height: 6px; transform: translateY(-1px); }
+#progress-track.seeking, #exp-progress-track.seeking { height: 6px; transform: translateY(-1px); }
+#progress-hover-fill, #exp-progress-hover-fill {
+  position: absolute; top: 0; left: 0; height: 100%;
+  background: rgba(255,255,255,0.15);
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+#progress-track:hover #progress-hover-fill,
+#exp-progress-track:hover #exp-progress-hover-fill { opacity: 1; }
+#progress-track.seeking #progress-hover-fill,
+#exp-progress-track.seeking #exp-progress-hover-fill { opacity: 1; background: rgba(255,255,255,0.2); }
+#progress-fill, #exp-progress-fill {
+  height: 100%; border-radius: inherit;
+  pointer-events: none;
+  transition: width 0.1s linear, background 0.15s ease;
+}
+#progress-fill { background: #aaa; }
+#exp-progress-fill { background: #ccc; }
 #progress-track:hover #progress-fill { background: #5b8def; }
+#exp-progress-track:hover #exp-progress-fill { background: #5b8def; }
+.seek-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  font-size: 11px;
+  font-family: Consolas, monospace;
+  padding: 3px 7px;
+  border-radius: 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  white-space: nowrap;
+  z-index: 20;
+}
+.seek-tooltip.visible { opacity: 1; }
+@keyframes seekPulse {
+  0% { box-shadow: 0 0 0 0 rgba(91,141,239,0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(91,141,239,0); }
+  100% { box-shadow: 0 0 0 0 rgba(91,141,239,0); }
+}
+#progress-track.seek-pulse, #exp-progress-track.seek-pulse {
+  animation: seekPulse 0.4s ease-out;
+}
 
 #player-bar-right { display: flex; align-items: center; gap: 6px; flex: 0 0 200px; justify-content: flex-end; }
 #volume-slider-wrap { display: flex; align-items: center; }
@@ -528,12 +578,14 @@ body { background: #121212; color: #e0e0e0; }
   border-radius: 3px;
   cursor: pointer;
   position: relative;
+  overflow: visible;
 }
 #exp-progress-fill {
   height: 100%;
   background: #ccc;
   border-radius: 3px;
-  transition: width 0.1s linear;
+  transition: width 0.1s linear, background 0.15s ease;
+  pointer-events: none;
 }
 #exp-progress-track:hover #exp-progress-fill {
   background: #5b8def;

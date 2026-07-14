@@ -2022,6 +2022,14 @@ namespace SongRequestDesktopV2Rewrite
             StopButton_Click(StopButton, new RoutedEventArgs(Button.ClickEvent));
         }
 
+        public void RemoteSeek(double normalizedPosition)
+        {
+            if (_currentReader == null) return;
+            double clamped = Math.Clamp(normalizedPosition, 0.0, 1.0);
+            _currentReader.CurrentTime = TimeSpan.FromSeconds(clamped * _currentReader.TotalTime.TotalSeconds);
+            ComputeQueueTimings();
+        }
+
         public void RemoteAdjustVolume(double delta)
         {
             if (!RemoteCanControlVolume) return;
