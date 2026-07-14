@@ -402,7 +402,7 @@
 
     // Thumbnail
     if (data.thumbnail) {
-      const imgHtml = `<img src="${data.thumbnail}" alt="artwork" style="width:100%;height:100%;object-fit:cover">`;
+      const imgHtml = `<img src="${data.thumbnail}" alt="artwork">`;
       // Collapsed
       colThumb.innerHTML = imgHtml;
       // Expanded
