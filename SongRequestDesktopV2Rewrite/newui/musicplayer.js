@@ -560,30 +560,17 @@
     lyricsContainer.style.setProperty('--lyric-prev', prev + 'px');
   }
 
-  const lyricsSyncControls = document.getElementById('lyrics-sync-controls');
-
   function renderLyricsLoading() {
-    lyricsContainer.innerHTML = '';
-    lyricsContainer.appendChild(lyricsSyncControls);
-    var loading = document.createElement('div');
-    loading.className = 'lyrics-loading';
-    loading.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div>';
-    lyricsContainer.appendChild(loading);
+    lyricsContainer.innerHTML = '<div class="lyrics-loading"><i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div></div>';
     if (lyricsProvider) lyricsProvider.textContent = '';
   }
 
   function renderNoLyrics() {
-    lyricsContainer.innerHTML = '';
-    lyricsContainer.appendChild(lyricsSyncControls);
-    var empty = document.createElement('div');
-    empty.className = 'lyrics-no-lyrics';
-    empty.innerHTML = '<i class="fas fa-music"></i><div>No lyrics available</div>';
-    lyricsContainer.appendChild(empty);
+    lyricsContainer.innerHTML = '<div class="lyrics-no-lyrics"><i class="fas fa-music"></i><div>No lyrics available</div></div>';
   }
 
   function renderLyrics(data) {
     lyricsContainer.innerHTML = '';
-    lyricsContainer.appendChild(lyricsSyncControls);
     syncedLyrics = [];
     plainLyricLines = [];
     hasSyncedLyrics = false;

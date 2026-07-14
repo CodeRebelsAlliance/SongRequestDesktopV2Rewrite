@@ -355,6 +355,13 @@ body { background: #121212; color: #e0e0e0; }
 }
 
 /* ── Middle: lyrics ── */
+#lyrics-wrapper {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
 #expanded-lyrics {
   flex: 1;
   overflow-y: auto;
@@ -369,29 +376,27 @@ body { background: #121212; color: #e0e0e0; }
   --lyric-base: 18px;
   --lyric-active: 30px;
   --lyric-prev: 22px;
-  position: relative;
 }
 #lyrics-sync-controls {
-  position: sticky;
+  position: absolute;
   bottom: 12px;
-  align-self: flex-end;
+  right: 16px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   background: rgba(30, 30, 30, 0.85);
   backdrop-filter: blur(8px);
   border: 1px solid #444;
   border-radius: 20px;
-  padding: 4px 10px;
-  margin-top: auto;
+  padding: 5px 8px;
   z-index: 10;
 }
 .sync-btn {
   background: transparent;
   color: #aaa;
   border: none;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -411,7 +416,7 @@ body { background: #121212; color: #e0e0e0; }
   font-size: 12px;
   font-family: Consolas, monospace;
   color: #999;
-  min-width: 48px;
+  min-width: 52px;
   text-align: center;
   transition: color 0.2s;
 }
