@@ -107,6 +107,16 @@ public class YoutubeFormInterop
                     SendResponse(id, new { success = true });
                     return;
                 }
+                case "toggleRepeat":
+                {
+                    _ytForm.Dispatcher.BeginInvoke(() =>
+                    {
+                        _ytForm.MusicPlayer?.RemoteToggleRepeat();
+                        bool repeatOn = _ytForm.MusicPlayer?.RemoteIsRepeatEnabled ?? false;
+                        SendResponse(id, new { success = true, repeat = repeatOn });
+                    });
+                    return;
+                }
                 case "clearQueue":
                     _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.ClearQueue(false));
                     SendResponse(id, new { success = true });

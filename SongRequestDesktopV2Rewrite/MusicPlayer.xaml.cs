@@ -41,6 +41,7 @@ namespace SongRequestDesktopV2Rewrite
         // flags
         private bool _isCrossfading = false;
         private bool _isUserAdjustingVolume = false; // Track if user is manually changing volume
+        private bool _repeatEnabled = false;
         private double _targetLoudness = -14.0; // Target loudness in LUFS
         private readonly SemaphoreSlim _announcementVolumeGate = new SemaphoreSlim(1, 1);
         private float _announcementOutputFactor = 1f;
@@ -1424,16 +1425,29 @@ namespace SongRequestDesktopV2Rewrite
 
         private void OutputDevice_PlaybackStopped(object? sender, StoppedEventArgs e)
         {
-            // If playback stopped unexpectedly and there is more in the queue, try to advance
             Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
             {
-                if (!_isCrossfading && Queue.Count > 1)
+                if (_repeatEnabled && Queue.Count > 0)
+                {
+                    // Restart the current song from the beginning
+                    try
+                    {
+                        var current = Queue[0];
+                        var reader = new AudioFileReader(current.songPath);
+                        StartPlaybackWithMixer(reader);
+                    }
+                    catch
+                    {
+                        StopPlayback();
+                        PlayPauseButton.Content = "▶";
+                    }
+                }
+                else if (!_isCrossfading && Queue.Count > 1)
                 {
                     _ = AdvanceToNextImmediate();
                 }
                 else
                 {
-                    // reflect stopped UI
                     PlayPauseButton.Content = "▶";
                 }
             }));
@@ -2035,6 +2049,13 @@ namespace SongRequestDesktopV2Rewrite
             if (!RemoteCanControlVolume) return;
             VolumeSlider.Value = Math.Clamp(VolumeSlider.Value + delta, VolumeSlider.Minimum, VolumeSlider.Maximum);
         }
+
+        public void RemoteToggleRepeat()
+        {
+            _repeatEnabled = !_repeatEnabled;
+        }
+
+        public bool RemoteIsRepeatEnabled => _repeatEnabled;
 
         public void RemoteSetVolumeFromMidi(double normalizedValue)
         {

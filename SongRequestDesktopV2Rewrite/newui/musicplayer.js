@@ -219,6 +219,26 @@
   wireCtrlBtn('btn-exp-shuffle', 'shuffleQueue');
   wireCtrlBtn('btn-exp-collapse', null); // handled by collapseBtn above
 
+  // --- Repeat toggle ---
+  let repeatEnabled = false;
+  const repeatBtns = [document.getElementById('btn-repeat'), document.getElementById('btn-exp-repeat')];
+
+  function setRepeatState(on) {
+    repeatEnabled = on;
+    repeatBtns.forEach(function(btn) {
+      if (!btn) return;
+      btn.classList.toggle('active', on);
+      btn.innerHTML = on ? '<i class="fas fa-redo"></i><span class="repeat-dot"></span>' : '<i class="fas fa-redo"></i>';
+    });
+  }
+
+  repeatBtns.forEach(function(btn) {
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+      hostSend('toggleRepeat');
+    });
+  });
+
   // --- Volume sync ---
   const volSliders = [
     document.getElementById('volume-slider'),
@@ -600,13 +620,18 @@
       const msg = JSON.parse(json);
       if (msg.type === 'event') {
         onEvent(msg.eventName, msg.data || {});
-      } else if (msg.type === 'response' && msg.volume != null) {
-        const v = Math.round(msg.volume * 100);
-        const c = Math.round((msg.crossfade || 4) * 10);
-        volSliders.forEach(sl => { if (sl) sl.value = v; });
-        cfSliders.forEach(sl => { if (sl) sl.value = c; });
-        const iconName = v == 0 ? 'fa-volume-mute' : 'fa-volume-up';
-        volIcons.forEach(ic => { if (ic) ic.className = `fas ${iconName}`; });
+      } else if (msg.type === 'response') {
+        if (msg.volume != null) {
+          const v = Math.round(msg.volume * 100);
+          const c = Math.round((msg.crossfade || 4) * 10);
+          volSliders.forEach(sl => { if (sl) sl.value = v; });
+          cfSliders.forEach(sl => { if (sl) sl.value = c; });
+          const iconName = v == 0 ? 'fa-volume-mute' : 'fa-volume-up';
+          volIcons.forEach(ic => { if (ic) ic.className = `fas ${iconName}`; });
+        }
+        if (msg.repeat != null) {
+          setRepeatState(msg.repeat);
+        }
       }
     } catch (_) {}
   }

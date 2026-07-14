@@ -297,10 +297,22 @@ body { background: #121212; color: #e0e0e0; }
   background: transparent; color: #aaa; border: none; font-size: 14px;
   cursor: pointer; padding: 6px; border-radius: 50%; transition: all 0.15s ease;
   width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  position: relative;
 }
 .player-ctrl-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
 .play-btn { background: #fff; color: #000; font-size: 16px; width: 36px; height: 36px; }
 .play-btn:hover { transform: scale(1.1); background: #eee; }
+.player-ctrl-btn.active { color: #5b8def; }
+.player-ctrl-btn.active:hover { color: #7da8f5; }
+.repeat-dot {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #5b8def;
+}
 
 #player-bar-progress { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 500px; }
 #progress-current, #progress-total { font-size: 11px; color: #888; font-family: Consolas, monospace; flex-shrink: 0; width: 36px; }
