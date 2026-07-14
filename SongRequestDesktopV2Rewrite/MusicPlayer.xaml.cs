@@ -499,13 +499,41 @@ namespace SongRequestDesktopV2Rewrite
                         // If remaining is less than or equal to crossfade seconds (start crossfade)
                         if (remaining <= cross && remaining > 0.15)
                         {
-                            // start crossfade to next
-                            _ = BeginCrossfadeToNext(Queue[1]);
+                            if (_repeatEnabled)
+                            {
+                                // Repeat: restart current song
+                                try
+                                {
+                                    var current = Queue[0];
+                                    var reader = new AudioFileReader(current.songPath);
+                                    StartPlaybackWithMixer(reader);
+                                }
+                                catch { StopPlayback(); }
+                            }
+                            else
+                            {
+                                // start crossfade to next
+                                _ = BeginCrossfadeToNext(Queue[1]);
+                            }
                         }
                         else if (remaining <= 0.15)
                         {
-                            // ended - fall back to immediate advance if not handled
-                            _ = AdvanceToNextImmediate();
+                            if (_repeatEnabled)
+                            {
+                                // Repeat: restart current song
+                                try
+                                {
+                                    var current = Queue[0];
+                                    var reader = new AudioFileReader(current.songPath);
+                                    StartPlaybackWithMixer(reader);
+                                }
+                                catch { StopPlayback(); }
+                            }
+                            else
+                            {
+                                // ended - fall back to immediate advance if not handled
+                                _ = AdvanceToNextImmediate();
+                            }
                         }
                     }
                     else if (Queue.Count == 1)
@@ -514,6 +542,19 @@ namespace SongRequestDesktopV2Rewrite
                         var remaining = remainingTime.TotalSeconds;
                         if (remaining <= 0.15)
                         {
+                            if (_repeatEnabled)
+                            {
+                                // Repeat: restart the only song
+                                try
+                                {
+                                    var current = Queue[0];
+                                    var reader = new AudioFileReader(current.songPath);
+                                    StartPlaybackWithMixer(reader);
+                                }
+                                catch { StopPlayback(); }
+                                return;
+                            }
+
                             // Last song ended - stop playback completely
                             StopPlayback();
                             PlayPauseButton.Content = "▶";
