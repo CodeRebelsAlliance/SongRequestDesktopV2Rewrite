@@ -98,6 +98,9 @@ namespace SongRequestDesktopV2Rewrite
         /// <summary>Path to the locally-cached thumbnail, if any.</summary>
         public string? ThumbnailPath { get; set; }
 
+        /// <summary>SHA-256 hash of the file contents. Used for deduplication.</summary>
+        public string FileHash { get; set; } = string.Empty;
+
         public long FileSizeBytes { get; set; }
         public int BitrateKbps { get; set; }
         public int SampleRateHz { get; set; }
@@ -119,6 +122,17 @@ namespace SongRequestDesktopV2Rewrite
         /// </summary>
         public DateTime LastVerifiedUtc { get; set; } = DateTime.UtcNow;
 
+        // ── Duplicate detection ───────────────────────────
+
+        /// <summary>
+        /// IDs of other library songs that share the same title+artist+duration.
+        /// Populated during scan. Empty = no metadata duplicates detected.
+        /// </summary>
+        public List<string> MetadataDuplicateIds { get; set; } = new();
+
+        /// <summary>True if this entry's hash collides with another (only one kept).</summary>
+        public bool IsHashDuplicate { get; set; }
+
         // ── Statistics ────────────────────────────────────
 
         public int PlayCount { get; set; }
@@ -132,6 +146,8 @@ namespace SongRequestDesktopV2Rewrite
         // ── Convenience ───────────────────────────────────
 
         [JsonIgnore] public bool IsMissing => FileStatus != FileStatus.Present;
+
+        [JsonIgnore] public bool HasMetadataDuplicates => MetadataDuplicateIds.Count > 0;
 
         [JsonIgnore] public string DurationDisplay => Duration.ToString(@"mm\:ss");
 

@@ -14,10 +14,12 @@ public class YoutubeFormInterop
 {
     private readonly YoutubeForm _ytForm;
     private readonly YoutubeService _ytService;
+    private readonly LibraryService _libraryService;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _pendingRequests = new();
 
     public Action<string>? SendMessage { get; set; }
     public YoutubeForm YtForm => _ytForm;
+    public LibraryService LibraryService => _libraryService;
 
     private string? _currentSongPath;
     private bool _musicPlayerSubscribed;
@@ -34,6 +36,7 @@ public class YoutubeFormInterop
     {
         _ytForm = ytForm;
         _ytService = ytService;
+        _libraryService = new LibraryService();
     }
 
     public async void HandleMessage(string json)
@@ -331,6 +334,45 @@ public class YoutubeFormInterop
                     result = await InstallUpdateAsync(msg).ConfigureAwait(false);
                     break;
 
+                // ── Library ──────────────────────────────
+                case "scanLibrary":
+                    result = await ScanLibraryAsync().ConfigureAwait(false);
+                    break;
+                case "cancelLibraryScan":
+                    _libraryService.CancelScan();
+                    result = new { success = true };
+                    break;
+                case "getLibraryStatus":
+                    result = GetLibraryStatus();
+                    break;
+                case "getLibrarySongs":
+                    result = GetLibrarySongs(msg);
+                    break;
+                case "searchLibrary":
+                    result = SearchLibrary(msg);
+                    break;
+                case "deleteLibrarySong":
+                    result = DeleteLibrarySong(msg);
+                    break;
+                case "updateLibrarySongMetadata":
+                    result = UpdateLibrarySongMetadata(msg);
+                    break;
+                case "addLibraryScanFolder":
+                    result = AddLibraryScanFolder(msg);
+                    break;
+                case "removeLibraryScanFolder":
+                    result = RemoveLibraryScanFolder(msg);
+                    break;
+                case "importToLibrary":
+                    result = ImportToLibrary(msg);
+                    break;
+                case "getLibraryStats":
+                    result = GetLibraryStats();
+                    break;
+                case "flagLibrarySongMissing":
+                    result = FlagLibrarySongMissing(msg);
+                    break;
+
                 default:
                     result = new { error = $"Unknown method: {method}" };
                     break;
@@ -555,6 +597,15 @@ public class YoutubeFormInterop
         {
             var downloadPath = YoutubeForm.downloadPath;
             var result = await _ytService.DownloadAndConvertVideoAsync(videoUrl, downloadPath).ConfigureAwait(false);
+
+            // Auto-add to library if enabled
+            if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true
+                && !string.IsNullOrEmpty(result) && File.Exists(result))
+            {
+                var youTubeId = YoutubeService.ExtractVideoId(videoUrl);
+                _libraryService.ImportDownloadedSong(result, youTubeId, videoUrl);
+            }
+
             return new { success = true, path = result };
         }
         catch (Exception ex)
@@ -1412,5 +1463,272 @@ public class YoutubeFormInterop
             }
             _musicPlayerSubscribed = false;
         }
+    }
+
+    // ──────────────────────────────────────────────────
+    //  Library interop methods
+    // ──────────────────────────────────────────────────
+
+    private async Task<object> ScanLibraryAsync()
+    {
+        _libraryService.SyncConfig();
+        var result = await _libraryService.ScanAsync().ConfigureAwait(false);
+        return new
+        {
+            success = true,
+            filesFound = result.FilesFound,
+            songsAdded = result.SongsAdded,
+            songsUpdated = result.SongsUpdated,
+            songsMissing = result.SongsMissing,
+            errorCount = result.Errors.Count,
+            errors = result.Errors.Take(20).ToList()
+        };
+    }
+
+    private object GetLibraryStatus()
+    {
+        var data = _libraryService.Data;
+        return new
+        {
+            totalSongs = data.Songs.Count,
+            totalMissing = data.Songs.Count(s => s.IsMissing),
+            totalHashDuplicates = data.Songs.Count(s => s.IsHashDuplicate),
+            totalMetadataDuplicates = data.Songs.Count(s => s.HasMetadataDuplicates),
+            lastScanUtc = data.LastScanUtc,
+            scanFolders = data.Config.ScanFolders,
+            extensions = data.Config.AllowedExtensions,
+            autoScanOnStartup = data.Config.AutoScanOnStartup,
+            autoAddDownloads = data.Config.AutoAddDownloadsToLibrary,
+            removeMissing = data.Config.RemoveMissingOnScan,
+            recommendationsEnabled = data.Config.AutoScanOnStartup
+        };
+    }
+
+    private object GetLibrarySongs(JObject msg)
+    {
+        var data = _libraryService.Data;
+        var page = msg["page"]?.ToObject<int>() ?? 1;
+        var pageSize = msg["pageSize"]?.ToObject<int>() ?? 50;
+        var sortBy = msg["sortBy"]?.ToString() ?? "dateAdded";
+        var desc = msg["descending"]?.ToObject<bool>() ?? true;
+        var filterMissing = msg["filterMissing"]?.ToObject<bool>() ?? false;
+        var filterDuplicates = msg["filterDuplicates"]?.ToString() ?? "all"; // all, hash, metadata, none
+
+        IEnumerable<LibrarySong> query = data.Songs;
+
+        if (filterMissing)
+            query = query.Where(s => !s.IsMissing);
+
+        query = filterDuplicates switch
+        {
+            "hash" => query.Where(s => s.IsHashDuplicate),
+            "metadata" => query.Where(s => s.HasMetadataDuplicates),
+            "none" => query.Where(s => !s.IsHashDuplicate && !s.HasMetadataDuplicates),
+            _ => query
+        };
+
+        query = sortBy.ToLowerInvariant() switch
+        {
+            "title" => desc ? query.OrderByDescending(s => s.Title) : query.OrderBy(s => s.Title),
+            "artist" => desc ? query.OrderByDescending(s => s.Artist) : query.OrderBy(s => s.Artist),
+            "album" => desc ? query.OrderByDescending(s => s.Album) : query.OrderBy(s => s.Album),
+            "duration" => desc ? query.OrderByDescending(s => s.Duration) : query.OrderBy(s => s.Duration),
+            "playcount" => desc ? query.OrderByDescending(s => s.PlayCount) : query.OrderBy(s => s.PlayCount),
+            "filesize" => desc ? query.OrderByDescending(s => s.FileSizeBytes) : query.OrderBy(s => s.FileSizeBytes),
+            _ => desc ? query.OrderByDescending(s => s.DateAddedUtc) : query.OrderBy(s => s.DateAddedUtc)
+        };
+
+        var total = query.Count();
+        var songs = query.Skip((page - 1) * pageSize).Take(pageSize).Select(s => new
+        {
+            id = s.Id,
+            title = s.Title,
+            artist = s.Artist,
+            album = s.Album,
+            genre = s.Genre,
+            duration = s.Duration.TotalSeconds,
+            durationDisplay = s.DurationDisplay,
+            filePath = s.FilePath,
+            source = s.Source.ToString(),
+            fileStatus = s.FileStatus.ToString(),
+            isMissing = s.IsMissing,
+            isHashDuplicate = s.IsHashDuplicate,
+            hasMetadataDuplicates = s.HasMetadataDuplicates,
+            metadataDuplicateCount = s.MetadataDuplicateIds.Count,
+            playCount = s.PlayCount,
+            dateAdded = s.DateAddedUtc,
+            lastPlayed = s.LastPlayedUtc,
+            fileSizeBytes = s.FileSizeBytes,
+            bitrateKbps = s.BitrateKbps,
+            youTubeId = s.YouTubeId
+        }).ToList();
+
+        return new { total, page, pageSize, songs };
+    }
+
+    private object SearchLibrary(JObject msg)
+    {
+        var query = msg["query"]?.ToString() ?? "";
+        var maxResults = msg["maxResults"]?.ToObject<int>() ?? 50;
+        var results = _libraryService.Data.Search(query, maxResults);
+        return new
+        {
+            results = results.Select(s => new
+            {
+                id = s.Id,
+                title = s.Title,
+                artist = s.Artist,
+                album = s.Album,
+                duration = s.Duration.TotalSeconds,
+                durationDisplay = s.DurationDisplay,
+                source = s.Source.ToString(),
+                isMissing = s.IsMissing,
+                playCount = s.PlayCount
+            }).ToList(),
+            total = results.Count
+        };
+    }
+
+    private object DeleteLibrarySong(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrEmpty(songId)) return new { error = "No songId" };
+
+        lock (_libraryService.Data)
+        {
+            var song = _libraryService.Data.FindSong(songId);
+            if (song == null) return new { error = "Song not found" };
+            _libraryService.Data.Songs.Remove(song);
+        }
+
+        _libraryService.Save();
+        return new { success = true };
+    }
+
+    private object UpdateLibrarySongMetadata(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrEmpty(songId)) return new { error = "No songId" };
+
+        lock (_libraryService.Data)
+        {
+            var song = _libraryService.Data.FindSong(songId);
+            if (song == null) return new { error = "Song not found" };
+
+            if (msg.TryGetValue("title", out var t)) song.Title = t.ToString();
+            if (msg.TryGetValue("artist", out var a)) song.Artist = a.ToString();
+            if (msg.TryGetValue("album", out var al)) song.Album = al.ToString();
+            if (msg.TryGetValue("genre", out var g)) song.Genre = g.ToString();
+            if (msg.TryGetValue("tags", out var tags)) song.Tags = tags.ToObject<System.Collections.Generic.List<string>>() ?? new();
+            song.LastModifiedUtc = DateTime.UtcNow;
+        }
+
+        _libraryService.Save();
+        return new { success = true };
+    }
+
+    private object AddLibraryScanFolder(JObject msg)
+    {
+        var folder = msg["folder"]?.ToString();
+        if (string.IsNullOrWhiteSpace(folder)) return new { error = "No folder path" };
+
+        lock (_libraryService.Data)
+        {
+            if (!_libraryService.Data.Config.ScanFolders.Contains(folder))
+                _libraryService.Data.Config.ScanFolders.Add(folder);
+        }
+
+        // Also persist to main config
+        ConfigService.Instance.Update(cfg =>
+        {
+            cfg.LibraryScanFolders = new System.Collections.Generic.List<string>(_libraryService.Data.Config.ScanFolders);
+        });
+
+        _libraryService.Save();
+        return new { success = true, scanFolders = _libraryService.Data.Config.ScanFolders };
+    }
+
+    private object RemoveLibraryScanFolder(JObject msg)
+    {
+        var folder = msg["folder"]?.ToString();
+        if (string.IsNullOrEmpty(folder)) return new { error = "No folder path" };
+
+        lock (_libraryService.Data)
+        {
+            _libraryService.Data.Config.ScanFolders.Remove(folder);
+        }
+
+        ConfigService.Instance.Update(cfg =>
+        {
+            cfg.LibraryScanFolders = new System.Collections.Generic.List<string>(_libraryService.Data.Config.ScanFolders);
+        });
+
+        _libraryService.Save();
+        return new { success = true, scanFolders = _libraryService.Data.Config.ScanFolders };
+    }
+
+    private object ImportToLibrary(JObject msg)
+    {
+        var filePath = msg["filePath"]?.ToString();
+        var youTubeId = msg["youTubeId"]?.ToString();
+        var videoUrl = msg["videoUrl"]?.ToString();
+        var title = msg["title"]?.ToString();
+        var artist = msg["artist"]?.ToString();
+
+        if (string.IsNullOrEmpty(filePath)) return new { error = "No filePath" };
+
+        var song = _libraryService.ImportDownloadedSong(filePath, youTubeId, videoUrl, title, artist);
+        if (song == null) return new { success = false, reason = "Hash duplicate — file already in library" };
+
+        return new
+        {
+            success = true,
+            song = new
+            {
+                id = song.Id,
+                title = song.Title,
+                artist = song.Artist,
+                hasMetadataDuplicates = song.HasMetadataDuplicates,
+                metadataDuplicateCount = song.MetadataDuplicateIds.Count
+            }
+        };
+    }
+
+    private object GetLibraryStats()
+    {
+        var data = _libraryService.Data;
+        return new
+        {
+            totalSongs = data.Songs.Count,
+            presentSongs = data.Songs.Count(s => !s.IsMissing),
+            missingSongs = data.Songs.Count(s => s.IsMissing),
+            hashDuplicates = data.Songs.Count(s => s.IsHashDuplicate),
+            metadataDuplicates = data.Songs.Count(s => s.HasMetadataDuplicates),
+            bySource = new
+            {
+                local = data.Songs.Count(s => s.Source == SongSource.Local),
+                downloaded = data.Songs.Count(s => s.Source == SongSource.Downloaded),
+                external = data.Songs.Count(s => s.Source == SongSource.External)
+            },
+            totalPlayCount = data.Songs.Sum(s => s.PlayCount),
+            lastScanUtc = data.LastScanUtc,
+            scanFolders = data.Config.ScanFolders.Count
+        };
+    }
+
+    private object FlagLibrarySongMissing(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrEmpty(songId)) return new { error = "No songId" };
+
+        lock (_libraryService.Data)
+        {
+            var song = _libraryService.Data.FindSong(songId);
+            if (song == null) return new { error = "Song not found" };
+            song.FileStatus = FileStatus.Missing;
+        }
+
+        _libraryService.Save();
+        return new { success = true };
     }
 }
