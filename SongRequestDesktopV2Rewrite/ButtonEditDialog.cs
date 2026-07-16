@@ -72,7 +72,7 @@ namespace SongRequestDesktopV2Rewrite
             _soundFileTextBox.Text = Path.GetFileName(SoundFilePath);
             _fadeInCheckBox.IsChecked = FadeIn;
             _fadeOutCheckBox.IsChecked = FadeOut;
-            _volumeSlider.Value = ButtonVolume * 100;
+            _volumeSlider.Value = ButtonVolume * 300;
             _volumeLabel.Text = $"{(int)_volumeSlider.Value}%";
 
             InitializeAudioDevices();
@@ -335,7 +335,7 @@ namespace SongRequestDesktopV2Rewrite
             ButtonIcon = _iconTextBox.Text;
             FadeIn = _fadeInCheckBox.IsChecked ?? false;
             FadeOut = _fadeOutCheckBox.IsChecked ?? false;
-            ButtonVolume = (float)(_volumeSlider.Value / 100.0);
+            ButtonVolume = (float)(_volumeSlider.Value / 300.0);
 
             if (_repeatModeCombo.SelectedItem is ComboBoxItem selectedItem)
             {
@@ -369,7 +369,7 @@ namespace SongRequestDesktopV2Rewrite
             if (_volumeLabel != null)
             {
                 _volumeLabel.Text = $"{(int)e.NewValue}%";
-                ButtonVolume = (float)(e.NewValue / 100.0);
+                ButtonVolume = (float)(e.NewValue / 300.0);
             }
         }
     }

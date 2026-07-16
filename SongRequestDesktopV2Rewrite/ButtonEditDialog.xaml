@@ -171,7 +171,7 @@
             <StackPanel Orientation="Horizontal">
                 <Slider x:Name="_volumeSlider"
                         Minimum="0"
-                        Maximum="100"
+                        Maximum="300"
                         Width="700"
                         TickFrequency="10"
                         IsSnapToTickEnabled="False"
