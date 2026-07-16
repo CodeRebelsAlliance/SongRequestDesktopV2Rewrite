@@ -888,7 +888,8 @@ public class YoutubeFormInterop
             useCaptionLyricsFallback = cfg.UseCaptionLyricsFallback,
             enableAnnouncements = cfg.EnableAnnouncements,
             bearerToken = cfg.BearerToken ?? "",
-            defaultSorting = cfg.DefaultSorting ?? ""
+            defaultSorting = cfg.DefaultSorting ?? "",
+            defaultSubmitMethod = cfg.DefaultSubmitMethod ?? "search"
         };
     }
 
@@ -945,6 +946,11 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("enableAnnouncements", out var ea)) cfg.EnableAnnouncements = ea.ToObject<bool>();
                 if (settings.TryGetValue("bearerToken", out var bt)) cfg.BearerToken = bt.ToString();
                 if (settings.TryGetValue("defaultSorting", out var ds)) cfg.DefaultSorting = ds.ToString();
+                if (settings.TryGetValue("defaultSubmitMethod", out var dsm))
+                {
+                    var val = dsm.ToString();
+                    if (val == "url" || val == "search") cfg.DefaultSubmitMethod = val;
+                }
 
                 if (settings.TryGetValue("normalizeVolume", out var nv2) && !nv2.ToObject<bool>())
                 {

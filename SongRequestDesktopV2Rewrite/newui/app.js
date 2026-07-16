@@ -254,6 +254,10 @@
       document.getElementById('s-request-url').value = cfg.requestUrl ?? '';
       document.getElementById('s-token').value = cfg.bearerToken ?? '';
 
+      const dsm = cfg.defaultSubmitMethod ?? 'search';
+      document.getElementById('s-default-submit-method').value = dsm;
+      _defaultSubmitMethod = dsm;
+
       const si = await send('getSendinStatus');
       document.getElementById('s-sendin-allowed').checked = si.sendinAllowed ?? false;
 
@@ -285,7 +289,8 @@
         autoEnqueue: document.getElementById('s-autopilot').checked,
         address: document.getElementById('s-address').value,
         requestUrl: document.getElementById('s-request-url').value,
-        bearerToken: document.getElementById('s-token').value
+        bearerToken: document.getElementById('s-token').value,
+        defaultSubmitMethod: document.getElementById('s-default-submit-method').value || 'search'
       };
       const r = await send('saveSettings', { settings });
       if (r.success) {       statusEl.textContent = 'Saved successfully.'; toast('Settings saved', 'success'); loadData(); hideSettings(); }
@@ -401,10 +406,12 @@
 
   // Submit Song modal
   const submitOverlay = document.getElementById('modal-overlay');
+  let _defaultSubmitMethod = 'search';
   document.getElementById('btn-submit').addEventListener('click', () => {
     submitOverlay.style.display = 'flex';
-    switchSubmitMode('url');
-    document.getElementById('submit-url').focus();
+    switchSubmitMode(_defaultSubmitMethod);
+    if (_defaultSubmitMethod === 'url') document.getElementById('submit-url').focus();
+    else document.getElementById('submit-search-input').focus();
   });
   submitOverlay.querySelector('.modal-close').addEventListener('click', () => {
     submitOverlay.style.display = 'none';
