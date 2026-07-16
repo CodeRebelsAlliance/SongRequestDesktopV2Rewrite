@@ -361,7 +361,7 @@
                     <Slider x:Name="MasterVolumeSlider" 
                             Width="150" 
                             Minimum="0" 
-                            Maximum="100" 
+                            Maximum="300" 
                             Value="100"
                             VerticalAlignment="Center"
                             ValueChanged="MasterVolumeSlider_ValueChanged"/>

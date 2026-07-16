@@ -94,7 +94,7 @@ namespace SongRequestDesktopV2Rewrite
         public bool FadeOut { get; set; }
         public string RepeatMode { get; set; } // "none", "loop", "repeat-n"
         public bool IsEnabled { get; set; }
-        public float Volume { get; set; } // 0.0 to 1.0
+        public float Volume { get; set; } // 0.0 to 3.0
         public int? CustomOutputDeviceNumber { get; set; } // null = use global output device
         public KeyboardShortcutConfig? KeyboardShortcut { get; set; }
         public MidiMapping? MidiMapping { get; set; } // MIDI controller mapping
@@ -111,7 +111,7 @@ namespace SongRequestDesktopV2Rewrite
             FadeOut = false;
             RepeatMode = "none";
             IsEnabled = false;
-            Volume = 1.0f; // Default 100%
+            Volume = 1.0f; // Default 100% (range 0-300%)
             CustomOutputDeviceNumber = null;
             KeyboardShortcut = null;
             MidiMapping = null;
@@ -157,7 +157,7 @@ namespace SongRequestDesktopV2Rewrite
     {
         public List<SoundboardPage> Pages { get; set; }
         public int CurrentPageIndex { get; set; }
-        public float MasterVolume { get; set; } // 0.0 to 1.0
+        public float MasterVolume { get; set; } // 0.0 to 3.0
         public int OutputDeviceNumber { get; set; } // -1 for default device
         public GlobalKeyboardShortcuts KeyboardShortcuts { get; set; }
 
@@ -177,7 +177,7 @@ namespace SongRequestDesktopV2Rewrite
         {
             Pages = new List<SoundboardPage>();
             CurrentPageIndex = 0;
-            MasterVolume = 1.0f; // Default 100%
+            MasterVolume = 1.0f; // Default 100% (range 0-300%)
             OutputDeviceNumber = -1; // Default device
             KeyboardShortcuts = new GlobalKeyboardShortcuts();
             MidiEnabled = false;

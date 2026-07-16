@@ -207,7 +207,7 @@ namespace SongRequestDesktopV2Rewrite
 
         private void InitializeMasterVolume()
         {
-            MasterVolumeSlider.Value = _config.MasterVolume * 100;
+            MasterVolumeSlider.Value = _config.MasterVolume * 300;
             MasterVolumeLabel.Text = $"{(int)MasterVolumeSlider.Value}%";
         }
 
@@ -553,7 +553,7 @@ namespace SongRequestDesktopV2Rewrite
                 float masterVolume = _config.MasterVolume;
                 float finalVolume = buttonVolume * masterVolume;
 
-                playback.AudioFile.Volume = Math.Clamp(finalVolume, 0f, 1f);
+                playback.AudioFile.Volume = Math.Clamp(finalVolume, 0f, 3f);
 
                 System.Diagnostics.Debug.WriteLine($"🔊 Volume applied: Button={buttonVolume:P0}, Master={masterVolume:P0}, Final={finalVolume:P0}");
             }
@@ -1421,7 +1421,7 @@ namespace SongRequestDesktopV2Rewrite
         {
             if (_config == null) return;
 
-            _config.MasterVolume = (float)(e.NewValue / 100.0);
+            _config.MasterVolume = (float)(e.NewValue / 300.0);
             MasterVolumeLabel.Text = $"{(int)e.NewValue}%";
 
             // Apply volume to all active playbacks
