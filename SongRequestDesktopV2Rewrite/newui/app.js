@@ -270,6 +270,15 @@
         document.getElementById('r-midi-output').value = 'Device ' + (rc.midiOutputDevice ?? 0);
       }
       document.getElementById('volume-pill').style.display = cfg.normalizeVolume ? 'inline-flex' : 'none';
+
+      // Library settings
+      _libraryScanFolders = cfg.libraryScanFolders || [];
+      renderLibraryFolders();
+      document.getElementById('s-library-extensions').value = (cfg.libraryAllowedExtensions || ['mp3','m4a','wav','flac','ogg','aac','wma','opus']).join(', ');
+      document.getElementById('s-library-auto-scan').checked = cfg.libraryAutoScanOnStartup ?? false;
+      document.getElementById('s-library-auto-add-downloads').checked = cfg.libraryAutoAddDownloads ?? true;
+      document.getElementById('s-library-remove-missing').checked = cfg.libraryRemoveMissingOnScan ?? false;
+      document.getElementById('s-library-recommendations').checked = cfg.libraryRecommendationsEnabled ?? true;
       statusEl.textContent = 'Loaded.'; loadData();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
   }
@@ -290,7 +299,13 @@
         address: document.getElementById('s-address').value,
         requestUrl: document.getElementById('s-request-url').value,
         bearerToken: document.getElementById('s-token').value,
-        defaultSubmitMethod: document.getElementById('s-default-submit-method').value || 'search'
+        defaultSubmitMethod: document.getElementById('s-default-submit-method').value || 'search',
+        libraryScanFolders: _libraryScanFolders,
+        libraryAllowedExtensions: document.getElementById('s-library-extensions').value.split(',').map(function(e){return e.trim()}).filter(function(e){return e}),
+        libraryAutoScanOnStartup: document.getElementById('s-library-auto-scan').checked,
+        libraryAutoAddDownloads: document.getElementById('s-library-auto-add-downloads').checked,
+        libraryRemoveMissingOnScan: document.getElementById('s-library-remove-missing').checked,
+        libraryRecommendationsEnabled: document.getElementById('s-library-recommendations').checked
       };
       const r = await send('saveSettings', { settings });
       if (r.success) {       statusEl.textContent = 'Saved successfully.'; toast('Settings saved', 'success'); loadData(); hideSettings(); }
@@ -403,6 +418,48 @@
   document.querySelectorAll('.sort-select').forEach(el => {
     el.addEventListener('change', () => renderSongList(el.dataset.list));
   });
+
+  // Library scan folders
+  let _libraryScanFolders = [];
+
+  function renderLibraryFolders() {
+    var container = document.getElementById('s-library-folders-list');
+    if (!_libraryScanFolders.length) {
+      container.innerHTML = '<div class="settings-folder-empty">No scan folders configured.</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < _libraryScanFolders.length; i++) {
+      html += '<div class="settings-folder-item"><span class="folder-path">' + escapeHtml(_libraryScanFolders[i]) + '</span><button class="folder-remove" data-index="' + i + '" title="Remove folder"><i class="fas fa-times"></i></button></div>';
+    }
+    container.innerHTML = html;
+    container.querySelectorAll('.folder-remove').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        _libraryScanFolders.splice(parseInt(this.dataset.index), 1);
+        renderLibraryFolders();
+      });
+    });
+  }
+
+  document.getElementById('s-library-folder-add').addEventListener('click', function() {
+    var input = document.getElementById('s-library-folder-input');
+    var val = input.value.trim();
+    if (!val) return;
+    if (_libraryScanFolders.indexOf(val) !== -1) return;
+    _libraryScanFolders.push(val);
+    input.value = '';
+    renderLibraryFolders();
+  });
+
+  document.getElementById('s-library-folder-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('s-library-folder-add').click();
+  });
+
+  function escapeHtml(str) {
+    var d = document.createElement('div');
+    d.appendChild(document.createTextNode(str));
+    return d.innerHTML;
+  }
 
   // Submit Song modal
   const submitOverlay = document.getElementById('modal-overlay');

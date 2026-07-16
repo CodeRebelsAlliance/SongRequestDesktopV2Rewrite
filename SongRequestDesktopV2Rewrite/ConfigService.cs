@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using Newtonsoft.Json;
+using System.Linq;
 
 namespace SongRequestDesktopV2Rewrite
 {
@@ -28,6 +29,12 @@ namespace SongRequestDesktopV2Rewrite
         private bool _announcementPlaySound = true;
         private bool _announcementPushToTalk = true;
         private RemoteControlConfiguration _remoteControl = new RemoteControlConfiguration();
+        private List<string> _libraryScanFolders = new List<string>();
+        private List<string> _libraryAllowedExtensions = new List<string> { "mp3", "m4a", "wav", "flac", "ogg", "aac", "wma", "opus" };
+        private bool _libraryAutoScanOnStartup = false;
+        private bool _libraryAutoAddDownloads = true;
+        private bool _libraryRemoveMissingOnScan = false;
+        private bool _libraryRecommendationsEnabled = true;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -143,6 +150,42 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _remoteControl;
             set => SetField(ref _remoteControl, RemoteControlConfiguration.Ensure(value));
+        }
+
+        public List<string> LibraryScanFolders
+        {
+            get => _libraryScanFolders;
+            set => SetField(ref _libraryScanFolders, value ?? new List<string>());
+        }
+
+        public List<string> LibraryAllowedExtensions
+        {
+            get => _libraryAllowedExtensions;
+            set => SetField(ref _libraryAllowedExtensions, value ?? new List<string> { "mp3", "m4a", "wav", "flac", "ogg", "aac", "wma", "opus" });
+        }
+
+        public bool LibraryAutoScanOnStartup
+        {
+            get => _libraryAutoScanOnStartup;
+            set => SetField(ref _libraryAutoScanOnStartup, value);
+        }
+
+        public bool LibraryAutoAddDownloads
+        {
+            get => _libraryAutoAddDownloads;
+            set => SetField(ref _libraryAutoAddDownloads, value);
+        }
+
+        public bool LibraryRemoveMissingOnScan
+        {
+            get => _libraryRemoveMissingOnScan;
+            set => SetField(ref _libraryRemoveMissingOnScan, value);
+        }
+
+        public bool LibraryRecommendationsEnabled
+        {
+            get => _libraryRecommendationsEnabled;
+            set => SetField(ref _libraryRecommendationsEnabled, value);
         }
 
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

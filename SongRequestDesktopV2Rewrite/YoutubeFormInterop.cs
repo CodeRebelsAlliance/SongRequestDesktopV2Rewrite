@@ -889,7 +889,13 @@ public class YoutubeFormInterop
             enableAnnouncements = cfg.EnableAnnouncements,
             bearerToken = cfg.BearerToken ?? "",
             defaultSorting = cfg.DefaultSorting ?? "",
-            defaultSubmitMethod = cfg.DefaultSubmitMethod ?? "search"
+            defaultSubmitMethod = cfg.DefaultSubmitMethod ?? "search",
+            libraryScanFolders = cfg.LibraryScanFolders ?? new List<string>(),
+            libraryAllowedExtensions = cfg.LibraryAllowedExtensions ?? new List<string>(),
+            libraryAutoScanOnStartup = cfg.LibraryAutoScanOnStartup,
+            libraryAutoAddDownloads = cfg.LibraryAutoAddDownloads,
+            libraryRemoveMissingOnScan = cfg.LibraryRemoveMissingOnScan,
+            libraryRecommendationsEnabled = cfg.LibraryRecommendationsEnabled
         };
     }
 
@@ -951,6 +957,18 @@ public class YoutubeFormInterop
                     var val = dsm.ToString();
                     if (val == "url" || val == "search") cfg.DefaultSubmitMethod = val;
                 }
+                if (settings.TryGetValue("libraryScanFolders", out var lsf))
+                {
+                    cfg.LibraryScanFolders = lsf.ToObject<List<string>>() ?? new List<string>();
+                }
+                if (settings.TryGetValue("libraryAllowedExtensions", out var lae))
+                {
+                    cfg.LibraryAllowedExtensions = lae.ToObject<List<string>>() ?? new List<string> { "mp3", "m4a", "wav", "flac", "ogg", "aac", "wma", "opus" };
+                }
+                if (settings.TryGetValue("libraryAutoScanOnStartup", out var las)) cfg.LibraryAutoScanOnStartup = las.ToObject<bool>();
+                if (settings.TryGetValue("libraryAutoAddDownloads", out var lad)) cfg.LibraryAutoAddDownloads = lad.ToObject<bool>();
+                if (settings.TryGetValue("libraryRemoveMissingOnScan", out var lrm)) cfg.LibraryRemoveMissingOnScan = lrm.ToObject<bool>();
+                if (settings.TryGetValue("libraryRecommendationsEnabled", out var lre)) cfg.LibraryRecommendationsEnabled = lre.ToObject<bool>();
 
                 if (settings.TryGetValue("normalizeVolume", out var nv2) && !nv2.ToObject<bool>())
                 {

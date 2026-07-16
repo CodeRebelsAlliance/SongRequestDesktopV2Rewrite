@@ -261,6 +261,7 @@
         <button class="settings-tab active" data-tab="general">General</button>
         <button class="settings-tab" data-tab="security">Security &amp; Server</button>
         <button class="settings-tab" data-tab="remote">Remote Control</button>
+        <button class="settings-tab" data-tab="library">Library</button>
       </div>
       <div id="settings-content" style="flex:1;overflow-y:auto;min-height:0">
         <div id="settings-general" class="settings-panel active">
@@ -369,6 +370,41 @@
           <div class="settings-card" style="text-align:center">
             <p style="color:#888;font-size:12px;margin-bottom:8px">Assign and clear keybindings and MIDI mappings are managed in the legacy settings window.</p>
             <button class="top-btn" id="r-open-legacy" style="font-size:12px"><i class="fas fa-external-link-alt"></i> Open Legacy Settings</button>
+          </div>
+        </div>
+        <div id="settings-library" class="settings-panel">
+          <div class="settings-card">
+            <div class="settings-card-title">Scan Folders</div>
+            <div class="settings-hint">Folders that are scanned for local audio files to build your library.</div>
+            <div id="s-library-folders-list" class="settings-folder-list"></div>
+            <div style="display:flex;gap:6px;margin-top:8px">
+              <input type="text" id="s-library-folder-input" class="settings-input" style="flex:1" placeholder="C:\Music or /home/user/Music" />
+              <button id="s-library-folder-add" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-plus"></i> Add</button>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">File Types</div>
+            <div class="settings-hint">Which audio file extensions to include when scanning. Comma-separated.</div>
+            <div class="settings-field">
+              <label>Allowed Extensions</label>
+              <input type="text" id="s-library-extensions" class="settings-input" />
+              <div class="settings-hint">Example: mp3, m4a, wav, flac, ogg, aac</div>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Behaviour</div>
+            <div class="settings-hint">Control how the library manages songs and handles missing files.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-library-auto-scan" /> Scan folders automatically on app startup</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-library-auto-add-downloads" /> Add downloaded songs to library automatically</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-library-remove-missing" /> Remove missing files during scan (keep unchecked to flag them instead)</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-library-recommendations" /> Enable recommendation engine</label>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Library Status</div>
+            <div class="settings-hint">Current state of your library. Trigger a scan manually from the Library view.</div>
+            <div id="s-library-stats" class="settings-hint" style="color:#aaa;font-size:13px;margin-bottom:6px">
+              No library loaded yet.
+            </div>
           </div>
         </div>
       </div>
