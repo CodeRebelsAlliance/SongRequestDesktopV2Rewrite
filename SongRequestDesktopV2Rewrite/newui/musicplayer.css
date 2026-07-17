@@ -977,3 +977,308 @@ body { background: #121212; color: #e0e0e0; }
 @media (max-width: 680px) {
   #player-bar-quality { display: none !important; }
 }
+
+/* =====================================================
+   Search results view
+   ===================================================== */
+#view-search { gap: 0; }
+#view-search .view-header { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+#search-external-bar {
+  padding: 0 0 12px;
+  flex-shrink: 0;
+}
+#search-results-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+#search-no-results { flex-shrink: 0; }
+
+/* =====================================================
+   Modal overlay + Music Share
+   ===================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease;
+}
+.modal-panel {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  max-width: 700px;
+  width: 92%;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+.modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal-title i { color: #4fc3f7; }
+.modal-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.modal-close:hover { background: #333; color: #fff; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+
+/* Share modal layout */
+.share-modal-body {
+  display: flex;
+  gap: 20px;
+}
+.share-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.share-divider {
+  width: 1px;
+  background: #333;
+  flex-shrink: 0;
+}
+.share-col-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ccc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.share-col-title i { color: #4fc3f7; font-size: 15px; }
+
+/* Share ID display */
+.share-id-display {
+  background: #161616;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+}
+.share-id-label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.share-id-text {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 32px;
+  font-weight: 700;
+  color: #4fc3f7;
+  letter-spacing: 0.2em;
+}
+
+/* Status box */
+.share-status-box {
+  background: #161616;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.share-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.share-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+  transition: background 0.3s ease;
+}
+.share-status-dot.status-idle { background: #555; }
+.share-status-dot.status-connecting { background: #eab308; animation: pulse 1s infinite; }
+.share-status-dot.status-connected { background: #4ade80; }
+.share-status-dot.status-streaming { background: #4fc3f7; animation: pulse 1.5s infinite; }
+.share-status-dot.status-buffering { background: #eab308; animation: pulse 0.8s infinite; }
+.share-status-dot.status-error { background: #ef4444; }
+.share-status-dot.status-disconnected { background: #555; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.share-status-text {
+  font-size: 13px;
+  color: #ccc;
+}
+.share-stats-text {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+
+/* Toggle */
+.share-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #aaa;
+  user-select: none;
+}
+.share-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #4fc3f7;
+  cursor: pointer;
+}
+.share-toggle-label { color: #ccc; }
+
+/* Buttons */
+.share-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.share-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.share-btn-accent {
+  background: #1a5a1a;
+  color: #4f4;
+  border: 1px solid #2a5a2a;
+}
+.share-btn-accent:hover:not(:disabled) {
+  background: #2a5a2a;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.share-btn-danger {
+  background: #5a1a1a;
+  color: #f66;
+  border: 1px solid #5a2a2a;
+}
+.share-btn-danger:hover:not(:disabled) {
+  background: #5a2a2a;
+  transform: translateY(-1px);
+}
+
+/* Code input */
+.share-input-group {
+  display: flex;
+  gap: 0;
+}
+.share-code-input {
+  background: #161616;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 12px 16px;
+  color: #4fc3f7;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-align: center;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+.share-code-input:focus { border-color: #4fc3f7; }
+.share-code-input::placeholder { color: #444; }
+
+/* Received metadata */
+.share-received-metadata {
+  background: #161616;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.share-receive-thumb {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  background: #2a2a2a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: #555;
+  overflow: hidden;
+}
+.share-receive-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.share-receive-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-receive-artist {
+  font-size: 12px;
+  color: #888;
+  text-align: center;
+}
+.share-receive-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 11px;
+  color: #888;
+}
+.share-progress-track {
+  flex: 1;
+  height: 3px;
+  background: #333;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.share-progress-fill {
+  height: 100%;
+  background: #4fc3f7;
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.5s linear;
+}
+
+@media (max-width: 560px) {
+  .share-modal-body { flex-direction: column; }
+  .share-divider { width: 100%; height: 1px; }
+}

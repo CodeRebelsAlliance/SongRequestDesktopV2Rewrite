@@ -22,6 +22,7 @@
       </div>
     </div>
     <div id="top-actions">
+      <button id="btn-share" class="top-btn"><i class="fas fa-share-alt"></i> Share</button>
       <button id="btn-settings" class="top-btn"><i class="fas fa-cog"></i> Settings</button>
     </div>
   </div>
@@ -33,6 +34,7 @@
         <button class="sidebar-tab active" data-view="home"><i class="fas fa-home"></i> Home</button>
         <button class="sidebar-tab" data-view="playlists"><i class="fas fa-list"></i> Playlists</button>
         <button class="sidebar-tab" data-view="library"><i class="fas fa-compact-disc"></i> Library</button>
+        <button class="sidebar-tab" data-view="search" id="sidebar-tab-search" style="display:none"><i class="fas fa-search"></i> Search</button>
       </div>
       <div id="playlist-list">
         <div class="playlist-section-title">Your Playlists</div>
@@ -101,6 +103,17 @@
           <div id="library-end" class="library-loading" style="display:none"><i class="fas fa-compact-disc"></i><span>No more songs</span></div>
           <div id="library-empty" class="library-empty" style="display:none"><i class="fas fa-compact-disc"></i><p>Your library is empty. Add songs to get started.</p></div>
         </div>
+      </div>
+      <div id="view-search" class="view">
+        <div class="view-header">
+          <span id="search-results-title">Search Results</span>
+          <span id="search-results-count" class="library-count"></span>
+        </div>
+        <div id="search-external-bar">
+          <button id="btn-external-search" class="top-btn"><i class="fab fa-youtube"></i> Search YouTube</button>
+        </div>
+        <div id="search-results-list"></div>
+        <div id="search-no-results" class="library-empty" style="display:none"><i class="fas fa-search"></i><p>No results found.</p></div>
       </div>
     </div>
 
@@ -231,6 +244,68 @@
     <button class="context-menu-item" data-action="play"><i class="fas fa-play"></i> Play</button>
     <button class="context-menu-item" data-action="playNext"><i class="fas fa-step-forward"></i> Play Next</button>
     <button class="context-menu-item" data-action="addToQueue"><i class="fas fa-plus"></i> Add to Queue</button>
+  </div>
+
+  <!-- Music Share modal -->
+  <div id="share-modal" class="modal-overlay" style="display:none">
+    <div class="modal-panel share-modal-panel">
+      <div class="modal-header">
+        <div class="modal-title"><i class="fas fa-share-alt"></i> Music Share</div>
+        <button id="share-modal-close" class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body share-modal-body">
+        <!-- Sharing column -->
+        <div class="share-column">
+          <div class="share-col-title"><i class="fas fa-broadcast-tower"></i> Sharing Mode</div>
+          <div id="share-id-display" class="share-id-display" style="display:none">
+            <div class="share-id-label">Share Code</div>
+            <div id="share-id-text" class="share-id-text">------</div>
+          </div>
+          <div id="share-status-box" class="share-status-box" style="display:none">
+            <div class="share-status-row">
+              <span id="share-status-dot" class="share-status-dot"></span>
+              <span id="share-status-text">Idle</span>
+            </div>
+            <div id="share-stats-text" class="share-stats-text"></div>
+          </div>
+          <label class="share-toggle">
+            <input type="checkbox" id="share-metadata-only" checked>
+            <span class="share-toggle-label">Metadata Only</span>
+          </label>
+          <button id="btn-share-start" class="share-btn share-btn-accent">Start Sharing</button>
+        </div>
+        <div class="share-divider"></div>
+        <!-- Receiving column -->
+        <div class="share-column">
+          <div class="share-col-title"><i class="fas fa-headphones"></i> Receiving Mode</div>
+          <div class="share-input-group">
+            <input type="text" id="share-code-input" class="share-code-input" maxlength="6" placeholder="000000" inputmode="numeric">
+          </div>
+          <div id="receive-status-box" class="share-status-box" style="display:none">
+            <div class="share-status-row">
+              <span id="receive-status-dot" class="share-status-dot"></span>
+              <span id="receive-status-text">Idle</span>
+            </div>
+            <div id="receive-stats-text" class="share-stats-text"></div>
+          </div>
+          <div id="receive-metadata-box" class="share-received-metadata" style="display:none">
+            <div id="receive-thumb" class="share-receive-thumb"><i class="fas fa-music"></i></div>
+            <div id="receive-title" class="share-receive-title"></div>
+            <div id="receive-artist" class="share-receive-artist"></div>
+            <div id="receive-progress" class="share-receive-progress">
+              <span id="receive-elapsed">0:00</span>
+              <div class="share-progress-track"><div id="receive-progress-fill" class="share-progress-fill"></div></div>
+              <span id="receive-total">0:00</span>
+            </div>
+          </div>
+          <label class="share-toggle">
+            <input type="checkbox" id="share-receive-audio" checked>
+            <span class="share-toggle-label">Receive Audio</span>
+          </label>
+          <button id="btn-receive-start" class="share-btn share-btn-accent" disabled>Connect</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 <script src="musicplayer.js"></script>

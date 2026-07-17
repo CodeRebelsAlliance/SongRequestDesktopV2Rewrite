@@ -1134,6 +1134,119 @@
     origOnEvent(eventName, data);
   };
 
+  // =====================================================
+  //  Search
+  // =====================================================
+  var searchInput = document.getElementById('search-input');
+  var searchTab = document.getElementById('sidebar-tab-search');
+  var searchView = document.getElementById('view-search');
+  var searchListEl = document.getElementById('search-results-list');
+  var searchCountEl = document.getElementById('search-results-count');
+  var searchTitleEl = document.getElementById('search-results-title');
+  var searchNoResults = document.getElementById('search-no-results');
+  var searchDebounceTimer = null;
+  var lastSearchQuery = '';
+
+  function activateSearchView() {
+    document.querySelectorAll('.sidebar-tab').forEach(function(t) { t.classList.remove('active'); });
+    searchTab.classList.add('active');
+    document.querySelectorAll('#center .view').forEach(function(v) { v.classList.remove('active'); });
+    searchView.classList.add('active');
+  }
+
+  function renderSearchResults(query, data) {
+    var results = data.results || [];
+    searchListEl.innerHTML = '';
+    searchTitleEl.textContent = 'Results for "' + escHtml(query) + '"';
+    searchCountEl.textContent = results.length + ' found';
+
+    if (results.length === 0) {
+      searchNoResults.style.display = '';
+      return;
+    }
+    searchNoResults.style.display = 'none';
+
+    results.forEach(function(song) {
+      searchListEl.insertAdjacentHTML('beforeend', renderLibrarySong(song));
+    });
+  }
+
+  function performLocalSearch(query) {
+    lastSearchQuery = query;
+    searchTab.style.display = '';
+    activateSearchView();
+    searchListEl.innerHTML = '<div class="library-loading"><i class="fas fa-circle-notch fa-spin"></i><span>Searching...</span></div>';
+    searchNoResults.style.display = 'none';
+
+    hostRequest('searchLibrary', { query: query, maxResults: 100 }).then(function(data) {
+      if (query !== lastSearchQuery) return;
+      renderSearchResults(query, data);
+    }).catch(function(err) {
+      console.error('Search failed:', err);
+      searchListEl.innerHTML = '';
+      searchNoResults.style.display = '';
+    });
+  }
+
+  searchInput.addEventListener('input', function() {
+    var q = searchInput.value.trim();
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    if (q.length <= 3) return;
+    searchDebounceTimer = setTimeout(function() {
+      performLocalSearch(q);
+    }, 300);
+  });
+
+  // Right-click on search results (reuse library context menu)
+  searchListEl.addEventListener('contextmenu', function(e) {
+    var songEl = e.target.closest('.library-song');
+    if (!songEl) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, songEl.dataset.id);
+  });
+
+  // Artwork click on search results: play immediately
+  searchListEl.addEventListener('click', function(e) {
+    var overlay = e.target.closest('.thumb-overlay');
+    if (!overlay) return;
+    var songEl = overlay.closest('.library-song');
+    if (!songEl) return;
+    e.stopPropagation();
+    hostSend('playLibrarySong', { songId: songEl.dataset.id });
+  });
+
+  // Long-press for touch users on search results
+  searchListEl.addEventListener('touchstart', function(e) {
+    var songEl = e.target.closest('.library-song');
+    if (!songEl) return;
+    longPressTriggered = false;
+    var touch = e.touches[0];
+    longPressTimer = setTimeout(function() {
+      longPressTriggered = true;
+      showContextMenu(touch.clientX, touch.clientY, songEl.dataset.id);
+      if (navigator.vibrate) navigator.vibrate(30);
+    }, 500);
+  }, { passive: true });
+
+  searchListEl.addEventListener('touchend', function(e) {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    if (longPressTriggered) {
+      e.preventDefault();
+      longPressTriggered = false;
+    }
+  });
+
+  searchListEl.addEventListener('touchmove', function() {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  }, { passive: true });
+
+  // External search button (placeholder for YouTube search)
+  document.getElementById('btn-external-search').addEventListener('click', function() {
+    var q = lastSearchQuery || searchInput.value.trim();
+    if (!q) return;
+    hostSend('externalSearch', { query: q });
+  });
+
   // --- Slider value label updates ---
   function updateSliderLabels() {
     volSliders.forEach(function(sl, i) {
@@ -1316,5 +1429,215 @@
     img.onerror = function() { resetAccentColors(); };
     img.src = src;
   }
+
+  // =====================================================
+  //  Music Share modal
+  // =====================================================
+  var shareModal = document.getElementById('share-modal');
+  var shareBtn = document.getElementById('btn-share');
+  var shareModalClose = document.getElementById('share-modal-close');
+  var shareStartBtn = document.getElementById('btn-share-start');
+  var shareMetadataOnly = document.getElementById('share-metadata-only');
+  var shareIdDisplay = document.getElementById('share-id-display');
+  var shareIdText = document.getElementById('share-id-text');
+  var shareStatusBox = document.getElementById('share-status-box');
+  var shareStatusDot = document.getElementById('share-status-dot');
+  var shareStatusText = document.getElementById('share-status-text');
+  var shareStatsText = document.getElementById('share-stats-text');
+  var shareCodeInput = document.getElementById('share-code-input');
+  var receiveStartBtn = document.getElementById('btn-receive-start');
+  var receiveStatusBox = document.getElementById('receive-status-box');
+  var receiveStatusDot = document.getElementById('receive-status-dot');
+  var receiveStatusText = document.getElementById('receive-status-text');
+  var receiveStatsText = document.getElementById('receive-stats-text');
+  var receiveMetadataBox = document.getElementById('receive-metadata-box');
+  var receiveThumb = document.getElementById('receive-thumb');
+  var receiveTitle = document.getElementById('receive-title');
+  var receiveArtist = document.getElementById('receive-artist');
+  var receiveElapsed = document.getElementById('receive-elapsed');
+  var receiveTotal = document.getElementById('receive-total');
+  var receiveProgressFill = document.getElementById('receive-progress-fill');
+  var shareReceiveAudio = document.getElementById('share-receive-audio');
+  var shareIsSharing = false;
+  var shareIsReceiving = false;
+
+  function shareOpenModal() { shareModal.style.display = 'flex'; }
+  function shareCloseModal() { shareModal.style.display = 'none'; }
+
+  shareBtn.addEventListener('click', shareOpenModal);
+  shareModalClose.addEventListener('click', shareCloseModal);
+  shareModal.addEventListener('click', function(e) { if (e.target === shareModal) shareCloseModal(); });
+
+  function shareSetStatus(type, status, text, stats) {
+    var dot = type === 'share' ? shareStatusDot : receiveStatusDot;
+    var stxt = type === 'share' ? shareStatusText : receiveStatusText;
+    var sbox = type === 'share' ? shareStatusBox : receiveStatusBox;
+    var sstat = type === 'share' ? shareStatsText : receiveStatsText;
+    sbox.style.display = '';
+    dot.className = 'share-status-dot status-' + status;
+    stxt.textContent = text;
+    sstat.textContent = stats || '';
+  }
+
+  function shareClearStatus(type) {
+    var sbox = type === 'share' ? shareStatusBox : receiveStatusBox;
+    sbox.style.display = 'none';
+  }
+
+  // Start / stop sharing
+  shareStartBtn.addEventListener('click', function() {
+    if (shareIsSharing) {
+      hostSend('musicShareStop');
+      shareStartBtn.textContent = 'Stopping...';
+      shareStartBtn.disabled = true;
+    } else {
+      var metadataOnly = shareMetadataOnly.checked;
+      hostSend('musicShareStart', { metadataOnly: metadataOnly });
+      shareStartBtn.textContent = 'Starting...';
+      shareStartBtn.disabled = true;
+    }
+  });
+
+  // Enable/disable receive button based on code input
+  shareCodeInput.addEventListener('input', function() {
+    shareCodeInput.value = shareCodeInput.value.replace(/[^0-9]/g, '');
+    receiveStartBtn.disabled = shareCodeInput.value.length !== 6 || shareIsReceiving;
+  });
+
+  // Start / stop receiving
+  receiveStartBtn.addEventListener('click', function() {
+    if (shareIsReceiving) {
+      hostSend('musicShareDisconnect');
+      receiveStartBtn.textContent = 'Disconnecting...';
+      receiveStartBtn.disabled = true;
+    } else {
+      var receiveAudio = shareReceiveAudio.checked;
+      hostSend('musicShareConnect', { sessionId: shareCodeInput.value, receiveAudio: receiveAudio });
+      receiveStartBtn.textContent = 'Connecting...';
+      receiveStartBtn.disabled = true;
+    }
+  });
+
+  function shareFormatStatus(status) {
+    var map = { idle:'Idle', connecting:'Connecting...', connected:'Connected', streaming:'Streaming', buffering:'Buffering', error:'Error', disconnected:'Disconnected' };
+    return map[status] || status;
+  }
+
+  // Handle musicShare events from C#
+  var origOnEvent2 = onEvent;
+  onEvent = function(eventName, data) {
+    if (eventName === 'musicShareStatus') {
+      var isSharing = data.sharing;
+      var isReceiving = data.receiving;
+      var status = data.status;
+
+      if (isSharing) {
+        shareIsSharing = true;
+        shareStartBtn.textContent = 'Stop Sharing';
+        shareStartBtn.className = 'share-btn share-btn-danger';
+        shareStartBtn.disabled = false;
+        shareMetadataOnly.disabled = true;
+        shareCodeInput.disabled = true;
+        receiveStartBtn.disabled = true;
+
+        if (data.sessionId) {
+          shareIdDisplay.style.display = '';
+          shareIdText.textContent = data.sessionId;
+        }
+        shareSetStatus('share', status, shareFormatStatus(status),
+          data.metadataOnly ? 'Metadata Only' : 'Metadata + Audio');
+      } else {
+        shareIsSharing = false;
+        shareStartBtn.textContent = 'Start Sharing';
+        shareStartBtn.className = 'share-btn share-btn-accent';
+        shareStartBtn.disabled = false;
+        shareMetadataOnly.disabled = false;
+        shareCodeInput.disabled = false;
+        shareIdDisplay.style.display = 'none';
+        shareClearStatus('share');
+        receiveStartBtn.disabled = shareCodeInput.value.length !== 6;
+      }
+
+      if (isReceiving) {
+        shareIsReceiving = true;
+        receiveStartBtn.textContent = 'Disconnect';
+        receiveStartBtn.className = 'share-btn share-btn-danger';
+        receiveStartBtn.disabled = false;
+        shareCodeInput.disabled = true;
+        shareStartBtn.disabled = true;
+        shareMetadataOnly.disabled = true;
+        shareSetStatus('receive', status, shareFormatStatus(status));
+      } else {
+        shareIsReceiving = false;
+        receiveStartBtn.textContent = 'Connect';
+        receiveStartBtn.className = 'share-btn share-btn-accent';
+        receiveStartBtn.disabled = shareCodeInput.value.length !== 6;
+        shareCodeInput.disabled = false;
+        shareStartBtn.disabled = false;
+        shareMetadataOnly.disabled = false;
+        shareClearStatus('receive');
+        receiveMetadataBox.style.display = 'none';
+      }
+
+      return;
+    }
+
+    if (eventName === 'musicShareError') {
+      // Show error briefly in status
+      if (shareIsSharing || shareStartBtn.textContent === 'Starting...') {
+        shareSetStatus('share', 'error', 'Error: ' + data.error);
+      } else {
+        shareSetStatus('receive', 'error', 'Error: ' + data.error);
+      }
+      shareStartBtn.textContent = shareIsSharing ? 'Stop Sharing' : 'Start Sharing';
+      shareStartBtn.className = shareIsSharing ? 'share-btn share-btn-danger' : 'share-btn share-btn-accent';
+      shareStartBtn.disabled = false;
+      receiveStartBtn.textContent = shareIsReceiving ? 'Disconnect' : 'Connect';
+      receiveStartBtn.className = shareIsReceiving ? 'share-btn share-btn-danger' : 'share-btn share-btn-accent';
+      receiveStartBtn.disabled = shareCodeInput.value.length !== 6 || shareIsReceiving;
+      return;
+    }
+
+    if (eventName === 'musicShareMetadataReceived') {
+      receiveMetadataBox.style.display = '';
+      receiveTitle.textContent = data.title || 'Unknown';
+      receiveArtist.textContent = data.artist || '—';
+      receiveElapsed.textContent = formatTime(data.elapsedSeconds || 0);
+      receiveTotal.textContent = formatTime(data.totalSeconds || 0);
+      var pct = data.totalSeconds > 0 ? (data.elapsedSeconds / data.totalSeconds * 100) : 0;
+      receiveProgressFill.style.width = pct + '%';
+      if (data.thumbnailData) {
+        receiveThumb.innerHTML = '<img src="data:image/jpeg;base64,' + data.thumbnailData + '" alt="">';
+      } else {
+        receiveThumb.innerHTML = '<i class="fas fa-music"></i>';
+      }
+      return;
+    }
+
+    origOnEvent2(eventName, data);
+  };
+
+  // Fetch initial status
+  hostRequest('musicShareGetStatus', {}).then(function(data) {
+    if (data.sharing) {
+      shareIsSharing = true;
+      shareStartBtn.textContent = 'Stop Sharing';
+      shareStartBtn.className = 'share-btn share-btn-danger';
+      shareMetadataOnly.disabled = true;
+      if (data.sessionId) {
+        shareIdDisplay.style.display = '';
+        shareIdText.textContent = data.sessionId;
+      }
+      shareSetStatus('share', data.status, shareFormatStatus(data.status),
+        data.metadataOnly ? 'Metadata Only' : 'Metadata + Audio');
+    }
+    if (data.receiving) {
+      shareIsReceiving = true;
+      receiveStartBtn.textContent = 'Disconnect';
+      receiveStartBtn.className = 'share-btn share-btn-danger';
+      shareCodeInput.disabled = true;
+      shareSetStatus('receive', data.status, shareFormatStatus(data.status));
+    }
+  }).catch(function() {});
 
 })();

@@ -26,6 +26,21 @@ public class YoutubeFormInterop
     private LyricsService? _musicPlayerLyricsService;
     private readonly object _musicPlayerLyricsCacheLock = new();
     private readonly System.Collections.Generic.Dictionary<string, LyricsResult> _musicPlayerLyricsCache = new(StringComparer.OrdinalIgnoreCase);
+
+    // MusicShare interop state
+    private MusicShareService? _musicShareService;
+    private bool _musicShareSharing;
+    private bool _musicShareReceiving;
+    private bool _musicShareMetadataOnly = true;
+    private DateTime _musicShareSessionStart;
+    private long _musicShareBytesSent;
+    private readonly System.Collections.Generic.List<float> _musicShareAccumulatedSamples = new();
+    private const int MUSIC_SHARE_TARGET_SAMPLES = 44100;
+    private LyricsService? _musicShareLyricsService;
+    private Song? _musicShareLastSong;
+    private string? _musicShareCachedLyrics;
+    private bool _musicShareCachedHasSyncedLyrics;
+    private string? _musicShareCachedThumbnail;
     private sealed class CachedSubtitleData
     {
         public string SubtitleText { get; set; } = string.Empty;
@@ -411,6 +426,22 @@ public class YoutubeFormInterop
                     break;
                 case "playLibrarySongNext":
                     result = PlayLibrarySongNext(msg);
+                    break;
+
+                case "musicShareStart":
+                    result = await MusicShareStart(msg);
+                    break;
+                case "musicShareStop":
+                    result = await MusicShareStop();
+                    break;
+                case "musicShareConnect":
+                    result = await MusicShareConnect(msg);
+                    break;
+                case "musicShareDisconnect":
+                    result = await MusicShareDisconnect();
+                    break;
+                case "musicShareGetStatus":
+                    result = MusicShareGetStatus();
                     break;
 
                 default:
@@ -1720,8 +1751,13 @@ public class YoutubeFormInterop
                 album = s.Album,
                 duration = s.Duration.TotalSeconds,
                 durationDisplay = s.DurationDisplay,
+                thumbnail = GetLibrarySongThumbnail(s),
+                filePath = s.FilePath,
                 source = s.Source.ToString(),
                 isMissing = s.IsMissing,
+                isHashDuplicate = s.IsHashDuplicate,
+                hasMetadataDuplicates = s.HasMetadataDuplicates,
+                metadataDuplicateCount = s.MetadataDuplicateIds.Count,
                 playCount = s.PlayCount
             }).ToList(),
             total = results.Count
@@ -1959,5 +1995,294 @@ public class YoutubeFormInterop
         });
 
         return new { success = true };
+    }
+
+    // ────────────────────────────────────────────────────────
+    //  MusicShare interop
+    // ────────────────────────────────────────────────────────
+
+    private void MusicShareSendEvent(string eventName, object? data)
+    {
+        var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
+        if (mpSend == null) return;
+        try
+        {
+            var json = JsonConvert.SerializeObject(new { type = "event", eventName, data });
+            mpSend(json);
+        }
+        catch { }
+    }
+
+    private void MusicShare_ServiceStatusChanged(object? sender, ShareStatus status)
+    {
+        MusicShareSendEvent("musicShareStatus", new
+        {
+            status = status.ToString().ToLowerInvariant(),
+            sessionId = _musicShareService?.SessionId,
+            sharing = _musicShareSharing,
+            receiving = _musicShareReceiving,
+            metadataOnly = _musicShareMetadataOnly
+        });
+    }
+
+    private void MusicShare_ServiceErrorOccurred(object? sender, string error)
+    {
+        MusicShareSendEvent("musicShareError", new { error });
+    }
+
+    private void MusicShare_ServiceMetadataReceived(object? sender, MusicShareMetadata metadata)
+    {
+        MusicShareSendEvent("musicShareMetadataReceived", new
+        {
+            title = metadata.Title,
+            artist = metadata.Artist,
+            lyrics = metadata.Lyrics,
+            hasSyncedLyrics = metadata.HasSyncedLyrics,
+            elapsedSeconds = metadata.ElapsedSeconds,
+            totalSeconds = metadata.TotalSeconds,
+            thumbnailData = metadata.ThumbnailData
+        });
+    }
+
+    private async void MusicShare_OnNowPlayingTick(object? sender, MusicPlayer.NowPlayingEventArgs e)
+    {
+        if (!_musicShareSharing || _musicShareService == null) return;
+        try
+        {
+            if (_musicShareLastSong != e.Current)
+            {
+                _musicShareLastSong = e.Current;
+                _musicShareCachedThumbnail = null;
+                if (e.Current?.thumbnail?.Source is BitmapSource bitmapSource)
+                    _musicShareCachedThumbnail = MusicShareService.BitmapSourceToBase64(bitmapSource);
+
+                _musicShareCachedLyrics = null;
+                _musicShareCachedHasSyncedLyrics = false;
+
+                if (e.Current != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var lyricsResult = await (_musicShareLyricsService ?? new LyricsService()).GetLyricsAsync(
+                                e.Current.Artist.Replace(" - Topic", ""),
+                                e.Current.Title,
+                                e.Current.Duration);
+                            if (lyricsResult.Found)
+                            {
+                                if (lyricsResult.HasSynced)
+                                {
+                                    _musicShareCachedLyrics = lyricsResult.SyncedLyrics;
+                                    _musicShareCachedHasSyncedLyrics = true;
+                                }
+                                else if (!string.IsNullOrWhiteSpace(lyricsResult.PlainLyrics))
+                                {
+                                    _musicShareCachedLyrics = lyricsResult.PlainLyrics;
+                                    _musicShareCachedHasSyncedLyrics = false;
+                                }
+                            }
+                        }
+                        catch { }
+                    });
+                }
+            }
+
+            var metadata = new MusicShareMetadata
+            {
+                Title = e.Current?.Title ?? "Unknown",
+                Artist = e.Current?.Artist ?? "Unknown",
+                ElapsedSeconds = e.CurrentTime.TotalSeconds,
+                TotalSeconds = e.TotalTime.TotalSeconds,
+                ThumbnailData = _musicShareCachedThumbnail,
+                Lyrics = _musicShareCachedLyrics,
+                HasSyncedLyrics = _musicShareCachedHasSyncedLyrics
+            };
+            await _musicShareService.SendMetadataAsync(metadata);
+        }
+        catch { }
+    }
+
+    private async void MusicShare_OnAudioSamplesCaptured(object? sender, float[] samples)
+    {
+        if (!_musicShareSharing || _musicShareMetadataOnly || _musicShareService == null) return;
+        try
+        {
+            var copy = new float[samples.Length];
+            Array.Copy(samples, copy, samples.Length);
+            _musicShareAccumulatedSamples.AddRange(copy);
+
+            if (_musicShareAccumulatedSamples.Count >= MUSIC_SHARE_TARGET_SAMPLES)
+            {
+                var chunk = new float[MUSIC_SHARE_TARGET_SAMPLES];
+                _musicShareAccumulatedSamples.CopyTo(0, chunk, 0, MUSIC_SHARE_TARGET_SAMPLES);
+                _musicShareAccumulatedSamples.RemoveRange(0, MUSIC_SHARE_TARGET_SAMPLES);
+                await _musicShareService.SendAudioChunkAsync(chunk, 44100, 2);
+                _musicShareBytesSent += chunk.Length * sizeof(float);
+            }
+        }
+        catch { }
+    }
+
+    private async Task<object> MusicShareStart(JObject msg)
+    {
+        if (_musicShareSharing || _musicShareReceiving)
+            return new { error = "Already sharing or receiving" };
+
+        var mp = _ytForm.MusicPlayer;
+        if (mp == null) return new { error = "Music Player not open" };
+
+        try
+        {
+            _musicShareMetadataOnly = msg["metadataOnly"]?.ToObject<bool>() ?? true;
+            _musicShareService = new MusicShareService();
+            _musicShareService.StatusChanged += MusicShare_ServiceStatusChanged;
+            _musicShareService.ErrorOccurred += MusicShare_ServiceErrorOccurred;
+            _musicShareLyricsService = new LyricsService();
+
+            _musicShareSharing = true;
+            var sessionId = await _musicShareService.StartSharingAsync();
+            _musicShareSessionStart = DateTime.Now;
+            _musicShareBytesSent = 0;
+            _musicShareLastSong = null;
+            _musicShareCachedLyrics = null;
+            _musicShareCachedThumbnail = null;
+            _musicShareAccumulatedSamples.Clear();
+
+            mp.NowPlayingTick += MusicShare_OnNowPlayingTick;
+            mp.AudioSamplesCaptured += MusicShare_OnAudioSamplesCaptured;
+
+            return new { success = true, sessionId, metadataOnly = _musicShareMetadataOnly };
+        }
+        catch (Exception ex)
+        {
+            _musicShareSharing = false;
+            if (_musicShareService != null)
+            {
+                _musicShareService.StatusChanged -= MusicShare_ServiceStatusChanged;
+                _musicShareService.ErrorOccurred -= MusicShare_ServiceErrorOccurred;
+                _musicShareService = null;
+            }
+            return new { error = ex.Message };
+        }
+    }
+
+    private async Task<object> MusicShareStop()
+    {
+        if (!_musicShareSharing) return new { error = "Not sharing" };
+
+        try
+        {
+            var mp = _ytForm.MusicPlayer;
+            if (mp != null)
+            {
+                mp.NowPlayingTick -= MusicShare_OnNowPlayingTick;
+                mp.AudioSamplesCaptured -= MusicShare_OnAudioSamplesCaptured;
+            }
+
+            if (_musicShareService != null)
+            {
+                _musicShareService.StatusChanged -= MusicShare_ServiceStatusChanged;
+                _musicShareService.ErrorOccurred -= MusicShare_ServiceErrorOccurred;
+                await _musicShareService.StopSharingAsync();
+                _musicShareService = null;
+            }
+
+            _musicShareSharing = false;
+            _musicShareAccumulatedSamples.Clear();
+            _musicShareLastSong = null;
+            _musicShareCachedLyrics = null;
+            _musicShareCachedThumbnail = null;
+
+            MusicShareSendEvent("musicShareStatus", new
+            {
+                status = "idle",
+                sharing = false,
+                receiving = false
+            });
+
+            return new { success = true };
+        }
+        catch (Exception ex) { return new { error = ex.Message }; }
+    }
+
+    private async Task<object> MusicShareConnect(JObject msg)
+    {
+        if (_musicShareSharing || _musicShareReceiving)
+            return new { error = "Already sharing or receiving" };
+
+        var sessionId = msg["sessionId"]?.ToString();
+        if (string.IsNullOrEmpty(sessionId) || sessionId.Length != 6)
+            return new { error = "Session ID must be 6 digits" };
+
+        try
+        {
+            _musicShareService = new MusicShareService();
+            _musicShareService.ReceiveAudio = msg["receiveAudio"]?.ToObject<bool>() ?? true;
+            _musicShareService.StatusChanged += MusicShare_ServiceStatusChanged;
+            _musicShareService.ErrorOccurred += MusicShare_ServiceErrorOccurred;
+            _musicShareService.MetadataReceived += MusicShare_ServiceMetadataReceived;
+
+            _musicShareReceiving = true;
+            await _musicShareService.StartReceivingAsync(sessionId);
+
+            return new { success = true, sessionId };
+        }
+        catch (Exception ex)
+        {
+            _musicShareReceiving = false;
+            if (_musicShareService != null)
+            {
+                _musicShareService.StatusChanged -= MusicShare_ServiceStatusChanged;
+                _musicShareService.ErrorOccurred -= MusicShare_ServiceErrorOccurred;
+                _musicShareService.MetadataReceived -= MusicShare_ServiceMetadataReceived;
+                _musicShareService = null;
+            }
+            return new { error = ex.Message };
+        }
+    }
+
+    private async Task<object> MusicShareDisconnect()
+    {
+        if (!_musicShareReceiving) return new { error = "Not receiving" };
+
+        try
+        {
+            if (_musicShareService != null)
+            {
+                _musicShareService.StatusChanged -= MusicShare_ServiceStatusChanged;
+                _musicShareService.ErrorOccurred -= MusicShare_ServiceErrorOccurred;
+                _musicShareService.MetadataReceived -= MusicShare_ServiceMetadataReceived;
+                await _musicShareService.StopReceivingAsync();
+                _musicShareService = null;
+            }
+
+            _musicShareReceiving = false;
+
+            MusicShareSendEvent("musicShareStatus", new
+            {
+                status = "idle",
+                sharing = false,
+                receiving = false
+            });
+
+            return new { success = true };
+        }
+        catch (Exception ex) { return new { error = ex.Message }; }
+    }
+
+    private object MusicShareGetStatus()
+    {
+        var elapsed = _musicShareSharing ? (DateTime.Now - _musicShareSessionStart) : TimeSpan.Zero;
+        return new
+        {
+            sharing = _musicShareSharing,
+            receiving = _musicShareReceiving,
+            metadataOnly = _musicShareMetadataOnly,
+            sessionId = _musicShareService?.SessionId,
+            status = _musicShareService?.Status.ToString().ToLowerInvariant() ?? "idle",
+            elapsed = elapsed.TotalSeconds,
+            bytesSent = _musicShareBytesSent
+        };
     }
 }
