@@ -150,7 +150,14 @@ public class NewUiWindow
 
             mp.RegisterWebMessageReceivedHandler((sender, message) =>
             {
-                _interop.HandleMessage(message);
+                _interop.HandleMessage(message, json =>
+                {
+                    try
+                    {
+                        mp.Invoke(() => mp.SendWebMessage(json));
+                    }
+                    catch { }
+                });
             });
 
             // Set up send channel targeting this music player window

@@ -112,6 +112,8 @@
 
   function handleEvent(eventName, data) {
     if (eventName === 'refresh') loadData();
+    else if (eventName === 'libraryScanProgress') onLibraryScanProgress(data);
+    else if (eventName === 'libraryScanCompleted') onLibraryScanCompleted(data);
   }
 
   function toast(msg, type) {
@@ -280,6 +282,7 @@
       document.getElementById('s-library-remove-missing').checked = cfg.libraryRemoveMissingOnScan ?? false;
       document.getElementById('s-library-recommendations').checked = cfg.libraryRecommendationsEnabled ?? true;
       statusEl.textContent = 'Loaded.'; loadData();
+      loadLibraryStats();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
   }
 
@@ -454,6 +457,109 @@
   document.getElementById('s-library-folder-input').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') document.getElementById('s-library-folder-add').click();
   });
+
+  // Library scan controls
+  function onLibraryScanProgress(data) {
+    var pct = Math.round((data.progress || 0) * 100);
+    var wrap = document.getElementById('s-library-scan-progress');
+    var bar = document.getElementById('s-library-scan-bar');
+    var pctEl = document.getElementById('s-library-scan-pct');
+    var statusEl = document.getElementById('s-library-scan-status');
+    wrap.style.display = '';
+    bar.style.width = pct + '%';
+    pctEl.textContent = pct + '%';
+    statusEl.textContent = data.message || 'Scanning...';
+    document.getElementById('s-library-scan-btn').disabled = true;
+    document.getElementById('s-library-cancel-scan-btn').style.display = '';
+  }
+
+  function onLibraryScanCompleted(data) {
+    var wrap = document.getElementById('s-library-scan-progress');
+    var bar = document.getElementById('s-library-scan-bar');
+    var statusEl = document.getElementById('s-library-scan-status');
+    var pctEl = document.getElementById('s-library-scan-pct');
+    var resultEl = document.getElementById('s-library-scan-result');
+
+    bar.style.width = '100%';
+    pctEl.textContent = '100%';
+    statusEl.textContent = 'Scan complete';
+
+    var errors = data.errorCount || 0;
+    var cls = errors > 0 ? 'color:#fa0;background:#2a2200' : 'color:#4caf50;background:#1a2a1a';
+    var text = 'Found ' + (data.filesFound || 0) + ' files \u2022 +' + (data.songsAdded || 0) + ' added \u2022 ' + (data.songsUpdated || 0) + ' updated \u2022 ' + (data.songsMissing || 0) + ' missing';
+    if (errors > 0) text += ' \u2022 ' + errors + ' error(s)';
+
+    resultEl.style.display = '';
+    resultEl.style.cssText = 'display:block;font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:8px;' + cls;
+    resultEl.textContent = text;
+
+    log('Library scan complete: ' + text, errors > 0 ? 'warn' : 'success');
+
+    // Log errors to console
+    if (data.errors && data.errors.length > 0) {
+      data.errors.forEach(function(err) { log('Library scan error: ' + err, 'error'); });
+    }
+
+    document.getElementById('s-library-scan-btn').disabled = false;
+    document.getElementById('s-library-cancel-scan-btn').style.display = 'none';
+
+    setTimeout(function() { wrap.style.display = 'none'; }, 5000);
+    loadLibraryStats();
+  }
+
+  document.getElementById('s-library-scan-btn').addEventListener('click', async function() {
+    var btn = this;
+    var cancelBtn = document.getElementById('s-library-cancel-scan-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-pulse"></i> Scanning...';
+    document.getElementById('s-library-scan-result').style.display = 'none';
+    log('Library scan started', 'info');
+    setStatus('Scanning library...');
+    try {
+      var result = await send('scanLibrary');
+      if (result.error) {
+        log('Library scan failed: ' + result.error, 'error');
+        toast('Scan failed: ' + result.error, 'error');
+      }
+    } catch (e) {
+      log('Library scan failed: ' + e.message, 'error');
+      toast('Scan failed: ' + e.message, 'error');
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-sync-alt"></i> Scan Library';
+    cancelBtn.style.display = 'none';
+    document.getElementById('s-library-scan-progress').style.display = 'none';
+    setStatus('Ready');
+    loadLibraryStats();
+  });
+
+  document.getElementById('s-library-cancel-scan-btn').addEventListener('click', function() {
+    send('cancelLibraryScan');
+    log('Library scan cancelled', 'warn');
+    toast('Scan cancelled', 'info');
+    document.getElementById('s-library-scan-btn').disabled = false;
+    document.getElementById('s-library-scan-btn').innerHTML = '<i class="fas fa-sync-alt"></i> Scan Library';
+    this.style.display = 'none';
+    document.getElementById('s-library-scan-progress').style.display = 'none';
+  });
+
+  async function loadLibraryStats() {
+    try {
+      var stats = await send('getLibraryStats');
+      var el = document.getElementById('s-library-stats');
+      if (!stats || stats.error) {
+        el.textContent = 'No library loaded yet.';
+        return;
+      }
+      var parts = [];
+      parts.push(stats.presentSongs + ' song' + (stats.presentSongs !== 1 ? 's' : ''));
+      if (stats.missingSongs > 0) parts.push(stats.missingSongs + ' missing');
+      if (stats.hashDuplicates > 0) parts.push(stats.hashDuplicates + ' hash dup');
+      if (stats.metadataDuplicates > 0) parts.push(stats.metadataDuplicates + ' meta dup');
+      parts.push('Last scan: ' + (stats.lastScanUtc ? new Date(stats.lastScanUtc).toLocaleString() : 'never'));
+      el.textContent = parts.join(' \u2022 ');
+    } catch (e) { /* ignore */ }
+  }
 
   function escapeHtml(str) {
     var d = document.createElement('div');
@@ -631,6 +737,12 @@
     document.getElementById('stat-pending').textContent = p;
     document.getElementById('stat-blacklisted').textContent = blacklist.length;
     document.getElementById('stat-badwords').textContent = badWords.length;
+    // Library stats
+    send('getLibraryStats').then(function(stats) {
+      if (stats && !stats.error) {
+        document.getElementById('stat-library').textContent = stats.presentSongs || 0;
+      }
+    }).catch(function() {});
   }
 
   function renderSongList(listName) {

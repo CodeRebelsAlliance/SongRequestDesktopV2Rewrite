@@ -59,6 +59,37 @@ public class YoutubeFormInterop
         catch { }
     }
 
+    /// <summary>
+    /// Handle a message from a specific window, routing responses back to that window.
+    /// </summary>
+    public async void HandleMessage(string json, Action<string> responseTarget)
+    {
+        _responseTarget = responseTarget;
+        try
+        {
+            var msg = JObject.Parse(json);
+            var type = msg["type"]?.ToString();
+
+            switch (type)
+            {
+                case "request":
+                    await HandleRequest(msg).ConfigureAwait(false);
+                    break;
+                case "response":
+                    HandleResponse(msg);
+                    break;
+            }
+        }
+        catch { }
+        finally
+        {
+            _responseTarget = null;
+        }
+    }
+
+    [ThreadStatic]
+    private static Action<string>? _responseTarget;
+
     private async Task HandleRequest(JObject msg)
     {
         var id = msg["id"]?.ToString();
@@ -399,7 +430,8 @@ public class YoutubeFormInterop
     {
         if (id == null) return;
         var json = JsonConvert.SerializeObject(new { type = "response", id, result });
-        SendMessage?.Invoke(json);
+        var target = _responseTarget ?? SendMessage;
+        target?.Invoke(json);
     }
 
     public void SendEvent(string eventName, object? data)
@@ -1472,7 +1504,36 @@ public class YoutubeFormInterop
     private async Task<object> ScanLibraryAsync()
     {
         _libraryService.SyncConfig();
+
+        // Subscribe to progress events and forward them to the admin window
+        void OnProgress(double pct, string msg)
+        {
+            SendEvent("libraryScanProgress", new { progress = pct, message = msg });
+        }
+        void OnCompleted(LibraryScanResult res)
+        {
+            _libraryService.ScanProgress -= OnProgress;
+            _libraryService.ScanCompleted -= OnCompleted;
+            SendEvent("libraryScanCompleted", new
+            {
+                filesFound = res.FilesFound,
+                songsAdded = res.SongsAdded,
+                songsUpdated = res.SongsUpdated,
+                songsMissing = res.SongsMissing,
+                errorCount = res.Errors.Count,
+                errors = res.Errors.Take(20).ToList()
+            });
+        }
+
+        _libraryService.ScanProgress += OnProgress;
+        _libraryService.ScanCompleted += OnCompleted;
+
         var result = await _libraryService.ScanAsync().ConfigureAwait(false);
+
+        // Safety: ensure unsubscription if event already fired
+        _libraryService.ScanProgress -= OnProgress;
+        _libraryService.ScanCompleted -= OnCompleted;
+
         return new
         {
             success = true,
