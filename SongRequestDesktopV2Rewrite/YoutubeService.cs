@@ -132,7 +132,41 @@ namespace SongRequestDesktopV2Rewrite
             return filePath;
         }
 
+        public async Task<string> DownloadVideoWithProgressAsync(string videoUrl, string downloadPath, IProgress<double>? progress = null)
+        {
+            string videoId = GetYouTubeVideoId(videoUrl);
+            if (string.IsNullOrEmpty(videoId))
+            {
+                throw new Exception("Invalid YouTube URL. Unable to extract video ID.");
+            }
 
+            var streamManifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
+            var audioStreams = streamManifest.GetAudioOnlyStreams();
+            if (audioStreams == null || !audioStreams.Any())
+            {
+                throw new Exception("No suitable video stream found.");
+            }
+
+            var originalStreams = audioStreams
+                .Where(a => a.AudioLanguage != null &&
+                            a.AudioLanguage.ToString().IndexOf("Original", StringComparison.OrdinalIgnoreCase) >= 0);
+
+            var selectedStream = originalStreams.Any()
+                ? originalStreams.OrderByDescending(a => a.Bitrate).FirstOrDefault()
+                : audioStreams.GetWithHighestBitrate();
+
+            if (selectedStream == null)
+            {
+                throw new Exception("No suitable audio stream found.");
+            }
+
+            string videoFileName = $"{videoId}.mp3";
+            string filePath = Path.Combine(downloadPath, videoFileName);
+
+            await _youtubeClient.Videos.Streams.DownloadAsync(selectedStream, filePath, progress);
+
+            return filePath;
+        }
 
         public async Task<string> DownloadAndConvertVideoAsync(string videoUrl, string downloadPath)
         {

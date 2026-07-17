@@ -428,6 +428,9 @@
       case 'lyricsUpdate':
         renderLyrics(data);
         break;
+      case 'ytDownloadProgress':
+        onYtDownloadProgress(data);
+        break;
     }
   }
 
@@ -697,13 +700,13 @@
     }
   }
 
-  function hostRequest(method, params) {
+  function hostRequest(method, params, timeoutMs) {
     return new Promise(function(resolve, reject) {
       var id = ++_reqId;
       _pendingReqs[id] = { resolve: resolve, reject: reject, timer: setTimeout(function() {
         delete _pendingReqs[id];
         reject(new Error('Request timeout: ' + method));
-      }, 30000) };
+      }, timeoutMs || 30000) };
       try {
         window.external.sendMessage(JSON.stringify({ type: 'request', id: id, method: method, ...params }));
       } catch (e1) {
@@ -1197,12 +1200,13 @@
     }, 300);
   });
 
-  // Right-click on search results (reuse library context menu)
+  // Right-click on search results (library + YouTube)
   searchListEl.addEventListener('contextmenu', function(e) {
     var songEl = e.target.closest('.library-song');
     if (!songEl) return;
     e.preventDefault();
-    showContextMenu(e.clientX, e.clientY, songEl.dataset.id);
+    var id = songEl.dataset.id || songEl.dataset.ytid || null;
+    if (id) showContextMenu(e.clientX, e.clientY, id, songEl);
   });
 
   // Artwork click on search results: play immediately
@@ -1212,7 +1216,11 @@
     var songEl = overlay.closest('.library-song');
     if (!songEl) return;
     e.stopPropagation();
-    hostSend('playLibrarySong', { songId: songEl.dataset.id });
+    if (songEl.dataset.id) {
+      hostSend('playLibrarySong', { songId: songEl.dataset.id });
+    } else if (songEl.dataset.ytid) {
+      startYouTubeDownload(songEl, 'play');
+    }
   });
 
   // Long-press for touch users on search results
@@ -1223,7 +1231,7 @@
     var touch = e.touches[0];
     longPressTimer = setTimeout(function() {
       longPressTriggered = true;
-      showContextMenu(touch.clientX, touch.clientY, songEl.dataset.id);
+      showContextMenu(touch.clientX, touch.clientY, songEl.dataset.id, songEl);
       if (navigator.vibrate) navigator.vibrate(30);
     }, 500);
   }, { passive: true });
@@ -1240,12 +1248,143 @@
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   }, { passive: true });
 
-  // External search button (placeholder for YouTube search)
+  // External search button (YouTube via YoutubeExplode)
   document.getElementById('btn-external-search').addEventListener('click', function() {
     var q = lastSearchQuery || searchInput.value.trim();
     if (!q) return;
-    hostSend('externalSearch', { query: q });
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Searching...';
+
+    hostRequest('searchYoutube', { query: q, maxResults: 10 }).then(function(data) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fab fa-youtube"></i> Search YouTube';
+      var ytResults = data.results || [];
+      renderYouTubeResults(ytResults);
+    }).catch(function(err) {
+      console.error('YouTube search failed:', err);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fab fa-youtube"></i> Search YouTube';
+    });
   });
+
+  function renderYouTubeResult(item) {
+    var dur = item.duration || '';
+    return '<div class="library-song yt-search-result" data-ytid="' + escHtml(item.videoId || '') + '" data-title="' + escHtml(item.title || '') + '" data-author="' + escHtml(item.author || '') + '">' +
+      '<div class="library-song-thumb yt-search-thumb">' +
+        '<i class="fab fa-youtube yt-search-icon"></i>' +
+        '<div class="thumb-overlay"><i class="fas fa-play"></i></div>' +
+        '<div class="yt-download-progress" style="display:none"><div class="yt-download-bar"></div><div class="yt-download-label"></div></div>' +
+      '</div>' +
+      '<div class="library-song-info">' +
+        '<div class="library-song-title">' + escHtml(item.title || '') + '</div>' +
+        '<div class="library-song-artist">' + escHtml(item.author || 'Unknown') +
+          ' <span class="pill pill-quality yt-pill"><i class="fab fa-youtube"></i> YouTube</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="library-song-duration">' + escHtml(dur) + '</div>' +
+    '</div>';
+  }
+
+  function renderYouTubeResults(results) {
+    if (!results.length) return;
+    var header = '<div class="search-section-header"><i class="fab fa-youtube"></i> YouTube Results (' + results.length + ')</div>';
+    searchListEl.insertAdjacentHTML('beforeend', header);
+    results.forEach(function(item) {
+      searchListEl.insertAdjacentHTML('beforeend', renderYouTubeResult(item));
+    });
+    searchNoResults.style.display = 'none';
+    // Update total count
+    var localCount = searchListEl.querySelectorAll('.library-song:not(.yt-search-result)').length;
+    var ytCount = results.length;
+    searchCountEl.textContent = (localCount + ytCount) + ' found';
+  }
+
+  // =====================================================
+  //  YouTube download + play
+  // =====================================================
+  function startYouTubeDownload(songEl, action) {
+    var ytid = songEl.dataset.ytid;
+    var title = songEl.dataset.title || '';
+    var author = songEl.dataset.author || '';
+    if (!ytid) return;
+
+    var progWrap = songEl.querySelector('.yt-download-progress');
+    var progBar = songEl.querySelector('.yt-download-bar');
+    var progLabel = songEl.querySelector('.yt-download-label');
+    if (!progWrap) return;
+
+    songEl.classList.add('yt-downloading');
+    progWrap.style.display = '';
+    progBar.style.width = '0%';
+    progLabel.textContent = 'Downloading...';
+    var overlay = songEl.querySelector('.thumb-overlay');
+    if (overlay) overlay.style.display = 'none';
+
+    hostRequest('downloadAndPlayYouTube', { videoId: ytid, action: action, title: title, author: author }, 120000).then(function(res) {
+      if (res && res.error) {
+        progLabel.textContent = 'Error';
+        progBar.style.width = '100%';
+        progBar.style.background = '#f44';
+        setTimeout(function() {
+          songEl.classList.remove('yt-downloading');
+          progWrap.style.display = 'none';
+          if (overlay) overlay.style.display = '';
+        }, 2000);
+      }
+    }).catch(function() {
+      progLabel.textContent = 'Error';
+      progBar.style.width = '100%';
+      progBar.style.background = '#f44';
+      setTimeout(function() {
+        songEl.classList.remove('yt-downloading');
+        progWrap.style.display = 'none';
+        if (overlay) overlay.style.display = '';
+      }, 2000);
+    });
+  }
+
+  function onYtDownloadProgress(data) {
+    var ytid = data.videoId;
+    var stage = data.stage;
+    var progress = data.progress || 0;
+    var el = searchListEl.querySelector('[data-ytid="' + ytid + '"]');
+    if (!el) return;
+    var progWrap = el.querySelector('.yt-download-progress');
+    var progBar = el.querySelector('.yt-download-bar');
+    var progLabel = el.querySelector('.yt-download-label');
+    if (!progWrap) return;
+
+    if (stage === 'downloading') {
+      progWrap.style.display = '';
+      el.classList.add('yt-downloading');
+      progBar.style.width = Math.min(progress, 99) + '%';
+      progBar.style.background = '';
+      progLabel.textContent = 'Downloading... ' + progress + '%';
+    } else if (stage === 'importing') {
+      progBar.style.width = '100%';
+      progBar.style.background = '';
+      progLabel.textContent = 'Importing...';
+    } else if (stage === 'playing') {
+      progLabel.textContent = 'Playing...';
+    } else if (stage === 'done') {
+      el.classList.remove('yt-downloading');
+      progWrap.style.display = 'none';
+      progBar.style.width = '0%';
+      var overlay = el.querySelector('.thumb-overlay');
+      if (overlay) overlay.style.display = '';
+    } else if (stage === 'error') {
+      progBar.style.width = '100%';
+      progBar.style.background = '#f44';
+      progLabel.textContent = 'Error';
+      setTimeout(function() {
+        el.classList.remove('yt-downloading');
+        progWrap.style.display = 'none';
+        var ov = el.querySelector('.thumb-overlay');
+        if (ov) ov.style.display = '';
+      }, 2000);
+    }
+  }
 
   // --- Slider value label updates ---
   function updateSliderLabels() {
@@ -1269,11 +1408,13 @@
   // =====================================================
   var ctxMenu = document.getElementById('context-menu');
   var ctxSongId = null;
+  var ctxSongYtEl = null;
   var longPressTimer = null;
   var longPressTriggered = false;
 
-  function showContextMenu(x, y, songId) {
+  function showContextMenu(x, y, songId, songEl) {
     ctxSongId = songId;
+    ctxSongYtEl = songEl && songEl.dataset.ytid ? songEl : null;
     ctxMenu.style.display = 'block';
     // Clamp to viewport
     var mw = ctxMenu.offsetWidth, mh = ctxMenu.offsetHeight;
@@ -1286,6 +1427,7 @@
   function hideContextMenu() {
     ctxMenu.style.display = 'none';
     ctxSongId = null;
+    ctxSongYtEl = null;
   }
 
   // Right-click on library songs
@@ -1293,7 +1435,7 @@
     var songEl = e.target.closest('.library-song');
     if (!songEl) return;
     e.preventDefault();
-    showContextMenu(e.clientX, e.clientY, songEl.dataset.id);
+    showContextMenu(e.clientX, e.clientY, songEl.dataset.id, songEl);
   });
 
   // Artwork click: play immediately
@@ -1312,8 +1454,12 @@
     if (!item || !ctxSongId) return;
     var action = item.dataset.action;
     var songId = ctxSongId;
+    var ytEl = ctxSongYtEl;
     hideContextMenu();
-    if (action === 'play') {
+    if (ytEl) {
+      var ytAction = action === 'play' ? 'play' : action === 'playNext' ? 'playNext' : 'queue';
+      startYouTubeDownload(ytEl, ytAction);
+    } else if (action === 'play') {
       hostSend('playLibrarySong', { songId: songId });
     } else if (action === 'playNext') {
       hostSend('playLibrarySongNext', { songId: songId });
@@ -1335,9 +1481,9 @@
     if (!songEl) return;
     longPressTriggered = false;
     var touch = e.touches[0];
-    longPressTimer = setTimeout(function() {
+      longPressTimer = setTimeout(function() {
       longPressTriggered = true;
-      showContextMenu(touch.clientX, touch.clientY, songEl.dataset.id);
+      showContextMenu(touch.clientX, touch.clientY, songEl.dataset.id, songEl);
       // Prevent ghost click
       if (navigator.vibrate) navigator.vibrate(30);
     }, 500);

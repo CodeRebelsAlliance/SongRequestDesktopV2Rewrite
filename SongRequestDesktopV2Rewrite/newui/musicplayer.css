@@ -927,6 +927,47 @@ body { background: #121212; color: #e0e0e0; }
 }
 
 /* =====================================================
+   YouTube download progress overlay
+   ===================================================== */
+.yt-download-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  z-index: 5;
+  padding: 4px;
+}
+.yt-download-bar {
+  width: 0%;
+  height: 3px;
+  background: #4fc3f7;
+  border-radius: 2px;
+  transition: width 0.3s ease, background 0.3s ease;
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  right: 4px;
+}
+.yt-downloading .thumb-overlay { opacity: 0 !important; pointer-events: none !important; }
+.yt-downloading .yt-search-icon { opacity: 0.3; }
+.yt-download-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: #fff;
+  text-align: center;
+  line-height: 1.2;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+.yt-downloading .library-song-duration { opacity: 0.3; }
+
+/* =====================================================
    Pill tags (duplicates, missing, audio quality)
    ===================================================== */
 .pill {
@@ -993,6 +1034,35 @@ body { background: #121212; color: #e0e0e0; }
   overflow-y: auto;
 }
 #search-no-results { flex-shrink: 0; }
+
+/* YouTube search results */
+.search-section-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f44;
+  padding: 12px 10px 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #2a2a2a;
+  margin-top: 8px;
+}
+.search-section-header:first-child { border-top: none; margin-top: 0; }
+.yt-search-thumb {
+  background: #1a1a1a !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+.yt-search-icon {
+  color: #f44;
+  font-size: 20px;
+}
+.yt-pill {
+  background: rgba(255, 0, 0, 0.12) !important;
+  color: #f44 !important;
+  border-color: rgba(255, 0, 0, 0.2) !important;
+}
 
 /* =====================================================
    Modal overlay + Music Share

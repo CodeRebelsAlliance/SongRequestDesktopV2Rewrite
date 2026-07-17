@@ -64,7 +64,7 @@ public class YoutubeFormInterop
             switch (type)
             {
                 case "request":
-                    await HandleRequest(msg).ConfigureAwait(false);
+                    await HandleRequest(msg);
                     break;
                 case "response":
                     HandleResponse(msg);
@@ -88,7 +88,7 @@ public class YoutubeFormInterop
             switch (type)
             {
                 case "request":
-                    await HandleRequest(msg).ConfigureAwait(false);
+                    await HandleRequest(msg);
                     break;
                 case "response":
                     HandleResponse(msg);
@@ -109,6 +109,7 @@ public class YoutubeFormInterop
     {
         var id = msg["id"]?.ToString();
         var method = msg["method"]?.ToString();
+        var responseTarget = _responseTarget ?? SendMessage;
 
         try
         {
@@ -287,52 +288,52 @@ public class YoutubeFormInterop
             switch (method)
             {
                 case "fetchData":
-                    result = await FetchDataAsync().ConfigureAwait(false);
+                    result = await FetchDataAsync();
                     break;
                 case "config":
                     result = GetConfig();
                     break;
                 case "approve":
-                    result = await SendApprovalAsync(msg["ytid"]?.ToString(), true).ConfigureAwait(false);
+                    result = await SendApprovalAsync(msg["ytid"]?.ToString(), true);
                     break;
                 case "unapprove":
-                    result = await SendApprovalAsync(msg["ytid"]?.ToString(), false).ConfigureAwait(false);
+                    result = await SendApprovalAsync(msg["ytid"]?.ToString(), false);
                     break;
                 case "delete":
-                    result = await SendOtherAsync("delete", msg["ytid"]?.ToString()).ConfigureAwait(false);
+                    result = await SendOtherAsync("delete", msg["ytid"]?.ToString());
                     break;
                 case "blacklist":
-                    result = await SendOtherAsync("blacklist", msg["ytid"]?.ToString()).ConfigureAwait(false);
+                    result = await SendOtherAsync("blacklist", msg["ytid"]?.ToString());
                     break;
                 case "unblacklist":
-                    result = await SendOtherAsync("unblacklist", msg["ytid"]?.ToString()).ConfigureAwait(false);
+                    result = await SendOtherAsync("unblacklist", msg["ytid"]?.ToString());
                     break;
                 case "getBadWords":
-                    result = await GetBadWordsAsync().ConfigureAwait(false);
+                    result = await GetBadWordsAsync();
                     break;
                 case "addBadWord":
-                    result = await SendWordFilterAsync("add-bad-word", msg["word"]?.ToString()).ConfigureAwait(false);
+                    result = await SendWordFilterAsync("add-bad-word", msg["word"]?.ToString());
                     break;
                 case "deleteBadWord":
-                    result = await SendWordFilterAsync("delete-bad-word", msg["word"]?.ToString()).ConfigureAwait(false);
+                    result = await SendWordFilterAsync("delete-bad-word", msg["word"]?.ToString());
                     break;
                 case "getLyrics":
-                    result = await GetLyricsAsync(msg["videoId"]?.ToString(), msg["videoUrl"]?.ToString()).ConfigureAwait(false);
+                    result = await GetLyricsAsync(msg["videoId"]?.ToString(), msg["videoUrl"]?.ToString());
                     break;
                 case "searchLyrics":
                     result = SearchLyricsAsync(msg["query"]?.ToString());
                     break;
                 case "getThumbnail":
-                    result = await GetThumbnailBase64Async(msg["videoId"]?.ToString()).ConfigureAwait(false);
+                    result = await GetThumbnailBase64Async(msg["videoId"]?.ToString());
                     break;
                 case "downloadVideo":
-                    result = await DownloadVideoAsync(msg["videoUrl"]?.ToString()).ConfigureAwait(false);
+                    result = await DownloadVideoAsync(msg["videoUrl"]?.ToString());
                     break;
                 case "searchYoutube":
-                    result = await SearchYoutubeAsync(msg["query"]?.ToString()).ConfigureAwait(false);
+                    result = await SearchYoutubeAsync(msg["query"]?.ToString());
                     break;
                 case "submitSong":
-                    result = await SubmitSongAsync(msg["videoId"]?.ToString(), msg["message"]?.ToString()).ConfigureAwait(false);
+                    result = await SubmitSongAsync(msg["videoId"]?.ToString(), msg["message"]?.ToString());
                     break;
                 case "queueSong":
                     result = QueueSongAsync(msg["ytid"]?.ToString());
@@ -344,19 +345,19 @@ public class YoutubeFormInterop
                     result = new { version = About.version };
                     break;
                 case "checkForUpdates":
-                    result = await CheckForUpdatesAsync().ConfigureAwait(false);
+                    result = await CheckForUpdatesAsync();
                     break;
                 case "getSettings":
                     result = GetFullConfig();
                     break;
                 case "saveSettings":
-                    result = await SaveSettingsAsync(msg).ConfigureAwait(false);
+                    result = await SaveSettingsAsync(msg);
                     break;
                 case "toggleSendin":
-                    result = await ToggleSendinAsync().ConfigureAwait(false);
+                    result = await ToggleSendinAsync();
                     break;
                 case "getSendinStatus":
-                    result = await GetSendinStatusAsync().ConfigureAwait(false);
+                    result = await GetSendinStatusAsync();
                     break;
                 case "openAuthUrl":
                     result = OpenAuthUrl();
@@ -371,18 +372,18 @@ public class YoutubeFormInterop
                     result = SaveLaunchOptions(msg);
                     break;
                 case "triggerAuth":
-                    result = await TriggerAuthAsync().ConfigureAwait(false);
+                    result = await TriggerAuthAsync();
                     break;
                 case "completeSetup":
                     result = CompleteSetup(msg);
                     break;
                 case "installUpdate":
-                    result = await InstallUpdateAsync(msg).ConfigureAwait(false);
+                    result = await InstallUpdateAsync(msg);
                     break;
 
                 // ── Library ──────────────────────────────
                 case "scanLibrary":
-                    result = await ScanLibraryAsync().ConfigureAwait(false);
+                    result = await ScanLibraryAsync();
                     break;
                 case "cancelLibraryScan":
                     _libraryService.CancelScan();
@@ -427,6 +428,9 @@ public class YoutubeFormInterop
                 case "playLibrarySongNext":
                     result = PlayLibrarySongNext(msg);
                     break;
+                case "downloadAndPlayYouTube":
+                    result = await DownloadAndPlayYouTubeAsync(msg);
+                    break;
 
                 case "musicShareStart":
                     result = await MusicShareStart(msg);
@@ -449,11 +453,11 @@ public class YoutubeFormInterop
                     break;
             }
 
-            SendResponse(id, result);
+            SendResponse(id, result, responseTarget);
         }
         catch (Exception ex)
         {
-            SendResponse(id, new { error = ex.Message });
+            SendResponse(id, new { error = ex.Message }, responseTarget);
         }
     }
 
@@ -466,12 +470,11 @@ public class YoutubeFormInterop
         }
     }
 
-    private void SendResponse(string? id, object? result)
+    private void SendResponse(string? id, object? result, Action<string>? target = null)
     {
         if (id == null) return;
         var json = JsonConvert.SerializeObject(new { type = "response", id, result });
-        var target = _responseTarget ?? SendMessage;
-        target?.Invoke(json);
+        (target ?? _responseTarget ?? SendMessage)?.Invoke(json);
     }
 
     public void SendEvent(string eventName, object? data)
@@ -686,10 +689,10 @@ public class YoutubeFormInterop
         }
     }
 
-    private async Task<object> SearchYoutubeAsync(string? query)
+    private async Task<object> SearchYoutubeAsync(string? query, int maxResults = 10)
     {
         if (string.IsNullOrWhiteSpace(query)) return new { error = "Query is empty" };
-        var results = await _ytService.SearchAsync(query, 5).ConfigureAwait(false);
+        var results = await _ytService.SearchAsync(query, maxResults);
         return new
         {
             results = results.Select(r => new
@@ -1995,6 +1998,60 @@ public class YoutubeFormInterop
         });
 
         return new { success = true };
+    }
+
+    private async Task<object> DownloadAndPlayYouTubeAsync(JObject msg)
+    {
+        var videoId = msg["videoId"]?.ToString();
+        var action = msg["action"]?.ToString() ?? "play";
+        var title = msg["title"]?.ToString() ?? "";
+        var author = msg["author"]?.ToString() ?? "";
+
+        if (string.IsNullOrEmpty(videoId)) return new { error = "No videoId" };
+
+        var videoUrl = $"https://www.youtube.com/watch?v={videoId}";
+        var downloadPath = YoutubeForm.downloadPath;
+
+        try
+        {
+            SendEvent("ytDownloadProgress", new { videoId, stage = "downloading", progress = 0 });
+
+            var progress = new Progress<double>(pct =>
+            {
+                try { SendEvent("ytDownloadProgress", new { videoId, stage = "downloading", progress = (int)(pct * 100) }); }
+                catch { }
+            });
+
+            var filePath = await _ytService.DownloadVideoWithProgressAsync(videoUrl, downloadPath, progress);
+
+            SendEvent("ytDownloadProgress", new { videoId, stage = "importing", progress = 100 });
+
+            var youTubeId = YoutubeService.ExtractVideoId(videoUrl);
+            var libSong = _libraryService.ImportDownloadedSong(filePath, youTubeId, videoUrl, title, author);
+
+            SendEvent("ytDownloadProgress", new { videoId, stage = "playing", progress = 100 });
+
+            if (libSong == null || !System.IO.File.Exists(libSong.FilePath))
+                return new { error = "Import failed" };
+
+            string songId = libSong.Id;
+
+            if (action == "play")
+                PlayLibrarySong(new JObject { ["songId"] = songId });
+            else if (action == "playNext")
+                PlayLibrarySongNext(new JObject { ["songId"] = songId });
+            else if (action == "queue")
+                QueueLibrarySong(new JObject { ["songId"] = songId });
+
+            SendEvent("ytDownloadProgress", new { videoId, stage = "done", progress = 100 });
+
+            return new { success = true, songId, action };
+        }
+        catch (Exception ex)
+        {
+            SendEvent("ytDownloadProgress", new { videoId, stage = "error", progress = 0 });
+            return new { error = ex.Message };
+        }
     }
 
     // ────────────────────────────────────────────────────────
