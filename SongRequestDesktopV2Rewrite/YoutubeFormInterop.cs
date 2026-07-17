@@ -1548,6 +1548,7 @@ public class YoutubeFormInterop
             genre = s.Genre,
             duration = s.Duration.TotalSeconds,
             durationDisplay = s.DurationDisplay,
+            thumbnail = GetLibrarySongThumbnail(s),
             filePath = s.FilePath,
             source = s.Source.ToString(),
             fileStatus = s.FileStatus.ToString(),
@@ -1564,6 +1565,22 @@ public class YoutubeFormInterop
         }).ToList();
 
         return new { total, page, pageSize, songs };
+    }
+
+    private string? GetLibrarySongThumbnail(LibrarySong song)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(song.ThumbnailPath) && File.Exists(song.ThumbnailPath))
+            {
+                var bytes = File.ReadAllBytes(song.ThumbnailPath);
+                var ext = Path.GetExtension(song.ThumbnailPath).ToLowerInvariant();
+                var mime = ext == ".png" ? "image/png" : "image/jpeg";
+                return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
+            }
+        }
+        catch { }
+        return null;
     }
 
     private object SearchLibrary(JObject msg)

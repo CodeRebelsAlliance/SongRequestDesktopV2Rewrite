@@ -32,7 +32,7 @@
       <div id="sidebar-tabs">
         <button class="sidebar-tab active" data-view="home"><i class="fas fa-home"></i> Home</button>
         <button class="sidebar-tab" data-view="playlists"><i class="fas fa-list"></i> Playlists</button>
-        <button class="sidebar-tab" data-view="library"><i class="fas fa-album"></i> Library</button>
+        <button class="sidebar-tab" data-view="library"><i class="fas fa-compact-disc"></i> Library</button>
       </div>
       <div id="playlist-list">
         <div class="playlist-section-title">Your Playlists</div>
@@ -90,9 +90,16 @@
         </div>
       </div>
       <div id="view-library" class="view">
-        <div class="view-header">Library</div>
+        <div class="view-header">
+          <span>Library</span>
+          <span id="library-count" class="library-count"></span>
+        </div>
         <div id="library-content">
-          <div class="library-empty"><i class="fas fa-album"></i><p>Your library is empty. Add songs to get started.</p></div>
+          <div id="library-loading" class="library-loading" style="display:none"><i class="fas fa-circle-notch fa-spin"></i><span>Loading library...</span></div>
+          <div id="library-list"></div>
+          <div id="library-load-more-sentinel"></div>
+          <div id="library-end" class="library-loading" style="display:none"><i class="fas fa-compact-disc"></i><span>No more songs</span></div>
+          <div id="library-empty" class="library-empty" style="display:none"><i class="fas fa-compact-disc"></i><p>Your library is empty. Add songs to get started.</p></div>
         </div>
       </div>
     </div>

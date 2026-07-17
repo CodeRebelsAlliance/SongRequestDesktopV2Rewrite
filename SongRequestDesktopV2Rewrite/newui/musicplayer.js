@@ -628,6 +628,9 @@
   }
 
   // --- Host communication ---
+  var _reqId = 0;
+  var _pendingReqs = {};
+
   function hostSend(method, params) {
     try {
       window.external.sendMessage(JSON.stringify({ type: 'request', id: 0, method, ...params }));
@@ -642,13 +645,56 @@
     }
   }
 
+  function hostRequest(method, params) {
+    return new Promise(function(resolve, reject) {
+      var id = ++_reqId;
+      _pendingReqs[id] = { resolve: resolve, reject: reject, timer: setTimeout(function() {
+        delete _pendingReqs[id];
+        reject(new Error('Request timeout: ' + method));
+      }, 30000) };
+      try {
+        window.external.sendMessage(JSON.stringify({ type: 'request', id: id, method: method, ...params }));
+      } catch (e1) {
+        try {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ type: 'request', id: id, method: method, ...params }));
+          }
+        } catch (e2) {
+          delete _pendingReqs[id];
+          reject(e2);
+        }
+      }
+    });
+  }
+
+  function postMessageToHost(msg) {
+    try {
+      window.external.sendMessage(msg);
+    } catch (e1) {
+      try {
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(msg);
+        }
+      } catch (e2) {
+        console.error('postMessageToHost failed', e2);
+      }
+    }
+  }
+
   // Receive events from C# (matching app.js pattern)
   function handleIncoming(json) {
     try {
       const msg = JSON.parse(json);
-      if (msg.type === 'event') {
-        onEvent(msg.eventName, msg.data || {});
-      } else if (msg.type === 'response') {
+      if (msg.type === 'response') {
+        var id = msg.id;
+        if (id && _pendingReqs[id]) {
+          clearTimeout(_pendingReqs[id].timer);
+          var result = msg.result !== undefined ? msg.result : msg;
+          _pendingReqs[id].resolve(result);
+          delete _pendingReqs[id];
+          return;
+        }
+        // Fallback: volume/crossfade init response (from musicPlayerReady)
         if (msg.volume != null) {
           const v = Math.round(msg.volume * 100);
           const c = Math.round((msg.crossfade || 4) * 10);
@@ -657,6 +703,8 @@
           const iconName = v == 0 ? 'fa-volume-mute' : 'fa-volume-up';
           volIcons.forEach(ic => { if (ic) ic.className = `fas ${iconName}`; });
         }
+      } else if (msg.type === 'event') {
+        onEvent(msg.eventName, msg.data || {});
       }
     } catch (_) {}
   }
@@ -887,6 +935,142 @@
   fontIncreaseBtn.addEventListener('click', function() { setFontScale(lyricsFontScale + 0.1); });
   fontResetEl.addEventListener('click', function() { animateFontToDefault(); });
   updateFontDisplay();
+
+  // =====================================================
+  //  Library: lazy-loaded song list
+  // =====================================================
+  var LIB_PAGE_SIZE = 30;
+  var libPage = 0;
+  var libTotal = 0;
+  var libLoading = false;
+  var libAllLoaded = false;
+  var libInitialized = false;
+  var libInitialLoadDone = false;
+
+  var libListEl = document.getElementById('library-list');
+  var libLoadingEl = document.getElementById('library-loading');
+  var libEmptyEl = document.getElementById('library-empty');
+  var libEndEl = document.getElementById('library-end');
+  var libCountEl = document.getElementById('library-count');
+  var libSentinel = document.getElementById('library-load-more-sentinel');
+
+  function renderLibrarySong(song) {
+    var thumbHtml = song.thumbnail
+      ? '<img src="' + song.thumbnail + '" alt="">'
+      : '<i class="fas fa-music"></i>';
+    var title = song.title || song.filePath.split(/[/\\]/).pop();
+    var artist = song.artist || 'Unknown';
+    return '<div class="library-song" data-id="' + song.id + '">' +
+      '<div class="library-song-thumb">' + thumbHtml + '</div>' +
+      '<div class="library-song-info">' +
+        '<div class="library-song-title">' + escHtml(title) + '</div>' +
+        '<div class="library-song-artist">' + escHtml(artist) + '</div>' +
+      '</div>' +
+      '<div class="library-song-duration">' + escHtml(song.durationDisplay) + '</div>' +
+    '</div>';
+  }
+
+  function loadLibraryPage() {
+    if (libLoading || libAllLoaded) return Promise.resolve();
+    libLoading = true;
+    libLoadingEl.style.display = '';
+    libEndEl.style.display = 'none';
+
+    return hostRequest('getLibrarySongs', {
+      page: libPage + 1,
+      pageSize: LIB_PAGE_SIZE,
+      sortBy: 'dateAdded',
+      descending: true,
+      filterMissing: true,
+      filterDuplicates: 'none'
+    }).then(function(result) {
+      var songs = result.songs || [];
+      var total = result.total || 0;
+      libTotal = total;
+
+      if (libPage === 0) {
+        libListEl.innerHTML = '';
+        if (total === 0) {
+          libEmptyEl.style.display = '';
+          libLoadingEl.style.display = 'none';
+          libCountEl.textContent = '';
+          libAllLoaded = true;
+          libLoading = false;
+          return;
+        }
+        libEmptyEl.style.display = 'none';
+        libCountEl.textContent = total + ' song' + (total !== 1 ? 's' : '');
+      }
+
+      songs.forEach(function(song) {
+        libListEl.insertAdjacentHTML('beforeend', renderLibrarySong(song));
+      });
+
+      libPage++;
+      if (songs.length < LIB_PAGE_SIZE || libPage * LIB_PAGE_SIZE >= total) {
+        libAllLoaded = true;
+        libLoadingEl.style.display = 'none';
+        if (libPage * LIB_PAGE_SIZE >= total && songs.length > 0) {
+          libEndEl.style.display = '';
+        }
+      } else {
+        libLoadingEl.style.display = 'none';
+      }
+
+      libLoading = false;
+    }).catch(function(err) {
+      console.error('Library load failed:', err);
+      libLoadingEl.style.display = 'none';
+      libLoading = false;
+    });
+  }
+
+  // IntersectionObserver: load more when sentinel is visible
+  var libObserver = null;
+  function setupLibraryObserver() {
+    if (libObserver) return;
+    libObserver = new IntersectionObserver(function(entries) {
+      if (entries.some(function(e) { return e.isIntersecting; })) {
+        if (!libAllLoaded && !libLoading) {
+          loadLibraryPage();
+        }
+      }
+    }, { root: document.getElementById('view-library'), threshold: 0.1 });
+    if (libSentinel) libObserver.observe(libSentinel);
+  }
+
+  // When the Library tab is clicked, load songs (once)
+  document.querySelector('[data-view="library"]').addEventListener('click', function() {
+    if (!libInitialized) {
+      libInitialized = true;
+      setupLibraryObserver();
+      loadLibraryPage();
+    }
+  });
+
+  // Also listen for library updates from C# (e.g. after scan)
+  function onLibraryUpdated() {
+    libPage = 0;
+    libTotal = 0;
+    libAllLoaded = false;
+    libInitialized = true;
+    libListEl.innerHTML = '';
+    libEmptyEl.style.display = 'none';
+    libEndEl.style.display = 'none';
+    libCountEl.textContent = '';
+    setupLibraryObserver();
+    loadLibraryPage();
+  }
+
+  // Listen for 'libraryUpdated' events from C#
+  var origOnEvent = onEvent;
+  onEvent = function(eventName, data) {
+    if (eventName === 'libraryUpdated') {
+      onLibraryUpdated();
+      return;
+    }
+    origOnEvent(eventName, data);
+  };
 
   // --- Slider value label updates ---
   function updateSliderLabels() {
