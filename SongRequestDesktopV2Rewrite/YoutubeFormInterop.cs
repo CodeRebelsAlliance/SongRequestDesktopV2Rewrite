@@ -762,10 +762,24 @@ public class YoutubeFormInterop
                 var thumb = GetThumbnailForSongPath(current.songPath);
                 if (thumb != null)
                     data["thumbnail"] = thumb;
+
+                // Library-enriched audio quality metadata
+                if (!string.IsNullOrEmpty(current.songPath))
+                {
+                    var libSong = _libraryService.Data.Songs.FirstOrDefault(s => string.Equals(s.FilePath, current.songPath, StringComparison.OrdinalIgnoreCase));
+                    if (libSong != null)
+                    {
+                        var ext = System.IO.Path.GetExtension(current.songPath).TrimStart('.').ToUpperInvariant();
+                        data["fileType"] = ext;
+                        if (libSong.BitrateKbps > 0) data["bitrateKbps"] = libSong.BitrateKbps;
+                    }
+                }
             }
 
             if (current == null)
                 _currentSongPath = null;
+
+            data["currentSongPath"] = _currentSongPath;
 
             var json = JsonConvert.SerializeObject(new
             {
@@ -811,6 +825,18 @@ public class YoutubeFormInterop
             if (thumb != null)
                 data["thumbnail"] = thumb;
 
+            // Library-enriched audio quality metadata
+            if (!string.IsNullOrEmpty(current.songPath))
+            {
+                var libSong = _libraryService.Data.Songs.FirstOrDefault(s => string.Equals(s.FilePath, current.songPath, StringComparison.OrdinalIgnoreCase));
+                if (libSong != null)
+                {
+                    var ext = System.IO.Path.GetExtension(current.songPath).TrimStart('.').ToUpperInvariant();
+                    data["fileType"] = ext;
+                    if (libSong.BitrateKbps > 0) data["bitrateKbps"] = libSong.BitrateKbps;
+                }
+            }
+
             var json = JsonConvert.SerializeObject(new
             {
                 type = "event",
@@ -840,11 +866,30 @@ public class YoutubeFormInterop
             var mp = _ytForm.MusicPlayer;
             if (mp == null) return;
 
+            // Build a path→library lookup for enriching queue items
+            Dictionary<string, LibrarySong> libByPath = new(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var s in _libraryService.Data.Songs)
+                    if (!string.IsNullOrEmpty(s.FilePath))
+                        libByPath[s.FilePath] = s;
+            }
+            catch { }
+
             var queueData = mp.Queue.Select((song, i) =>
             {
                 string? thumb = null;
                 if (!string.IsNullOrEmpty(song.songPath))
                     thumb = GetThumbnailForSongPath(song.songPath);
+
+                LibrarySong? lib = null;
+                if (!string.IsNullOrEmpty(song.songPath))
+                    libByPath.TryGetValue(song.songPath, out lib);
+
+                var ext = !string.IsNullOrEmpty(song.songPath)
+                    ? System.IO.Path.GetExtension(song.songPath).TrimStart('.').ToUpperInvariant()
+                    : null;
+
                 return new
                 {
                     title = song.Title ?? "",
@@ -853,7 +898,14 @@ public class YoutubeFormInterop
                     songPath = song.songPath ?? "",
                     estimatedStart = song.EstimatedStartDisplay ?? "",
                     index = i,
-                    thumbnail = thumb
+                    thumbnail = thumb,
+                    // Library-enriched metadata
+                    isMissing = lib?.IsMissing ?? false,
+                    isHashDuplicate = lib?.IsHashDuplicate ?? false,
+                    hasMetadataDuplicates = lib?.HasMetadataDuplicates ?? false,
+                    metadataDuplicateCount = lib?.MetadataDuplicateIds.Count ?? 0,
+                    bitrateKbps = lib?.BitrateKbps ?? 0,
+                    fileType = ext
                 };
             }).ToList();
 

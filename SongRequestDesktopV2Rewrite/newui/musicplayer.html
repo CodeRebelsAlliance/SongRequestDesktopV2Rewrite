@@ -149,6 +149,7 @@
       </div>
     </div>
       <div id="player-bar-right">
+      <span id="player-bar-quality" class="pill pill-quality pill-bar" style="display:none"></span>
       <button id="btn-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
       <div id="volume-slider-wrap">
         <span id="volume-value" class="slider-value">80</span>
@@ -164,7 +165,10 @@
 
     <!-- Expanded mode content (full screen) -->
     <div id="player-expanded-content">
-      <img src="../SRshortLogo.png" id="expanded-logo" alt="SongRequest V2">
+      <div id="expanded-top-bar">
+        <span id="expanded-quality" class="pill pill-quality pill-expanded" style="display:none"></span>
+        <img src="../SRshortLogo.png" id="expanded-logo" alt="SongRequest V2">
+      </div>
       <!-- Top: artwork + info side by side -->
       <div id="expanded-top">
         <div id="expanded-artwork"><i class="fas fa-music"></i></div>

@@ -28,6 +28,10 @@
   const expProgressCurrent = document.getElementById('exp-progress-current');
   const expProgressTotal = document.getElementById('exp-progress-total');
 
+  // Quality pill elements
+  const colQuality = document.getElementById('player-bar-quality');
+  const expQuality = document.getElementById('expanded-quality');
+
   // Lyrics
   const lyricsContainer = document.getElementById('expanded-lyrics');
   const lyricsProvider = document.getElementById('lyrics-provider');
@@ -437,6 +441,20 @@
       expTitle.textContent = data.title;
       expArtist.textContent = data.artist || '—';
 
+      // Quality pill (collapsed + expanded)
+      if (data.fileType) {
+        var ql = data.fileType;
+        if (data.bitrateKbps > 0) ql += ' ' + data.bitrateKbps + 'kbps';
+        var pillHtml = '<i class="fas fa-signal"></i> ' + escHtml(ql);
+        colQuality.innerHTML = pillHtml;
+        colQuality.style.display = '';
+        expQuality.innerHTML = pillHtml;
+        expQuality.style.display = '';
+      } else {
+        colQuality.style.display = 'none';
+        expQuality.style.display = 'none';
+      }
+
       // Reset lyrics for new song
       syncedLyrics = [];
       plainLyricLines = [];
@@ -446,6 +464,18 @@
       animateSyncToZero();
       animateFontToDefault();
       renderLyricsLoading();
+    }
+
+    // Update library highlight from every tick
+    if (data.currentSongPath != null) {
+      var newPath = data.currentSongPath || null;
+      if (newPath !== currentPlayingPath) {
+        currentPlayingPath = newPath;
+        updateLibraryPlayingState();
+      }
+    } else if (currentPlayingPath !== null) {
+      currentPlayingPath = null;
+      updateLibraryPlayingState();
     }
 
     // Thumbnail
@@ -501,11 +531,26 @@
   const clearQueueBtn = document.getElementById('btn-clear-queue');
   let lastQueueData = null;
   let lastPlaybackActive = false;
+  let currentPlayingPath = null;
 
   function updateQueue(data) {
     lastQueueData = data;
     lastPlaybackActive = !!data.isPlaying;
+    var newPath = data.currentSongPath || null;
+    if (newPath !== currentPlayingPath) {
+      currentPlayingPath = newPath;
+      updateLibraryPlayingState();
+    }
     renderQueue(data.queue || [], lastPlaybackActive);
+  }
+
+  function updateLibraryPlayingState() {
+    var songs = libListEl.querySelectorAll('.library-song');
+    songs.forEach(function(el) {
+      var fp = el.getAttribute('data-filepath');
+      var isPlaying = currentPlayingPath && fp && fp === currentPlayingPath;
+      el.classList.toggle('lib-now-playing', isPlaying);
+    });
   }
 
   function renderQueue(items, isPlaying) {
@@ -590,6 +635,12 @@
       ? `<div class="queue-item-thumb"><img src="${item.thumbnail}" alt=""></div>`
       : `<div class="queue-item-thumb"><i class="fas fa-music"></i></div>`;
     const draggable = !isNowPlaying ? ' draggable="true"' : '';
+
+    var pills = '';
+    if (item.isMissing) pills += '<span class="pill pill-missing"><i class="fas fa-exclamation-triangle"></i> Missing</span>';
+    if (item.isHashDuplicate) pills += '<span class="pill pill-dup"><i class="fas fa-clone"></i> Hash Dup</span>';
+    if (item.hasMetadataDuplicates) pills += '<span class="pill pill-dup"><i class="fas fa-clone"></i> Meta Dup' + (item.metadataDuplicateCount > 1 ? ' (' + item.metadataDuplicateCount + ')' : '') + '</span>';
+
     return `
       <div class="queue-item${isNowPlaying ? ' queue-now-playing' : ''}" data-index="${item.index}"${draggable}>
         ${thumbHtml}
@@ -601,6 +652,7 @@
             <span class="queue-item-duration">${item.duration}</span>
             ${item.estimatedStart ? `<span class="queue-item-sep">·</span><span class="queue-item-start">~${item.estimatedStart}</span>` : ''}
           </div>
+          ${pills ? '<div class="queue-item-pills">' + pills + '</div>' : ''}
         </div>
         <button class="queue-item-remove" data-index="${item.index}" title="Remove"><i class="fas fa-times"></i></button>
       </div>
@@ -960,13 +1012,20 @@
       : '<i class="fas fa-music"></i>';
     var title = song.title || song.filePath.split(/[/\\]/).pop();
     var artist = song.artist || 'Unknown';
-    return '<div class="library-song" data-id="' + song.id + '">' +
+
+    var pills = '';
+    if (song.isMissing) pills += '<span class="pill pill-missing"><i class="fas fa-exclamation-triangle"></i> Missing</span>';
+    if (song.isHashDuplicate) pills += '<span class="pill pill-dup"><i class="fas fa-clone"></i> Hash Dup</span>';
+    if (song.hasMetadataDuplicates) pills += '<span class="pill pill-dup"><i class="fas fa-clone"></i> Meta Dup' + (song.metadataDuplicateCount > 1 ? ' (' + song.metadataDuplicateCount + ')' : '') + '</span>';
+
+    return '<div class="library-song" data-id="' + song.id + '" data-filepath="' + escHtml(song.filePath || '') + '">' +
       '<div class="library-song-thumb" data-song-id="' + song.id + '">' + thumbHtml +
         '<div class="thumb-overlay"><i class="fas fa-play"></i></div>' +
+        '<div class="thumb-now-playing"><span class="eq-bar"></span><span class="eq-bar"></span><span class="eq-bar"></span></div>' +
       '</div>' +
       '<div class="library-song-info">' +
         '<div class="library-song-title">' + escHtml(title) + '</div>' +
-        '<div class="library-song-artist">' + escHtml(artist) + '</div>' +
+        '<div class="library-song-artist">' + escHtml(artist) + (pills ? ' ' + pills : '') + '</div>' +
       '</div>' +
       '<div class="library-song-duration">' + escHtml(song.durationDisplay) + '</div>' +
     '</div>';
@@ -1007,6 +1066,7 @@
       songs.forEach(function(song) {
         libListEl.insertAdjacentHTML('beforeend', renderLibrarySong(song));
       });
+      updateLibraryPlayingState();
 
       libPage++;
       if (songs.length < LIB_PAGE_SIZE || libPage * LIB_PAGE_SIZE >= total) {
