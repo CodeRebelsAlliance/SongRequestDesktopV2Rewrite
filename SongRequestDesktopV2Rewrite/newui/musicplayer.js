@@ -961,7 +961,9 @@
     var title = song.title || song.filePath.split(/[/\\]/).pop();
     var artist = song.artist || 'Unknown';
     return '<div class="library-song" data-id="' + song.id + '">' +
-      '<div class="library-song-thumb">' + thumbHtml + '</div>' +
+      '<div class="library-song-thumb" data-song-id="' + song.id + '">' + thumbHtml +
+        '<div class="thumb-overlay"><i class="fas fa-play"></i></div>' +
+      '</div>' +
       '<div class="library-song-info">' +
         '<div class="library-song-title">' + escHtml(title) + '</div>' +
         '<div class="library-song-artist">' + escHtml(artist) + '</div>' +
@@ -1088,6 +1090,97 @@
     if (sl) sl.addEventListener('input', updateSliderLabels);
   });
   updateSliderLabels();
+
+  // =====================================================
+  //  Context menu for library songs
+  // =====================================================
+  var ctxMenu = document.getElementById('context-menu');
+  var ctxSongId = null;
+  var longPressTimer = null;
+  var longPressTriggered = false;
+
+  function showContextMenu(x, y, songId) {
+    ctxSongId = songId;
+    ctxMenu.style.display = 'block';
+    // Clamp to viewport
+    var mw = ctxMenu.offsetWidth, mh = ctxMenu.offsetHeight;
+    if (x + mw > window.innerWidth) x = window.innerWidth - mw - 4;
+    if (y + mh > window.innerHeight) y = window.innerHeight - mh - 4;
+    ctxMenu.style.left = x + 'px';
+    ctxMenu.style.top = y + 'px';
+  }
+
+  function hideContextMenu() {
+    ctxMenu.style.display = 'none';
+    ctxSongId = null;
+  }
+
+  // Right-click on library songs
+  libListEl.addEventListener('contextmenu', function(e) {
+    var songEl = e.target.closest('.library-song');
+    if (!songEl) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, songEl.dataset.id);
+  });
+
+  // Artwork click: play immediately
+  libListEl.addEventListener('click', function(e) {
+    var overlay = e.target.closest('.thumb-overlay');
+    if (!overlay) return;
+    var songEl = overlay.closest('.library-song');
+    if (!songEl) return;
+    e.stopPropagation();
+    hostSend('playLibrarySong', { songId: songEl.dataset.id });
+  });
+
+  // Context menu actions
+  ctxMenu.addEventListener('click', function(e) {
+    var item = e.target.closest('.context-menu-item');
+    if (!item || !ctxSongId) return;
+    var action = item.dataset.action;
+    var songId = ctxSongId;
+    hideContextMenu();
+    if (action === 'play') {
+      hostSend('playLibrarySong', { songId: songId });
+    } else if (action === 'playNext') {
+      hostSend('playLibrarySongNext', { songId: songId });
+    } else if (action === 'addToQueue') {
+      hostSend('queueLibrarySong', { songId: songId });
+    }
+  });
+
+  // Hide context menu on click elsewhere / scroll / key
+  document.addEventListener('click', function(e) {
+    if (!ctxMenu.contains(e.target)) hideContextMenu();
+  });
+  document.addEventListener('scroll', hideContextMenu, true);
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideContextMenu(); });
+
+  // Long-press for touch users on library songs
+  libListEl.addEventListener('touchstart', function(e) {
+    var songEl = e.target.closest('.library-song');
+    if (!songEl) return;
+    longPressTriggered = false;
+    var touch = e.touches[0];
+    longPressTimer = setTimeout(function() {
+      longPressTriggered = true;
+      showContextMenu(touch.clientX, touch.clientY, songEl.dataset.id);
+      // Prevent ghost click
+      if (navigator.vibrate) navigator.vibrate(30);
+    }, 500);
+  }, { passive: true });
+
+  libListEl.addEventListener('touchend', function(e) {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    if (longPressTriggered) {
+      e.preventDefault();
+      longPressTriggered = false;
+    }
+  });
+
+  libListEl.addEventListener('touchmove', function() {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  }, { passive: true });
 
   // --- Accent color extraction from thumbnail ---
   function resetAccentColors() {

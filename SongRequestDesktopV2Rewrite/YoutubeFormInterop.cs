@@ -403,6 +403,15 @@ public class YoutubeFormInterop
                 case "flagLibrarySongMissing":
                     result = FlagLibrarySongMissing(msg);
                     break;
+                case "playLibrarySong":
+                    result = PlayLibrarySong(msg);
+                    break;
+                case "queueLibrarySong":
+                    result = QueueLibrarySong(msg);
+                    break;
+                case "playLibrarySongNext":
+                    result = PlayLibrarySongNext(msg);
+                    break;
 
                 default:
                     result = new { error = $"Unknown method: {method}" };
@@ -1807,6 +1816,96 @@ public class YoutubeFormInterop
         }
 
         _libraryService.Save();
+        return new { success = true };
+    }
+
+    private object PlayLibrarySong(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrEmpty(songId)) return new { error = "No songId" };
+
+        LibrarySong? libSong;
+        lock (_libraryService.Data)
+        {
+            libSong = _libraryService.Data.FindSong(songId);
+        }
+        if (libSong == null) return new { error = "Song not found in library" };
+        if (!System.IO.File.Exists(libSong.FilePath)) return new { error = "File not found on disk" };
+
+        _ytForm.Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                var mp = _ytForm.MusicPlayer;
+                if (mp == null) return;
+                mp.ClearQueue(true);
+                if (mp.TryCreateSongFromFile(libSong.FilePath, out var song, out var errMsg) && song != null)
+                {
+                    mp.Queue.Add(song);
+                    mp.ComputeQueueTimings();
+                    mp.AnimateListItem(song);
+                    mp.PlaySong(mp.Queue[0]);
+                }
+            }
+            catch { }
+        });
+
+        return new { success = true };
+    }
+
+    private object QueueLibrarySong(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrEmpty(songId)) return new { error = "No songId" };
+
+        LibrarySong? libSong;
+        lock (_libraryService.Data)
+        {
+            libSong = _libraryService.Data.FindSong(songId);
+        }
+        if (libSong == null) return new { error = "Song not found in library" };
+        if (!System.IO.File.Exists(libSong.FilePath)) return new { error = "File not found on disk" };
+
+        _ytForm.Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                var mp = _ytForm.MusicPlayer;
+                if (mp == null) return;
+                if (mp.TryCreateSongFromFile(libSong.FilePath, out var song, out var errMsg) && song != null)
+                    mp.AddSongExternal(song);
+            }
+            catch { }
+        });
+
+        return new { success = true };
+    }
+
+    private object PlayLibrarySongNext(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrEmpty(songId)) return new { error = "No songId" };
+
+        LibrarySong? libSong;
+        lock (_libraryService.Data)
+        {
+            libSong = _libraryService.Data.FindSong(songId);
+        }
+        if (libSong == null) return new { error = "Song not found in library" };
+        if (!System.IO.File.Exists(libSong.FilePath)) return new { error = "File not found on disk" };
+
+        _ytForm.Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                var mp = _ytForm.MusicPlayer;
+                if (mp == null) return;
+                if (mp.TryCreateSongFromFile(libSong.FilePath, out var song, out var errMsg) && song != null)
+                    mp.AddNextSongExternal(song);
+            }
+            catch { }
+        });
+
         return new { success = true };
     }
 }

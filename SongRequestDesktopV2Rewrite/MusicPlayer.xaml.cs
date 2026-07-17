@@ -423,7 +423,7 @@ namespace SongRequestDesktopV2Rewrite
             pres.Show();
         }
 
-        private void ComputeQueueTimings()
+        public void ComputeQueueTimings()
         {
             // initial offset: time until the currently playing track finishes
             TimeSpan initialOffset = TimeSpan.Zero;
@@ -1517,7 +1517,7 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
-        private async void PlaySong(Song s)
+        public async void PlaySong(Song s)
         {
             if (s == null) return;
             if (!System.IO.File.Exists(s.songPath)) return;
@@ -1843,7 +1843,7 @@ namespace SongRequestDesktopV2Rewrite
             ComputeQueueTimings();
         }
 
-        private void AnimateListItem(Song song)
+        public void AnimateListItem(Song song)
         {
             // Attempt to get the container; it may not be generated yet
             Dispatcher.BeginInvoke(new Action(() =>
