@@ -966,7 +966,26 @@ public class YoutubeFormInterop
     {
         try
         {
-            // 1. Try embedded album art (local files and YouTube downloads with embedded art)
+            // 1. Try library thumbnail (saved during download/import)
+            try
+            {
+                LibrarySong? libSong;
+                lock (_libraryService.Data)
+                {
+                    libSong = _libraryService.Data.Songs.FirstOrDefault(s =>
+                        string.Equals(s.FilePath, songPath, StringComparison.OrdinalIgnoreCase));
+                }
+                if (libSong != null && !string.IsNullOrEmpty(libSong.ThumbnailPath) && File.Exists(libSong.ThumbnailPath))
+                {
+                    var bytes = File.ReadAllBytes(libSong.ThumbnailPath);
+                    var ext = System.IO.Path.GetExtension(libSong.ThumbnailPath).ToLowerInvariant();
+                    var mime = ext == ".png" ? "image/png" : "image/jpeg";
+                    return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
+                }
+            }
+            catch { /* fall through */ }
+
+            // 2. Try embedded album art (local files and YouTube downloads with embedded art)
             try
             {
                 using var tfile = global::TagLib.File.Create(songPath);
@@ -980,26 +999,27 @@ public class YoutubeFormInterop
             }
             catch { /* no embedded art, fall through */ }
 
-            // 2. Try YouTube thumbnail cache
+            // 3. Try YouTube thumbnail cache (legacy)
             var videoId = System.IO.Path.GetFileNameWithoutExtension(songPath);
-            if (string.IsNullOrEmpty(videoId)) return null;
-
-            var cacheDir = System.IO.Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "data", "downloadedvideos", "thumbnail-cache");
-            var cachePath = System.IO.Path.Combine(cacheDir, $"{videoId}.png");
-
-            if (File.Exists(cachePath))
+            if (!string.IsNullOrEmpty(videoId))
             {
-                var bytes = File.ReadAllBytes(cachePath);
-                return "data:image/png;base64," + Convert.ToBase64String(bytes);
-            }
+                var cacheDir = System.IO.Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "data", "downloadedvideos", "thumbnail-cache");
+                var cachePath = System.IO.Path.Combine(cacheDir, $"{videoId}.png");
 
-            var jpgPath = System.IO.Path.Combine(cacheDir, $"{videoId}.jpg");
-            if (File.Exists(jpgPath))
-            {
-                var bytes = File.ReadAllBytes(jpgPath);
-                return "data:image/jpeg;base64," + Convert.ToBase64String(bytes);
+                if (File.Exists(cachePath))
+                {
+                    var bytes = File.ReadAllBytes(cachePath);
+                    return "data:image/png;base64," + Convert.ToBase64String(bytes);
+                }
+
+                var jpgPath = System.IO.Path.Combine(cacheDir, $"{videoId}.jpg");
+                if (File.Exists(jpgPath))
+                {
+                    var bytes = File.ReadAllBytes(jpgPath);
+                    return "data:image/jpeg;base64," + Convert.ToBase64String(bytes);
+                }
             }
         }
         catch { }
@@ -1910,6 +1930,36 @@ public class YoutubeFormInterop
         return new { success = true };
     }
 
+    private static Song CreateSongFromLibrary(LibrarySong libSong)
+    {
+        var img = new System.Windows.Controls.Image();
+        var defaultUri = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/SRshortLogo.png"));
+        img.Source = defaultUri;
+
+        if (!string.IsNullOrEmpty(libSong.ThumbnailPath) && File.Exists(libSong.ThumbnailPath))
+        {
+            try
+            {
+                var bytes = File.ReadAllBytes(libSong.ThumbnailPath);
+                using var ms = new MemoryStream(bytes);
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.StreamSource = ms;
+                bmp.EndInit();
+                bmp.Freeze();
+                img.Source = bmp;
+            }
+            catch { }
+        }
+
+        var title = !string.IsNullOrWhiteSpace(libSong.Title) ? libSong.Title : Path.GetFileNameWithoutExtension(libSong.FilePath);
+        var artist = !string.IsNullOrWhiteSpace(libSong.Artist) ? libSong.Artist : "Unknown";
+        var duration = libSong.Duration > TimeSpan.Zero ? libSong.Duration : TimeSpan.FromSeconds(1);
+
+        return new Song(title, artist, img, duration, libSong.FilePath);
+    }
+
     private object PlayLibrarySong(JObject msg)
     {
         var songId = msg["songId"]?.ToString();
@@ -1928,17 +1978,16 @@ public class YoutubeFormInterop
             try
             {
                 var mp = _ytForm.MusicPlayer;
-                if (mp == null) return;
+                if (mp == null) { System.Diagnostics.Debug.WriteLine("PlayLibrarySong: MusicPlayer is null"); return; }
                 mp.ClearQueue(true);
-                if (mp.TryCreateSongFromFile(libSong.FilePath, out var song, out var errMsg) && song != null)
-                {
-                    mp.Queue.Add(song);
-                    mp.ComputeQueueTimings();
-                    mp.AnimateListItem(song);
-                    mp.PlaySong(mp.Queue[0]);
-                }
+                var song = CreateSongFromLibrary(libSong);
+                mp.Queue.Add(song);
+                mp.ComputeQueueTimings();
+                mp.AnimateListItem(song);
+                mp.PlaySong(mp.Queue[0]);
+                System.Diagnostics.Debug.WriteLine($"PlayLibrarySong: Playing '{song.Title}' by '{song.Artist}' from {song.songPath}");
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"PlayLibrarySong FAILED: {ex}"); }
         });
 
         return new { success = true };
@@ -1962,11 +2011,12 @@ public class YoutubeFormInterop
             try
             {
                 var mp = _ytForm.MusicPlayer;
-                if (mp == null) return;
-                if (mp.TryCreateSongFromFile(libSong.FilePath, out var song, out var errMsg) && song != null)
-                    mp.AddSongExternal(song);
+                if (mp == null) { System.Diagnostics.Debug.WriteLine("QueueLibrarySong: MusicPlayer is null"); return; }
+                var song = CreateSongFromLibrary(libSong);
+                mp.AddSongExternal(song);
+                System.Diagnostics.Debug.WriteLine($"QueueLibrarySong: Queued '{song.Title}' by '{song.Artist}' from {song.songPath}");
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"QueueLibrarySong FAILED: {ex}"); }
         });
 
         return new { success = true };
@@ -1990,11 +2040,12 @@ public class YoutubeFormInterop
             try
             {
                 var mp = _ytForm.MusicPlayer;
-                if (mp == null) return;
-                if (mp.TryCreateSongFromFile(libSong.FilePath, out var song, out var errMsg) && song != null)
-                    mp.AddNextSongExternal(song);
+                if (mp == null) { System.Diagnostics.Debug.WriteLine("PlayLibrarySongNext: MusicPlayer is null"); return; }
+                var song = CreateSongFromLibrary(libSong);
+                mp.AddNextSongExternal(song);
+                System.Diagnostics.Debug.WriteLine($"PlayLibrarySongNext: Added next '{song.Title}' by '{song.Artist}' from {song.songPath}");
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"PlayLibrarySongNext FAILED: {ex}"); }
         });
 
         return new { success = true };
@@ -2069,9 +2120,13 @@ public class YoutubeFormInterop
             SendMpEvent("ytDownloadProgress", new { videoId, stage = "playing", progress = 100 });
 
             if (libSong == null || !System.IO.File.Exists(libSong.FilePath))
+            {
+                System.Diagnostics.Debug.WriteLine($"DownloadAndPlayYouTube: Import failed - libSong is null: {libSong == null}, file exists: {libSong != null && System.IO.File.Exists(libSong.FilePath)}");
                 return new { error = "Import failed" };
+            }
 
             string songId = libSong.Id;
+            System.Diagnostics.Debug.WriteLine($"DownloadAndPlayYouTube: {action} songId={songId}, title='{libSong.Title}', artist='{libSong.Artist}', filePath='{libSong.FilePath}', fileExists={System.IO.File.Exists(libSong.FilePath)}");
 
             if (action == "play")
                 PlayLibrarySong(new JObject { ["songId"] = songId });

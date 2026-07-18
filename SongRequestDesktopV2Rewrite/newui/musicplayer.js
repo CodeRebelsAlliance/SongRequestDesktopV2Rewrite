@@ -1274,7 +1274,7 @@
       '<div class="library-song-thumb yt-search-thumb">' +
         '<i class="fab fa-youtube yt-search-icon"></i>' +
         '<div class="thumb-overlay"><i class="fas fa-play"></i></div>' +
-        '<div class="yt-download-progress" style="display:none"><div class="yt-download-bar"></div><div class="yt-download-label"></div></div>' +
+        '<div class="yt-download-progress" style="display:none"><div class="yt-download-bar"></div><div class="yt-download-icon"><i class="fas fa-circle-notch fa-spin"></i></div></div>' +
       '</div>' +
       '<div class="library-song-info">' +
         '<div class="library-song-title">' + escHtml(item.title || '') + '</div>' +
@@ -1311,29 +1311,19 @@
 
     var progWrap = songEl.querySelector('.yt-download-progress');
     var progBar = songEl.querySelector('.yt-download-bar');
-    var progLabel = songEl.querySelector('.yt-download-label');
-    if (!progWrap) return;
+    var progIcon = songEl.querySelector('.yt-download-icon i');
+    if (!progWrap || !progIcon) return;
 
     songEl.classList.add('yt-downloading');
     progWrap.style.display = '';
     progBar.style.width = '0%';
-    progLabel.textContent = 'Downloading...';
+    progBar.style.background = '';
+    progIcon.className = 'fas fa-circle-notch fa-spin';
     var overlay = songEl.querySelector('.thumb-overlay');
     if (overlay) overlay.style.display = 'none';
 
-    hostRequest('downloadAndPlayYouTube', { videoId: ytid, action: action, title: title, author: author }, 120000).then(function(res) {
-      if (res && res.error) {
-        progLabel.textContent = 'Error';
-        progBar.style.width = '100%';
-        progBar.style.background = '#f44';
-        setTimeout(function() {
-          songEl.classList.remove('yt-downloading');
-          progWrap.style.display = 'none';
-          if (overlay) overlay.style.display = '';
-        }, 2000);
-      }
-    }).catch(function() {
-      progLabel.textContent = 'Error';
+    function showError() {
+      progIcon.className = 'fas fa-exclamation';
       progBar.style.width = '100%';
       progBar.style.background = '#f44';
       setTimeout(function() {
@@ -1341,7 +1331,11 @@
         progWrap.style.display = 'none';
         if (overlay) overlay.style.display = '';
       }, 2000);
-    });
+    }
+
+    hostRequest('downloadAndPlayYouTube', { videoId: ytid, action: action, title: title, author: author }, 120000).then(function(res) {
+      if (res && res.error) showError();
+    }).catch(showError);
   }
 
   function onYtDownloadProgress(data) {
@@ -1352,31 +1346,36 @@
     if (!el) return;
     var progWrap = el.querySelector('.yt-download-progress');
     var progBar = el.querySelector('.yt-download-bar');
-    var progLabel = el.querySelector('.yt-download-label');
-    if (!progWrap) return;
+    var progIcon = el.querySelector('.yt-download-icon i');
+    if (!progWrap || !progIcon) return;
 
     if (stage === 'downloading') {
       progWrap.style.display = '';
       el.classList.add('yt-downloading');
       progBar.style.width = Math.min(progress, 99) + '%';
       progBar.style.background = '';
-      progLabel.textContent = 'Downloading... ' + progress + '%';
+      progIcon.className = 'fas fa-circle-notch fa-spin';
     } else if (stage === 'importing') {
       progBar.style.width = '100%';
       progBar.style.background = '';
-      progLabel.textContent = 'Importing...';
+      progIcon.className = 'fas fa-compact-disc fa-spin';
     } else if (stage === 'playing') {
-      progLabel.textContent = 'Playing...';
+      progIcon.className = 'fas fa-play';
     } else if (stage === 'done') {
-      el.classList.remove('yt-downloading');
-      progWrap.style.display = 'none';
-      progBar.style.width = '0%';
-      var overlay = el.querySelector('.thumb-overlay');
-      if (overlay) overlay.style.display = '';
+      progIcon.className = 'fas fa-check';
+      progBar.style.width = '100%';
+      progBar.style.background = '#4f4';
+      setTimeout(function() {
+        el.classList.remove('yt-downloading');
+        progWrap.style.display = 'none';
+        progBar.style.width = '0%';
+        var overlay = el.querySelector('.thumb-overlay');
+        if (overlay) overlay.style.display = '';
+      }, 1000);
     } else if (stage === 'error') {
+      progIcon.className = 'fas fa-exclamation';
       progBar.style.width = '100%';
       progBar.style.background = '#f44';
-      progLabel.textContent = 'Error';
       setTimeout(function() {
         el.classList.remove('yt-downloading');
         progWrap.style.display = 'none';

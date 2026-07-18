@@ -22,7 +22,18 @@ namespace SongRequestDesktopV2Rewrite
         private readonly HttpClient _httpClient;
         public YoutubeService(IReadOnlyList<System.Net.Cookie> cookies)
         {
-            _youtubeClient = new YoutubeClient();
+            var cookieContainer = new System.Net.CookieContainer();
+            if (cookies != null)
+            {
+                foreach (var cookie in cookies)
+                {
+                    try { cookieContainer.Add(cookie); }
+                    catch { }
+                }
+            }
+            var handler = new HttpClientHandler { CookieContainer = cookieContainer, UseCookies = true };
+            var httpClient = new HttpClient(handler);
+            _youtubeClient = new YoutubeClient(httpClient);
             _httpClient = new HttpClient();
             _httpClient.BaseAddress = new Uri("https://api.lyrics.ovh/v1");
         }

@@ -1519,11 +1519,12 @@ namespace SongRequestDesktopV2Rewrite
 
         public async void PlaySong(Song s)
         {
-            if (s == null) return;
-            if (!System.IO.File.Exists(s.songPath)) return;
+            if (s == null) { System.Diagnostics.Debug.WriteLine("PlaySong: song is null"); return; }
+            if (!System.IO.File.Exists(s.songPath)) { System.Diagnostics.Debug.WriteLine($"PlaySong: file not found: {s.songPath}"); return; }
 
             try
             {
+                System.Diagnostics.Debug.WriteLine($"PlaySong: opening '{s.songPath}'");
                 var reader = new AudioFileReader(s.songPath);
                 StartPlaybackWithMixer(reader);
 
@@ -1538,9 +1539,11 @@ namespace SongRequestDesktopV2Rewrite
                 TryApplyThumbnailGradient(s.thumbnail?.Source as BitmapSource);
 
                 ComputeQueueTimings();
+                System.Diagnostics.Debug.WriteLine($"PlaySong: now playing '{s.Title}' by '{s.Artist}'");
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"PlaySong FAILED: {ex}");
                 MessageBox.Show("Playback error: " + ex.Message);
                 StopPlayback();
             }
