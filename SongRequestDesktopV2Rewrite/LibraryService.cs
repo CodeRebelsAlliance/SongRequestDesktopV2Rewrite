@@ -331,6 +331,7 @@ namespace SongRequestDesktopV2Rewrite
                             // New file — add it
                             song.LastVerifiedUtc = DateTime.UtcNow;
                             _data.Songs.Add(song);
+                            _data.AddToIndex(song);
                             hashIndex[hash] = song;
                             added = true;
                             result.SongsAdded++;
@@ -482,6 +483,7 @@ namespace SongRequestDesktopV2Rewrite
             lock (_lock)
             {
                 _data.Songs.Add(song);
+                _data.AddToIndex(song);
 
                 // Check metadata duplicates
                 var metaKey = MetadataKey(song.Artist, song.Title, song.Duration);

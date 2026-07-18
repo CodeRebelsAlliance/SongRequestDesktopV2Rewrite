@@ -539,6 +539,13 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
+        /// <summary>Add a single song to the in-memory index (keeps FindSong up to date).</summary>
+        public void AddToIndex(LibrarySong song)
+        {
+            if (_songIndex == null) RebuildIndex();
+            _songIndex![song.Id] = song;
+        }
+
         /// <summary>Get a song by ID.  O(1) after index is built.</summary>
         public LibrarySong? FindSong(string songId)
         {
