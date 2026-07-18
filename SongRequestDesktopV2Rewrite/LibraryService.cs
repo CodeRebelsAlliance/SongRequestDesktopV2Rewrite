@@ -100,6 +100,16 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
+        public string SaveSongThumbnail(string songId, byte[] imageBytes)
+        {
+            var thumbDir = Path.Combine(DataFolder, "thumbnails");
+            if (!Directory.Exists(thumbDir))
+                Directory.CreateDirectory(thumbDir);
+            var thumbPath = Path.Combine(thumbDir, $"{songId}.jpg");
+            File.WriteAllBytes(thumbPath, imageBytes);
+            return thumbPath;
+        }
+
         // ──────────────────────────────────────────────────
         //  Public access
         // ──────────────────────────────────────────────────

@@ -2012,24 +2012,61 @@ public class YoutubeFormInterop
         var videoUrl = $"https://www.youtube.com/watch?v={videoId}";
         var downloadPath = YoutubeForm.downloadPath;
 
+        void SendMpEvent(string eventName, object data)
+        {
+            try
+            {
+                var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
+                if (mpSend == null) return;
+                var json = JsonConvert.SerializeObject(new { type = "event", eventName, data });
+                mpSend(json);
+            }
+            catch { }
+        }
+
         try
         {
-            SendEvent("ytDownloadProgress", new { videoId, stage = "downloading", progress = 0 });
+            if (!Directory.Exists(downloadPath))
+                Directory.CreateDirectory(downloadPath);
+
+            SendMpEvent("ytDownloadProgress", new { videoId, stage = "downloading", progress = 0 });
 
             var progress = new Progress<double>(pct =>
             {
-                try { SendEvent("ytDownloadProgress", new { videoId, stage = "downloading", progress = (int)(pct * 100) }); }
-                catch { }
+                SendMpEvent("ytDownloadProgress", new { videoId, stage = "downloading", progress = (int)(pct * 100) });
             });
 
             var filePath = await _ytService.DownloadVideoWithProgressAsync(videoUrl, downloadPath, progress);
 
-            SendEvent("ytDownloadProgress", new { videoId, stage = "importing", progress = 100 });
+            SendMpEvent("ytDownloadProgress", new { videoId, stage = "importing", progress = 100 });
 
             var youTubeId = YoutubeService.ExtractVideoId(videoUrl);
             var libSong = _libraryService.ImportDownloadedSong(filePath, youTubeId, videoUrl, title, author);
 
-            SendEvent("ytDownloadProgress", new { videoId, stage = "playing", progress = 100 });
+            if (libSong != null)
+            {
+                if (!string.IsNullOrWhiteSpace(title))
+                    libSong.Title = title;
+                if (!string.IsNullOrWhiteSpace(author))
+                    libSong.Artist = author;
+
+                try
+                {
+                    var thumbUrl = await _ytService.GetThumbnailUrlAsync(videoUrl);
+                    if (!string.IsNullOrEmpty(thumbUrl))
+                    {
+                        using var httpClient = new HttpClient();
+                        var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl);
+                        var thumbPath = _libraryService.SaveSongThumbnail(libSong.Id, thumbBytes);
+                        libSong.ThumbnailPath = thumbPath;
+                    }
+                }
+                catch { }
+
+                _libraryService.Save();
+            }
+
+            SendMpEvent("ytDownloadProgress", new { videoId, stage = "playing", progress = 100 });
 
             if (libSong == null || !System.IO.File.Exists(libSong.FilePath))
                 return new { error = "Import failed" };
@@ -2043,13 +2080,13 @@ public class YoutubeFormInterop
             else if (action == "queue")
                 QueueLibrarySong(new JObject { ["songId"] = songId });
 
-            SendEvent("ytDownloadProgress", new { videoId, stage = "done", progress = 100 });
+            SendMpEvent("ytDownloadProgress", new { videoId, stage = "done", progress = 100 });
 
             return new { success = true, songId, action };
         }
         catch (Exception ex)
         {
-            SendEvent("ytDownloadProgress", new { videoId, stage = "error", progress = 0 });
+            SendMpEvent("ytDownloadProgress", new { videoId, stage = "error", progress = 0 });
             return new { error = ex.Message };
         }
     }
