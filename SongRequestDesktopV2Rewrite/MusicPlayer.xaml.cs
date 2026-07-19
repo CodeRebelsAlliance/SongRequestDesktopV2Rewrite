@@ -894,7 +894,7 @@ namespace SongRequestDesktopV2Rewrite
             _ = ShowLyricsLoadingIfSlowAsync(songKey, requestVersion, fetchTask);
 
             LyricsResult result;
-            string providerLabel = "Lyrics: LRCLIB";
+            string providerLabel = "";
             try
             {
                 result = await fetchTask.ConfigureAwait(false);
@@ -904,22 +904,32 @@ namespace SongRequestDesktopV2Rewrite
                 result = new LyricsResult();
             }
 
-            var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
-            if (fallbackEnabled
-                && (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
-                && TryGetCachedYoutubeSubtitleFallback(current.songPath, out var timedSubtitleFallback, out var plainSubtitleFallback))
+            if (result.Found)
             {
-                result = new LyricsResult
+                providerLabel = result.Provider switch
                 {
-                    Found = true,
-                    SyncedLyrics = timedSubtitleFallback ?? string.Empty,
-                    PlainLyrics = plainSubtitleFallback ?? string.Empty
+                    LyricsProvider.FileEmbedded => "Lyrics: Embedded",
+                    LyricsProvider.LrcFile => "Lyrics: LRC File",
+                    LyricsProvider.LRCLIB => "Lyrics: LRCLIB",
+                    LyricsProvider.YouTubeCaptions => "Lyrics: YouTube captions",
+                    _ => "Lyrics"
                 };
-                providerLabel = "Lyrics: YouTube captions";
             }
-            else if (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
+            else
             {
-                providerLabel = "";
+                var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
+                if (fallbackEnabled
+                    && TryGetCachedYoutubeSubtitleFallback(current.songPath, out var timedSubtitleFallback, out var plainSubtitleFallback))
+                {
+                    result = new LyricsResult
+                    {
+                        Found = true,
+                        SyncedLyrics = timedSubtitleFallback ?? string.Empty,
+                        PlainLyrics = plainSubtitleFallback ?? string.Empty,
+                        Provider = LyricsProvider.YouTubeCaptions
+                    };
+                    providerLabel = "Lyrics: YouTube captions";
+                }
             }
 
             await Dispatcher.InvokeAsync(() =>
@@ -1073,12 +1083,29 @@ namespace SongRequestDesktopV2Rewrite
             LyricsResult result = new LyricsResult();
             try
             {
+                // Priority 1: Embedded LRC in audio file
+                var embedded = LyricsService.GetEmbeddedLyrics(song.songPath);
+                if (embedded != null && embedded.Found)
+                {
+                    result = embedded;
+                    return result;
+                }
+
+                // Priority 2: .lrc file with same name in same folder
+                var lrcFile = LyricsService.GetLrcFileLyrics(song.songPath);
+                if (lrcFile != null && lrcFile.Found)
+                {
+                    result = lrcFile;
+                    return result;
+                }
+
+                // Priority 3: LRCLIB cached
                 var query = LyricsQueryNormalizer.Build(song);
                 result = await _lyricsService.GetCachedLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
-                if (!result.Found)
-                {
-                    result = await _lyricsService.GetLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
-                }
+                if (result.Found) return result;
+
+                // Priority 4: LRCLIB live
+                result = await _lyricsService.GetLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
             }
             catch
             {

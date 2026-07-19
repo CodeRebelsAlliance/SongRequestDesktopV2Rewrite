@@ -565,11 +565,24 @@ namespace SongRequestDesktopV2Rewrite
                 if (!string.IsNullOrWhiteSpace(tagFile.Tag.FirstGenre))
                     song.Genre = tagFile.Tag.FirstGenre;
 
-                // Duration
+                // Duration — TagLib can read wrong values for webm/opus (common with YouTube
+                // downloads saved as .mp3). Always try NAudio which reads the actual audio stream.
                 song.Duration = tagFile.Properties.Duration;
+                try
+                {
+                    using var reader = new NAudio.Wave.AudioFileReader(filePath);
+                    if (reader.TotalTime > TimeSpan.Zero)
+                    {
+                        song.Duration = reader.TotalTime;
+                        if (song.BitrateKbps <= 0)
+                            song.BitrateKbps = (int)(reader.WaveFormat.AverageBytesPerSecond * 8.0 / 1000.0);
+                    }
+                }
+                catch { }
 
                 // Audio properties
-                song.BitrateKbps = (int)(tagFile.Properties.AudioBitrate);
+                if (song.BitrateKbps <= 0)
+                    song.BitrateKbps = (int)(tagFile.Properties.AudioBitrate);
                 song.SampleRateHz = tagFile.Properties.AudioSampleRate;
 
                 // Extract and cache thumbnail

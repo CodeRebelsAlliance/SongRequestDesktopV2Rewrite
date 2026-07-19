@@ -1014,6 +1014,34 @@ namespace SongRequestDesktopV2Rewrite
 
                     var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, cachedVideoData);
                     if (bmp != null) thumbnail.Source = bmp;
+
+                    // Auto-add to library if setting is enabled
+                    if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true
+                        && !string.IsNullOrEmpty(mp3FilePath) && File.Exists(mp3FilePath))
+                    {
+                        var libSvc = NewUiRef?.LibraryService;
+                        if (libSvc != null)
+                        {
+                            var libSong = libSvc.ImportDownloadedSong(mp3FilePath, videoId, videoUrl, titleG, creatorG);
+                            if (libSong != null)
+                            {
+                                try
+                                {
+                                    var thumbUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
+                                    if (!string.IsNullOrEmpty(thumbUrl))
+                                    {
+                                        using var httpClient = new System.Net.Http.HttpClient();
+                                        var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl);
+                                        var thumbPath = libSvc.SaveSongThumbnail(libSong.Id, thumbBytes);
+                                        libSong.ThumbnailPath = thumbPath;
+                                    }
+                                }
+                                catch { }
+                                libSvc.Save();
+                            }
+                            AppendConsoleText($"📚 Added to library: {titleG}", Brushes.LightGreen);
+                        }
+                    }
                 }
                 else
                 {
@@ -1058,6 +1086,34 @@ namespace SongRequestDesktopV2Rewrite
                     {
                         _musicPlayer.AddSong(new Song(titleG, creatorG, thumbnail, resolvedLength, downloadedFilePath));
                         AppendConsoleText($"🎵 Auto-enqueued: {titleG}", Brushes.LightGreen);
+                    }
+
+                    // Auto-add to library if setting is enabled
+                    if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true
+                        && !string.IsNullOrEmpty(downloadedFilePath) && File.Exists(downloadedFilePath))
+                    {
+                        var libSvc = NewUiRef?.LibraryService;
+                        if (libSvc != null)
+                        {
+                            var libSong = libSvc.ImportDownloadedSong(downloadedFilePath, videoId, videoUrl, titleG, creatorG);
+                            if (libSong != null)
+                            {
+                                try
+                                {
+                                    var thumbUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
+                                    if (!string.IsNullOrEmpty(thumbUrl))
+                                    {
+                                        using var httpClient = new System.Net.Http.HttpClient();
+                                        var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl);
+                                        var thumbPath = libSvc.SaveSongThumbnail(libSong.Id, thumbBytes);
+                                        libSong.ThumbnailPath = thumbPath;
+                                    }
+                                }
+                                catch { }
+                                libSvc.Save();
+                            }
+                            AppendConsoleText($"📚 Added to library: {titleG}", Brushes.LightGreen);
+                        }
                     }
                 }
 
@@ -1167,7 +1223,6 @@ namespace SongRequestDesktopV2Rewrite
                     if (dlg == MessageBoxResult.Yes)
                     {
                         await SendOtherRequest("delete", videoId);
-                        if (downloadedFilePath != null && File.Exists(downloadedFilePath)) File.Delete(downloadedFilePath);
                         VideoListPanel.Children.Remove(videoPanel);
                         fetchedYtids.Remove(videoId);
                         fetchedVideoData.Remove(videoId);

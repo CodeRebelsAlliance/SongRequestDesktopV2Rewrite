@@ -25,6 +25,8 @@ public class NewUiWindow
 
     public Action<string>? MusicPlayerSendMessage { get; set; }
 
+    public LibraryService? LibraryService => _interop.LibraryService;
+
     public NewUiWindow(YoutubeFormInterop interop, YoutubeForm ytForm)
     {
         _interop = interop;

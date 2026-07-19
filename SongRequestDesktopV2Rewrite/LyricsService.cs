@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +9,15 @@ using Newtonsoft.Json.Linq;
 
 namespace SongRequestDesktopV2Rewrite
 {
+    public enum LyricsProvider
+    {
+        None,
+        FileEmbedded,
+        LrcFile,
+        LRCLIB,
+        YouTubeCaptions
+    }
+
     public sealed class LyricsResult
     {
         public bool Found { get; set; }
@@ -18,10 +29,8 @@ namespace SongRequestDesktopV2Rewrite
         public bool Instrumental { get; set; }
         public string PlainLyrics { get; set; } = string.Empty;
         public string SyncedLyrics { get; set; } = string.Empty;
+        public LyricsProvider Provider { get; set; } = LyricsProvider.None;
 
-        /// <summary>
-        /// Indicates whether synced (timed) lyrics are present.
-        /// </summary>
         public bool HasSynced => !string.IsNullOrWhiteSpace(SyncedLyrics);
 
         /// <summary>
@@ -113,6 +122,100 @@ namespace SongRequestDesktopV2Rewrite
             return await GetAsync("/api/get-cached", artistName, trackName, duration, albumName, ct).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// Try to read synced lyrics embedded in the audio file via TagLib.
+        /// Returns null if no embedded LRC lyrics are found.
+        /// </summary>
+        public static LyricsResult? GetEmbeddedLyrics(string filePath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+                    return null;
+
+                using var tagFile = global::TagLib.File.Create(filePath);
+
+                // Try Tag.Lyrics (USLT frame) - may contain LRC-formatted text
+                var rawLyrics = tagFile.Tag.Lyrics;
+                if (string.IsNullOrWhiteSpace(rawLyrics))
+                    return null;
+
+                // Check if the lyrics contain LRC timestamps ([mm:ss.xx])
+                if (rawLyrics.Contains("[") && rawLyrics.Contains(":") && rawLyrics.Contains("]"))
+                {
+                    var synced = rawLyrics.Trim();
+                    if (!string.IsNullOrWhiteSpace(synced))
+                    {
+                        return new LyricsResult
+                        {
+                            Found = true,
+                            SyncedLyrics = synced,
+                            Provider = LyricsProvider.FileEmbedded
+                        };
+                    }
+                }
+
+                // Plain lyrics (no timestamps)
+                return new LyricsResult
+                {
+                    Found = true,
+                    PlainLyrics = rawLyrics.Trim(),
+                    Provider = LyricsProvider.FileEmbedded
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Try to read a .lrc file with the same base name as the audio file, in the same folder.
+        /// Returns null if no .lrc file is found.
+        /// </summary>
+        public static LyricsResult? GetLrcFileLyrics(string filePath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+                    return null;
+
+                var dir = Path.GetDirectoryName(filePath);
+                if (string.IsNullOrEmpty(dir)) return null;
+
+                var baseName = Path.GetFileNameWithoutExtension(filePath);
+                var lrcPath = Path.Combine(dir, baseName + ".lrc");
+
+                if (!File.Exists(lrcPath))
+                    return null;
+
+                var content = File.ReadAllText(lrcPath);
+                if (string.IsNullOrWhiteSpace(content))
+                    return null;
+
+                if (content.Contains("[") && content.Contains(":") && content.Contains("]"))
+                {
+                    return new LyricsResult
+                    {
+                        Found = true,
+                        SyncedLyrics = content.Trim(),
+                        Provider = LyricsProvider.LrcFile
+                    };
+                }
+
+                return new LyricsResult
+                {
+                    Found = true,
+                    PlainLyrics = content.Trim(),
+                    Provider = LyricsProvider.LrcFile
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private async Task<LyricsResult> GetAsync(string path, string artistName, string trackName, TimeSpan duration, string? albumName, CancellationToken ct)
         {
             var result = new LyricsResult();
@@ -159,6 +262,7 @@ namespace SongRequestDesktopV2Rewrite
                 result.Instrumental = (bool?)obj["instrumental"] ?? false;
                 result.PlainLyrics = (string?)obj["plainLyrics"] ?? string.Empty;
                 result.SyncedLyrics = (string?)obj["syncedLyrics"] ?? string.Empty;
+                result.Provider = LyricsProvider.LRCLIB;
 
                 return result;
             }
