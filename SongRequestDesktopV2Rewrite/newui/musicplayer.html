@@ -40,7 +40,7 @@
         <div class="playlist-section-title">Your Playlists</div>
         <div class="playlist-item"><i class="fas fa-music"></i> Favorites</div>
         <div class="playlist-item"><i class="fas fa-heart"></i> Liked Songs</div>
-        <div class="playlist-item"><i class="fas fa-clock"></i> Recently Played</div>
+        <div class="playlist-item" id="playlist-recently-played"><i class="fas fa-clock"></i> Recently Played</div>
         <div class="playlist-item"><i class="fas fa-plus-circle"></i> Create Playlist</div>
       </div>
     </div>
@@ -102,6 +102,16 @@
           <div id="library-load-more-sentinel"></div>
           <div id="library-end" class="library-loading" style="display:none"><i class="fas fa-compact-disc"></i><span>No more songs</span></div>
           <div id="library-empty" class="library-empty" style="display:none"><i class="fas fa-compact-disc"></i><p>Your library is empty. Add songs to get started.</p></div>
+        </div>
+      </div>
+      <div id="view-recently-played" class="view">
+        <div class="view-header">
+          <span>Recently Played</span>
+        </div>
+        <div id="recently-played-content">
+          <div id="recently-played-loading" class="library-loading" style="display:none"><i class="fas fa-circle-notch fa-spin"></i><span>Loading history...</span></div>
+          <div id="recently-played-list"></div>
+          <div id="recently-played-empty" class="library-empty" style="display:none"><i class="fas fa-history"></i><p>No songs played yet.</p></div>
         </div>
       </div>
       <div id="view-search" class="view">
@@ -240,10 +250,30 @@
   </div>
 
   <!-- Context menu -->
-  <div id="context-menu" class="context-menu" style="display:none">
+  <div id="context-menu" class="context-menu" style="display:none" data-source="">
     <button class="context-menu-item" data-action="play"><i class="fas fa-play"></i> Play</button>
     <button class="context-menu-item" data-action="playNext"><i class="fas fa-step-forward"></i> Play Next</button>
     <button class="context-menu-item" data-action="addToQueue"><i class="fas fa-plus"></i> Add to Queue</button>
+    <div class="context-menu-separator"></div>
+    <button class="context-menu-item context-menu-danger" data-action="deleteFromLibrary"><i class="fas fa-trash"></i> Delete from Library</button>
+    <button class="context-menu-item context-menu-danger" data-action="removeFromHistory"><i class="fas fa-clock-rotate-left"></i> Remove from History</button>
+  </div>
+
+  <!-- Delete confirmation modal -->
+  <div id="delete-confirm-modal" class="modal-overlay" style="display:none">
+    <div class="modal-panel" style="max-width:400px">
+      <div class="modal-header">
+        <div class="modal-title"><i class="fas fa-exclamation-triangle" style="color:#e74c3c"></i> Delete Song</div>
+        <button id="delete-confirm-close" class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <p id="delete-confirm-text" style="color:#ccc;margin:0 0 20px;font-size:14px"></p>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button id="delete-confirm-cancel" class="btn-cancel" style="padding:8px 20px;border-radius:8px;border:1px solid #444;background:#2a2a2a;color:#ccc;cursor:pointer;font-size:13px">Cancel</button>
+          <button id="delete-confirm-ok" class="btn-danger" style="padding:8px 20px;border-radius:8px;border:none;background:#e74c3c;color:#fff;cursor:pointer;font-size:13px">Delete</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Music Share modal -->

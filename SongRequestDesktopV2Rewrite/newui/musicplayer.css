@@ -195,6 +195,25 @@ body { background: #121212; color: #e0e0e0; }
 }
 #library-load-more-sentinel { height: 1px; }
 
+/* Recently Played */
+.rp-date-header {
+  font-size: 11px; font-weight: 600; color: #888;
+  padding: 14px 10px 4px; text-transform: uppercase; letter-spacing: 0.5px;
+  user-select: none;
+}
+.rp-date-header:first-child { padding-top: 6px; }
+.rp-meta {
+  display: flex; align-items: center; gap: 6px;
+  margin-left: auto; flex-shrink: 0; align-items: center;
+}
+.rp-date {
+  font-size: 11px; color: #888; white-space: nowrap;
+}
+.pill-auto {
+  font-size: 10px; padding: 1px 6px; border-radius: 6px;
+  background: rgba(120, 80, 220, 0.18); color: #9a7fd4;
+}
+
 /* Right sidebar (queue) */
 #right-sidebar {
   width: 280px; flex-shrink: 0;
@@ -896,6 +915,24 @@ body { background: #121212; color: #e0e0e0; }
 }
 .context-menu-item:hover i {
   color: #fff;
+}
+.context-menu-separator {
+  height: 1px;
+  background: #444;
+  margin: 4px 8px;
+}
+.context-menu-danger {
+  color: #e74c3c;
+}
+.context-menu-danger i {
+  color: #e74c3c;
+}
+.context-menu-danger:hover {
+  background: #e74c3c22;
+  color: #ff6b6b;
+}
+.context-menu-danger:hover i {
+  color: #ff6b6b;
 }
 
 /* =====================================================

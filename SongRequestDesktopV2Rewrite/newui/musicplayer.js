@@ -186,6 +186,7 @@
       document.querySelectorAll('#center .view').forEach(function(v) { v.classList.remove('active'); });
       var target = document.getElementById('view-' + view);
       if (target) target.classList.add('active');
+      recentlyPlayedActive = (view === 'recently-played');
     });
   });
 
@@ -202,6 +203,114 @@
   });
   document.getElementById('home-btn-settings').addEventListener('click', function() {
     document.getElementById('btn-settings').click();
+  });
+
+  // --- Recently Played ---
+  var recentlyPlayedList = document.getElementById('recently-played-list');
+  var recentlyPlayedLoading = document.getElementById('recently-played-loading');
+  var recentlyPlayedEmpty = document.getElementById('recently-played-empty');
+  var recentlyPlayedActive = false;
+
+  function rpDateKey(d) {
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+
+  function rpDateLabel(d) {
+    var now = new Date();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var diff = Math.round((today - target) / 86400000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  }
+
+  function renderRecentlyPlayedSong(entry, index) {
+    var thumbHtml = entry.thumbnail
+      ? '<img src="' + entry.thumbnail + '" alt="">'
+      : '<i class="fas fa-music"></i>';
+    var timeStr = '';
+    if (entry.playedUtc) {
+      var d = new Date(entry.playedUtc);
+      timeStr = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }
+    var triggerLabel = '';
+    if (entry.trigger === 'autopilot') triggerLabel = '<span class="pill pill-auto">Autopilot</span>';
+
+    return '<div class="library-song rp-song" data-songid="' + entry.songId + '" data-entryid="' + (entry.entryId || '') + '" data-filepath="' + escHtml(entry.filePath || '') + '">' +
+      '<div class="library-song-thumb">' + thumbHtml +
+        '<div class="thumb-overlay"><i class="fas fa-play"></i></div>' +
+      '</div>' +
+      '<div class="library-song-info">' +
+        '<div class="library-song-title">' + escHtml(entry.title || '') + '</div>' +
+        '<div class="library-song-artist">' + escHtml(entry.artist || '') + '</div>' +
+      '</div>' +
+      '<div class="rp-meta">' +
+        triggerLabel +
+        '<span class="rp-date">' + escHtml(timeStr) + '</span>' +
+        '<span class="library-song-duration">' + escHtml(entry.durationDisplay || '') + '</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function loadRecentlyPlayed() {
+    recentlyPlayedLoading.style.display = '';
+    recentlyPlayedEmpty.style.display = 'none';
+    recentlyPlayedList.innerHTML = '';
+
+    hostRequest('getPlayHistory', { count: 50 }).then(function(result) {
+      recentlyPlayedLoading.style.display = 'none';
+      var history = (result && result.history) || [];
+      if (history.length === 0) {
+        recentlyPlayedEmpty.style.display = '';
+        return;
+      }
+      var html = '';
+      var lastKey = '';
+      var idx = 0;
+      for (var i = 0; i < history.length; i++) {
+        var entry = history[i];
+        if (entry.playedUtc) {
+          var d = new Date(entry.playedUtc);
+          var key = rpDateKey(d);
+          if (key !== lastKey) {
+            html += '<div class="rp-date-header">' + escHtml(rpDateLabel(d)) + '</div>';
+            lastKey = key;
+          }
+        }
+        html += renderRecentlyPlayedSong(entry, idx++);
+      }
+      recentlyPlayedList.innerHTML = html;
+    }).catch(function() {
+      recentlyPlayedLoading.style.display = 'none';
+      recentlyPlayedEmpty.style.display = '';
+    });
+  }
+
+  // Click handler for recently played songs — artwork overlay plays immediately
+  recentlyPlayedList.addEventListener('click', function(e) {
+    var overlay = e.target.closest('.thumb-overlay');
+    if (overlay) {
+      var songEl = overlay.closest('.rp-song');
+      if (songEl) {
+        e.stopPropagation();
+        hostSend('playLibrarySong', { songId: songEl.dataset.songid });
+      }
+      return;
+    }
+    var el = e.target.closest('.rp-song');
+    if (!el) return;
+    var songId = el.dataset.songid;
+    if (songId) hostSend('playLibrarySong', { songId: songId });
+  });
+
+  // Sidebar "Recently Played" playlist item
+  document.getElementById('playlist-recently-played').addEventListener('click', function() {
+    document.querySelectorAll('.sidebar-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('#center .view').forEach(function(v) { v.classList.remove('active'); });
+    document.getElementById('view-recently-played').classList.add('active');
+    recentlyPlayedActive = true;
+    loadRecentlyPlayed();
   });
 
   // --- Play button sync ---
@@ -421,6 +530,7 @@
     switch (eventName) {
       case 'nowPlayingUpdate':
         updateNowPlaying(data);
+        if (recentlyPlayedActive && data.title) loadRecentlyPlayed();
         break;
       case 'queueUpdate':
         updateQueue(data);
@@ -1151,6 +1261,7 @@
   var lastSearchQuery = '';
 
   function activateSearchView() {
+    recentlyPlayedActive = false;
     document.querySelectorAll('.sidebar-tab').forEach(function(t) { t.classList.remove('active'); });
     searchTab.classList.add('active');
     document.querySelectorAll('#center .view').forEach(function(v) { v.classList.remove('active'); });
@@ -1408,14 +1519,24 @@
   var ctxMenu = document.getElementById('context-menu');
   var ctxSongId = null;
   var ctxSongYtEl = null;
+  var ctxSongEl = null;
+  var ctxSongSource = null;
   var longPressTimer = null;
   var longPressTriggered = false;
 
-  function showContextMenu(x, y, songId, songEl) {
+  function showContextMenu(x, y, songId, songEl, source) {
     ctxSongId = songId;
+    ctxSongEl = songEl;
     ctxSongYtEl = songEl && songEl.dataset.ytid ? songEl : null;
+    ctxSongSource = source || 'library';
+    ctxMenu.dataset.source = ctxSongSource;
     ctxMenu.style.display = 'block';
-    // Clamp to viewport
+
+    var deleteLibBtn = ctxMenu.querySelector('[data-action="deleteFromLibrary"]');
+    var removeHistBtn = ctxMenu.querySelector('[data-action="removeFromHistory"]');
+    if (deleteLibBtn) deleteLibBtn.style.display = ctxSongSource === 'library' ? '' : 'none';
+    if (removeHistBtn) removeHistBtn.style.display = ctxSongSource === 'recently-played' ? '' : 'none';
+
     var mw = ctxMenu.offsetWidth, mh = ctxMenu.offsetHeight;
     if (x + mw > window.innerWidth) x = window.innerWidth - mw - 4;
     if (y + mh > window.innerHeight) y = window.innerHeight - mh - 4;
@@ -1426,7 +1547,9 @@
   function hideContextMenu() {
     ctxMenu.style.display = 'none';
     ctxSongId = null;
+    ctxSongEl = null;
     ctxSongYtEl = null;
+    ctxSongSource = null;
   }
 
   // Right-click on library songs
@@ -1435,6 +1558,14 @@
     if (!songEl) return;
     e.preventDefault();
     showContextMenu(e.clientX, e.clientY, songEl.dataset.id, songEl);
+  });
+
+  // Right-click on recently played songs
+  recentlyPlayedList.addEventListener('contextmenu', function(e) {
+    var songEl = e.target.closest('.rp-song');
+    if (!songEl) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, songEl.dataset.songid, songEl, 'recently-played');
   });
 
   // Artwork click: play immediately
@@ -1454,6 +1585,7 @@
     var action = item.dataset.action;
     var songId = ctxSongId;
     var ytEl = ctxSongYtEl;
+    var songEl = ctxSongEl;
     hideContextMenu();
     if (ytEl) {
       var ytAction = action === 'play' ? 'play' : action === 'playNext' ? 'playNext' : 'queue';
@@ -1464,8 +1596,62 @@
       hostSend('playLibrarySongNext', { songId: songId });
     } else if (action === 'addToQueue') {
       hostSend('queueLibrarySong', { songId: songId });
+    } else if (action === 'deleteFromLibrary') {
+      showDeleteConfirm(songId);
+    } else if (action === 'removeFromHistory') {
+      var entryId = songEl ? songEl.dataset.entryid : null;
+      if (entryId) {
+        hostRequest('removePlayHistoryEntry', { entryId: entryId }).then(function() {
+          loadRecentlyPlayed();
+        });
+      }
     }
   });
+
+  // Delete confirmation modal
+  var deleteModal = document.getElementById('delete-confirm-modal');
+  var deleteConfirmText = document.getElementById('delete-confirm-text');
+  var deleteConfirmOk = document.getElementById('delete-confirm-ok');
+  var deleteConfirmCancel = document.getElementById('delete-confirm-cancel');
+  var deleteConfirmClose = document.getElementById('delete-confirm-close');
+  var deletePendingSongId = null;
+
+  function showDeleteConfirm(songId) {
+    deletePendingSongId = songId;
+    // Find the song title from the library list
+    var songEl = libListEl.querySelector('[data-id="' + songId + '"]');
+    var title = songEl ? (songEl.querySelector('.library-song-title') || {}).textContent || '' : '';
+    var artist = songEl ? (songEl.querySelector('.library-song-artist') || {}).textContent || '' : '';
+    var label = title ? (artist ? title + ' by ' + artist : title) : 'this song';
+    deleteConfirmText.textContent = 'Are you sure you want to permanently delete ' + label + ' from your library and disk?';
+    deleteModal.style.display = 'flex';
+  }
+
+  function hideDeleteConfirm() {
+    deleteModal.style.display = 'none';
+    deletePendingSongId = null;
+  }
+
+  deleteConfirmOk.addEventListener('click', function() {
+    var songId = deletePendingSongId;
+    hideDeleteConfirm();
+    if (!songId) return;
+    hostRequest('deleteLibrarySong', { songId: songId }).then(function(result) {
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
+      // Remove from library list
+      var el = libListEl.querySelector('[data-id="' + songId + '"]');
+      if (el) el.remove();
+    }).catch(function(err) {
+      console.error('Delete failed', err);
+    });
+  });
+
+  deleteConfirmCancel.addEventListener('click', hideDeleteConfirm);
+  deleteConfirmClose.addEventListener('click', hideDeleteConfirm);
+  deleteModal.addEventListener('click', function(e) { if (e.target === deleteModal) hideDeleteConfirm(); });
 
   // Hide context menu on click elsewhere / scroll / key
   document.addEventListener('click', function(e) {

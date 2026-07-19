@@ -416,6 +416,12 @@ public class YoutubeFormInterop
                 case "getLibraryStats":
                     result = GetLibraryStats();
                     break;
+                case "getPlayHistory":
+                    result = GetPlayHistory(msg);
+                    break;
+                case "removePlayHistoryEntry":
+                    result = RemovePlayHistoryEntry(msg);
+                    break;
                 case "flagLibrarySongMissing":
                     result = FlagLibrarySongMissing(msg);
                     break;
@@ -507,11 +513,15 @@ public class YoutubeFormInterop
         // Server returns positional arrays: [ytid, message, isApproved, unixTimestamp]
         var db = JArray.Parse(dbJson);
         var databaseList = new List<object>();
+        var knownYtids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in db)
         {
             var arr = entry as JArray;
             if (arr == null || arr.Count < 1) continue;
             var ytid = arr[0]?.ToString() ?? "";
+            if (!string.IsNullOrEmpty(ytid))
+                knownYtids.Add(ytid);
+
             var message = arr.Count > 1 ? arr[1]?.ToString() ?? "" : "";
             var isApproved = arr.Count > 2 ? arr[2]?.ToObject<bool>() ?? false : false;
             var timestamp = arr.Count > 3 ? arr[3]?.ToObject<double?>() : null;
@@ -531,6 +541,9 @@ public class YoutubeFormInterop
                 durationTicks
             });
         }
+
+        // Keep fetchedYtids in sync so the library delete guard works
+        _ytForm.fetchedYtids = knownYtids;
 
         // Server returns array of strings; enrich with cached metadata
         var blacklistArr = JArray.Parse(blacklistJson);
@@ -806,6 +819,9 @@ public class YoutubeFormInterop
                         var ext = System.IO.Path.GetExtension(current.songPath).TrimStart('.').ToUpperInvariant();
                         data["fileType"] = ext;
                         if (libSong.BitrateKbps > 0) data["bitrateKbps"] = libSong.BitrateKbps;
+
+                        // Record play history
+                        _libraryService.RecordPlay(libSong.Id);
                     }
                 }
             }
@@ -1846,10 +1862,41 @@ public class YoutubeFormInterop
         {
             var song = _libraryService.Data.FindSong(songId);
             if (song == null) return new { error = "Song not found" };
+
+            // If the song is in the sent-in database, it's still needed there — don't delete
+            if (!string.IsNullOrEmpty(song.YouTubeId) && _ytForm.fetchedYtids.Contains(song.YouTubeId))
+                return new { error = "This song is still in the sent-in list. Remove it from the Sent In tab instead." };
+        }
+
+        string? filePath = null;
+        string? thumbPath = null;
+        lock (_libraryService.Data)
+        {
+            var song = _libraryService.Data.FindSong(songId);
+            if (song == null) return new { error = "Song not found" };
+            filePath = song.FilePath;
+            thumbPath = song.ThumbnailPath;
             _libraryService.Data.Songs.Remove(song);
         }
 
         _libraryService.Save();
+
+        // Delete file from disk
+        try
+        {
+            if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                File.Delete(filePath);
+        }
+        catch { }
+
+        // Delete thumbnail from disk
+        try
+        {
+            if (!string.IsNullOrEmpty(thumbPath) && File.Exists(thumbPath))
+                File.Delete(thumbPath);
+        }
+        catch { }
+
         return new { success = true };
     }
 
@@ -1962,6 +2009,31 @@ public class YoutubeFormInterop
             lastScanUtc = data.LastScanUtc,
             scanFolders = data.Config.ScanFolders.Count
         };
+    }
+
+    private object GetPlayHistory(JObject msg)
+    {
+        var count = msg["count"]?.ToObject<int?>() ?? 50;
+        var history = _libraryService.GetRecentlyPlayed(count);
+
+        foreach (var entry in history)
+        {
+            var filePath = entry.TryGetValue("filePath", out var fpObj) ? fpObj?.ToString() : null;
+            var thumb = GetThumbnailForSongPath(filePath);
+            if (thumb != null)
+                entry["thumbnail"] = thumb;
+        }
+
+        return new { history };
+    }
+
+    private object RemovePlayHistoryEntry(JObject msg)
+    {
+        var entryId = msg["entryId"]?.ToString();
+        if (string.IsNullOrEmpty(entryId)) return new { error = "No entryId" };
+
+        _libraryService.RemovePlayHistoryEntry(entryId);
+        return new { success = true };
     }
 
     private object FlagLibrarySongMissing(JObject msg)

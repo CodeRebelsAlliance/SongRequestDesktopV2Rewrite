@@ -111,6 +111,89 @@ namespace SongRequestDesktopV2Rewrite
         }
 
         // ──────────────────────────────────────────────────
+        //  Play history
+        // ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Record that a song was played. Updates play count, last played timestamp,
+        /// and adds a history entry.
+        /// </summary>
+        public void RecordPlay(string songId, double durationPlayedSeconds = 0, bool completed = false, string trigger = "queue")
+        {
+            lock (_lock)
+            {
+                var song = _data.FindSong(songId);
+                if (song == null) return;
+
+                song.PlayCount++;
+                song.LastPlayedUtc = DateTime.UtcNow;
+
+                _data.PlayHistory.Add(new PlayHistoryEntry
+                {
+                    SongId = songId,
+                    PlayedUtc = DateTime.UtcNow,
+                    DurationPlayedSeconds = durationPlayedSeconds,
+                    Completed = completed,
+                    Trigger = trigger
+                });
+
+                // Keep history from growing unbounded — retain last 500 entries
+                if (_data.PlayHistory.Count > 500)
+                    _data.PlayHistory.RemoveRange(0, _data.PlayHistory.Count - 500);
+            }
+
+            Save();
+        }
+
+        /// <summary>
+        /// Returns the most recent play history entries, enriched with song metadata.
+        /// </summary>
+        public List<Dictionary<string, object>> GetRecentlyPlayed(int count = 50)
+        {
+            lock (_lock)
+            {
+                var entries = _data.PlayHistory
+                    .OrderByDescending(e => e.PlayedUtc)
+                    .Take(count)
+                    .ToList();
+
+                var result = new List<Dictionary<string, object>>();
+                foreach (var entry in entries)
+                {
+                    var song = _data.FindSong(entry.SongId);
+                    if (song == null) continue;
+
+                    result.Add(new Dictionary<string, object>
+                    {
+                        ["entryId"] = entry.Id,
+                        ["songId"] = song.Id,
+                        ["title"] = song.Title,
+                        ["artist"] = song.Artist,
+                        ["thumbnailPath"] = song.ThumbnailPath,
+                        ["filePath"] = song.FilePath,
+                        ["duration"] = song.Duration.TotalSeconds,
+                        ["durationDisplay"] = song.DurationDisplay,
+                        ["playedUtc"] = entry.PlayedUtc,
+                        ["completed"] = entry.Completed,
+                        ["trigger"] = entry.Trigger
+                    });
+                }
+
+                return result;
+            }
+        }
+
+        public void RemovePlayHistoryEntry(string entryId)
+        {
+            lock (_lock)
+            {
+                _data.PlayHistory.RemoveAll(e => e.Id == entryId);
+            }
+
+            Save();
+        }
+
+        // ──────────────────────────────────────────────────
         //  Public access
         // ──────────────────────────────────────────────────
 
