@@ -514,17 +514,22 @@ public class YoutubeFormInterop
         var db = JArray.Parse(dbJson);
         var databaseList = new List<object>();
         var knownYtids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var newEntries = new List<(string ytid, DateTime? timestampUtc, string message, bool isApproved)>();
         foreach (var entry in db)
         {
             var arr = entry as JArray;
             if (arr == null || arr.Count < 1) continue;
             var ytid = arr[0]?.ToString() ?? "";
-            if (!string.IsNullOrEmpty(ytid))
-                knownYtids.Add(ytid);
+            if (string.IsNullOrEmpty(ytid)) continue;
+            knownYtids.Add(ytid);
 
             var message = arr.Count > 1 ? arr[1]?.ToString() ?? "" : "";
             var isApproved = arr.Count > 2 ? arr[2]?.ToObject<bool>() ?? false : false;
             var timestamp = arr.Count > 3 ? arr[3]?.ToObject<double?>() : null;
+
+            DateTime? timestampUtc = null;
+            if (timestamp.HasValue)
+                timestampUtc = DateTimeOffset.FromUnixTimeSeconds((long)timestamp.Value).UtcDateTime;
 
             var title = _ytForm.GetCachedTitle(ytid) ?? ytid;
             var creator = _ytForm.GetCachedCreator(ytid) ?? "";
@@ -539,6 +544,29 @@ public class YoutubeFormInterop
                 message,
                 sentInTimestamp = timestamp,
                 durationTicks
+            });
+
+            // Track entries that the WPF FetchData hasn't processed yet
+            if (!_ytForm.fetchedYtids.Contains(ytid))
+            {
+                newEntries.Add((ytid, timestampUtc, message, isApproved));
+            }
+        }
+
+        // Process new entries on the WPF dispatcher (downloads, panels, etc.)
+        foreach (var (ytid, timestampUtc, message, isApproved) in newEntries)
+        {
+            var videoUrl = $"https://www.youtube.com/watch?v={ytid}";
+            _ytForm.Dispatcher.BeginInvoke(async () =>
+            {
+                try
+                {
+                    await _ytForm.AddVideoPanelAsync(videoUrl, timestampUtc, message, isApproved);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[FetchDataAsync] Error processing new entry {ytid}: {ex.Message}");
+                }
             });
         }
 
