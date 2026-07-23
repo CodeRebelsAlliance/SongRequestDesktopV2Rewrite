@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presentation - SongRequest V2</title>
+<link rel="stylesheet" href="presentation.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+</head>
+<body>
+<div id="presentation-root">
+  <!-- Player panel (left) - has gradient background -->
+  <div id="pres-player-panel">
+    <div id="pres-top-bar">
+      <button id="btn-fullscreen" title="Toggle fullscreen"><i class="fas fa-expand"></i></button>
+      <img src="../SRshortLogo.png" id="pres-logo" alt="SongRequest V2">
+    </div>
+    <div id="presentation-top">
+      <div id="presentation-artwork"><i class="fas fa-music"></i></div>
+      <div id="presentation-info">
+        <div id="presentation-title">No track playing</div>
+        <div id="presentation-artist">—</div>
+      </div>
+    </div>
+
+    <div id="lyrics-wrapper">
+      <div id="presentation-lyrics"></div>
+      <div id="lyrics-provider"></div>
+    </div>
+
+    <div id="presentation-bottom">
+      <div id="presentation-progress">
+        <span id="pres-progress-current">0:00</span>
+        <div id="pres-progress-track">
+          <div id="pres-progress-fill" style="width:0%"></div>
+        </div>
+        <span id="pres-progress-total">0:00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Side panels (right) - no background color -->
+  <div id="pres-side">
+    <div id="pres-queue-panel">
+      <div id="pres-queue-header"><i class="fas fa-list-ul"></i> Up Next</div>
+      <div id="pres-queue-list"></div>
+    </div>
+    <div id="pres-qr-panel">
+      <img id="pres-qr-logo" src="../LargeSR.png" alt="Logo">
+      <div id="pres-qr-code"></div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="presentation.js"></script>
+</body>
+</html>

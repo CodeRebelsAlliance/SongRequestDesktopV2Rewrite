@@ -38,6 +38,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _logPlayback = false;
         private float _lyricsFontScale = 1.0f;
         private bool _lyricsHidden = false;
+        private string _presentationSource = "player";
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -207,6 +208,12 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _lyricsHidden;
             set => SetField(ref _lyricsHidden, value);
+        }
+
+        public string PresentationSource
+        {
+            get => _presentationSource;
+            set => SetField(ref _presentationSource, value);
         }
 
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

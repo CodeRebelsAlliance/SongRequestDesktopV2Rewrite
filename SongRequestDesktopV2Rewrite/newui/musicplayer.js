@@ -543,6 +543,10 @@
       case 'ytDownloadProgress':
         onYtDownloadProgress(data);
         break;
+      case 'presentationClosed':
+        _presOpen = false;
+        if (btnPresentation) btnPresentation.classList.remove('active');
+        break;
     }
   }
 
@@ -2494,6 +2498,51 @@
 
   // ── Init playlists on load ────────────────────────────
   loadPlaylists();
+
+  // ── Presentation window ───────────────────────────────
+  var btnPresentation = document.getElementById('btn-presentation');
+  var presDropdown = document.getElementById('pres-source-dropdown');
+  var presDropdownItems = presDropdown ? presDropdown.querySelectorAll('.pres-dropdown-item') : [];
+  var _presOpen = false;
+
+  if (btnPresentation) {
+    btnPresentation.addEventListener('click', function() {
+      if (_presOpen) {
+        hostSend('closePresentation');
+        _presOpen = false;
+        btnPresentation.classList.remove('active');
+      } else {
+        hostSend('showPresentation');
+        _presOpen = true;
+        btnPresentation.classList.add('active');
+      }
+    });
+  }
+
+  var btnPresSource = document.getElementById('btn-pres-source');
+  if (btnPresSource) {
+    btnPresSource.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      presDropdown.style.display = presDropdown.style.display === 'none' ? '' : 'none';
+    });
+  }
+
+  if (presDropdownItems.length) {
+    presDropdownItems.forEach(function(item) {
+      item.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        var src = item.dataset.source;
+        hostSend('setPresentationSource', { source: src });
+        presDropdownItems.forEach(function(i) { i.classList.remove('active'); });
+        item.classList.add('active');
+        presDropdown.style.display = 'none';
+      });
+    });
+  }
+
+  document.addEventListener('click', function() {
+    if (presDropdown) presDropdown.style.display = 'none';
+  });
 
   // ── Keyboard shortcuts ────────────────────────────────
   const shortcutsModal = document.getElementById('shortcuts-modal');

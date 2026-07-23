@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 
@@ -41,6 +42,7 @@ public class YoutubeFormInterop
     private string? _musicShareCachedLyrics;
     private bool _musicShareCachedHasSyncedLyrics;
     private string? _musicShareCachedThumbnail;
+    private MusicShareMetadata? _musicShareLastMetadata;
     private sealed class CachedSubtitleData
     {
         public string SubtitleText { get; set; } = string.Empty;
@@ -122,6 +124,39 @@ public class YoutubeFormInterop
                 case "closeMusicPlayer":
                     CloseNewMusicPlayer();
                     return;
+                case "showPresentation":
+                    _ytForm.NewUiRef?.ShowPresentationWindow();
+                    SendResponse(id, new { success = true });
+                    return;
+                case "closePresentation":
+                    _ytForm.NewUiRef?.ClosePresentationWindow();
+                    SendResponse(id, new { success = true });
+                    return;
+                case "presentationReady":
+                {
+                    _ytForm.Dispatcher.BeginInvoke(() =>
+                    {
+                        SubscribeToMusicPlayer();
+                        SendPresentationCurrentState();
+                    });
+                    SendResponse(id, new { success = true });
+                    return;
+                }
+                case "setPresentationSource":
+                {
+                    var source = msg["source"]?.ToString() ?? "player";
+                    ConfigService.Instance.Update(cfg => cfg.PresentationSource = source);
+
+                    // Notify the presentation window about the source change
+                    PresentationSendEvent("presentationSettings", new
+                    {
+                        presentationSource = source
+                    });
+                    SendPresentationQueueUpdate();
+
+                    SendResponse(id, new { success = true });
+                    return;
+                }
                 case "showSoundboard":
                     ShowSoundboard();
                     SendResponse(id, new { success = true });
@@ -1106,6 +1141,16 @@ public class YoutubeFormInterop
             });
             mpSend(json);
 
+            // Forward to presentation window if source is "player"
+            var source = ConfigService.Instance.Current?.PresentationSource ?? "player";
+            if (source == "player")
+            {
+                var presData = new Dictionary<string, object>(data);
+                presData.Remove("isPlaybackActive");
+                presData.Remove("currentSongPath");
+                PresentationSendEvent("presentationUpdate", presData);
+            }
+
             if (current != null && current.songPath == _currentSongPath && data.ContainsKey("title"))
             {
                 _ = FetchAndSendLyricsForSongAsync(current);
@@ -1170,6 +1215,7 @@ public class YoutubeFormInterop
     private void OnQueueChanged(object? sender, EventArgs e)
     {
         SendQueueUpdate();
+        SendPresentationQueueUpdate();
         _ = PrefetchNextLyricsAsync();
     }
 
@@ -1271,6 +1317,47 @@ public class YoutubeFormInterop
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[SendQueueUpdate] {ex.Message}");
+        }
+    }
+
+    private void SendPresentationQueueUpdate()
+    {
+        try
+        {
+            var source = ConfigService.Instance.Current?.PresentationSource ?? "player";
+            if (source != "player") return;
+
+            var mp = _ytForm.MusicPlayer;
+            if (mp == null) return;
+
+            var queue = mp.Queue;
+
+            // Skip index 0 (now playing), take next 3
+            var upcoming = new List<object>();
+            if (queue != null)
+            {
+                for (int i = 1; i < queue.Count && upcoming.Count < 3; i++)
+                {
+                    var song = queue[i];
+                    string? thumb = null;
+                    if (!string.IsNullOrEmpty(song.songPath))
+                        thumb = GetThumbnailForSongPath(song.songPath);
+
+                    upcoming.Add(new
+                    {
+                        title = song.Title ?? "",
+                        artist = song.Artist ?? "",
+                        thumbnail = thumb,
+                        estimatedStart = song.EstimatedStartDisplay ?? ""
+                    });
+                }
+            }
+
+            PresentationSendEvent("presentationQueueUpdate", new { queue = upcoming, currentIndex = 0 });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SendPresentationQueueUpdate] {ex.Message}");
         }
     }
 
@@ -1719,6 +1806,8 @@ public class YoutubeFormInterop
             if (_musicPlayerLyricsCache.TryGetValue(songKey, out var cached))
             {
                 SendLyricsResult(mpSend, cached);
+                var src = ConfigService.Instance.Current?.PresentationSource ?? "player";
+                if (src == "player") PresentationSendLyricsResult(cached);
                 return;
             }
         }
@@ -1780,6 +1869,9 @@ public class YoutubeFormInterop
         }
 
         SendLyricsResult(mpSend, result);
+
+        var source = ConfigService.Instance.Current?.PresentationSource ?? "player";
+        if (source == "player") PresentationSendLyricsResult(result);
 
         _ = PrefetchNextLyricsAsync();
     }
@@ -2748,6 +2840,214 @@ public class YoutubeFormInterop
         catch { }
     }
 
+    private void PresentationSendEvent(string eventName, object? data)
+    {
+        var presSend = _ytForm.NewUiRef?.PresentationSendMessage;
+        if (presSend == null) return;
+        try
+        {
+            var json = JsonConvert.SerializeObject(new { type = "event", eventName, data });
+            presSend(json);
+        }
+        catch { }
+    }
+
+    private void SendPresentationCurrentState()
+    {
+        var presSend = _ytForm.NewUiRef?.PresentationSendMessage;
+        if (presSend == null) return;
+
+        // Send persisted lyrics settings
+        var cfg = ConfigService.Instance.Current;
+        PresentationSendEvent("presentationSettings", new
+        {
+            lyricsFontScale = (double)(cfg?.LyricsFontScale ?? 1.0f),
+            lyricsHidden = cfg?.LyricsHidden ?? false,
+            requestUrl = cfg?.RequestUrl ?? "",
+            presentationSource = cfg?.PresentationSource ?? "player"
+        });
+
+        var source = cfg?.PresentationSource ?? "player";
+
+        if (source == "musicshare")
+        {
+            var lastMeta = _musicShareLastMetadata;
+            if (lastMeta != null)
+            {
+                PresentationSendEvent("presentationUpdate", new
+                {
+                    title = lastMeta.Title,
+                    artist = lastMeta.Artist,
+                    currentTime = lastMeta.ElapsedSeconds,
+                    totalTime = lastMeta.TotalSeconds,
+                    thumbnail = lastMeta.ThumbnailData != null ? $"data:image/jpeg;base64,{lastMeta.ThumbnailData}" : null,
+                    isPlaying = true
+                });
+
+                if (!string.IsNullOrEmpty(lastMeta.Lyrics))
+                {
+                    if (lastMeta.HasSyncedLyrics)
+                    {
+                        var lines = lastMeta.Lyrics
+                            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(l => l.Trim())
+                            .Where(l => !string.IsNullOrWhiteSpace(l))
+                            .ToList();
+                        var synced = new List<object>();
+                        foreach (var line in lines)
+                        {
+                            var match = System.Text.RegularExpressions.Regex.Match(line, @"\[(\d+):(\d+\.?\d*)\](.*)");
+                            if (match.Success)
+                            {
+                                var min = int.Parse(match.Groups[1].Value);
+                                var sec = double.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+                                synced.Add(new { time = min * 60.0 + sec, text = match.Groups[3].Value.Trim() });
+                            }
+                        }
+                        PresentationSendEvent("presentationLyricsUpdate", new { syncedLyrics = synced, hasSynced = true, provider = "MusicShare" });
+                    }
+                    else
+                    {
+                        var plainLines = lastMeta.Lyrics
+                            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(l => l.Trim())
+                            .Where(l => !string.IsNullOrWhiteSpace(l))
+                            .ToList();
+                        PresentationSendEvent("presentationLyricsUpdate", new { plainLyrics = plainLines, hasSynced = false, provider = "MusicShare" });
+                    }
+                }
+            }
+            return;
+        }
+
+        // Default: player source
+        Song? current = null;
+        bool isPlaying = false;
+        _ytForm.Dispatcher.Invoke(() =>
+        {
+            var mp = _ytForm.MusicPlayer;
+            if (mp != null)
+            {
+                var q = mp.Queue;
+                if (q != null && q.Count > 0) current = q[0];
+                isPlaying = mp.RemoteIsPlaying;
+            }
+        });
+
+        var updateData = new Dictionary<string, object>
+        {
+            ["currentTime"] = 0,
+            ["totalTime"] = 0,
+            ["isPlaying"] = isPlaying
+        };
+
+        if (current != null)
+        {
+            updateData["title"] = current.Title ?? "";
+            updateData["artist"] = current.Artist ?? "";
+            updateData["duration"] = current.length ?? "";
+
+            var thumb = GetThumbnailForSongPath(current.songPath);
+            if (thumb != null)
+                updateData["thumbnail"] = thumb;
+        }
+
+        PresentationSendEvent("presentationUpdate", updateData);
+
+        // Send initial queue preview
+        SendPresentationQueueUpdate();
+
+        // Send current lyrics
+        if (current != null)
+        {
+            _ = FetchAndSendLyricsForSongPresentationAsync(current);
+        }
+    }
+
+    private async Task FetchAndSendLyricsForSongPresentationAsync(Song song)
+    {
+        var presSend = _ytForm.NewUiRef?.PresentationSendMessage;
+        if (presSend == null) return;
+
+        var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
+        LyricsResult result;
+
+        try
+        {
+            var embedded = LyricsService.GetEmbeddedLyrics(song.songPath);
+            if (embedded != null && embedded.Found)
+            {
+                result = embedded;
+            }
+            else
+            {
+                var lrcFile = LyricsService.GetLrcFileLyrics(song.songPath);
+                if (lrcFile != null && lrcFile.Found)
+                {
+                    result = lrcFile;
+                }
+                else
+                {
+                    var cached = await lyricsService.GetCachedLyricsAsync(song.Artist ?? "", song.Title ?? "", song.Duration);
+                    if (cached != null && cached.Found)
+                    {
+                        result = cached;
+                    }
+                    else
+                    {
+                        var fetched = await lyricsService.GetLyricsAsync(song.Artist ?? "", song.Title ?? "", song.Duration);
+                        result = fetched ?? new LyricsResult { Found = false };
+                    }
+                }
+            }
+        }
+        catch
+        {
+            result = new LyricsResult { Found = false };
+        }
+
+        PresentationSendLyricsResult(result);
+    }
+
+    private void PresentationSendLyricsResult(LyricsResult result)
+    {
+        var provider = result.Provider switch
+        {
+            LyricsProvider.FileEmbedded => "Embedded",
+            LyricsProvider.LrcFile => "LRC File",
+            LyricsProvider.LRCLIB => "LRCLIB",
+            LyricsProvider.YouTubeCaptions => "YouTube captions",
+            _ => ""
+        };
+        var data = new Dictionary<string, object>();
+
+        if (result.Found && result.HasSynced)
+        {
+            var syncedLines = result.ParseSyncedLines();
+            data["syncedLyrics"] = syncedLines.Select(l => new { time = l.Time.TotalSeconds, text = l.Text }).ToList();
+            data["hasSynced"] = true;
+        }
+        else if (result.Found && !string.IsNullOrWhiteSpace(result.PlainLyrics))
+        {
+            var plainLines = result.PlainLyrics
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(l => l.Trim())
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .ToList();
+            data["plainLyrics"] = plainLines;
+            data["hasSynced"] = false;
+            provider = "LRCLIB";
+        }
+        else
+        {
+            data["hasSynced"] = false;
+        }
+
+        data["provider"] = provider;
+
+        PresentationSendEvent("presentationLyricsUpdate", data);
+    }
+
     private void MusicShare_ServiceStatusChanged(object? sender, ShareStatus status)
     {
         MusicShareSendEvent("musicShareStatus", new
@@ -2767,6 +3067,8 @@ public class YoutubeFormInterop
 
     private void MusicShare_ServiceMetadataReceived(object? sender, MusicShareMetadata metadata)
     {
+        _musicShareLastMetadata = metadata;
+
         MusicShareSendEvent("musicShareMetadataReceived", new
         {
             title = metadata.Title,
@@ -2777,6 +3079,21 @@ public class YoutubeFormInterop
             totalSeconds = metadata.TotalSeconds,
             thumbnailData = metadata.ThumbnailData
         });
+
+        // Forward to presentation if source is musicshare
+        var source = ConfigService.Instance.Current?.PresentationSource ?? "player";
+        if (source == "musicshare")
+        {
+            PresentationSendEvent("presentationUpdate", new
+            {
+                title = metadata.Title,
+                artist = metadata.Artist,
+                currentTime = metadata.ElapsedSeconds,
+                totalTime = metadata.TotalSeconds,
+                thumbnail = metadata.ThumbnailData != null ? $"data:image/jpeg;base64,{metadata.ThumbnailData}" : null,
+                isPlaying = true
+            });
+        }
     }
 
     private async void MusicShare_OnNowPlayingTick(object? sender, MusicPlayer.NowPlayingEventArgs e)

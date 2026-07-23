@@ -1532,3 +1532,40 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .player-ctrl-btn:focus-visible { outline-offset: 0; }
 .top-btn:focus-visible { outline-offset: 1px; }
 .sidebar-tab:focus-visible { outline-offset: -2px; }
+
+/* Presentation source dropdown */
+#pres-btn-wrap { position: relative; display: flex; }
+.pres-split-main {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-right: none !important;
+}
+.pres-split-arrow {
+  background: rgba(255,255,255,0.06);
+  color: #ccc;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-left: none;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+  padding: 0 8px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background 0.12s, color 0.12s;
+}
+.pres-split-arrow:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.pres-dropdown {
+  position: absolute; top: 100%; right: 0; margin-top: 4px;
+  background: #2a2a2a; border: 1px solid #444; border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5); z-index: 200;
+  min-width: 160px; padding: 4px 0; animation: fadeIn 0.15s ease;
+}
+.pres-dropdown-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px; font-size: 12px; color: #ccc; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.pres-dropdown-item:hover { background: #3a3a3a; color: #fff; }
+.pres-dropdown-item.active { color: #5b8def; }
+.pres-dropdown-item i { width: 14px; text-align: center; font-size: 11px; }

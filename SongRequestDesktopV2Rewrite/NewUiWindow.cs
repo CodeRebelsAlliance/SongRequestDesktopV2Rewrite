@@ -13,6 +13,7 @@ public class NewUiWindow
 
     private PhotinoWindow? _window;
     private PhotinoWindow? _musicPlayerWindow;
+    private PhotinoWindow? _presentationWindow;
 
     private Thread? _thread;
 
@@ -20,10 +21,12 @@ public class NewUiWindow
     private readonly YoutubeForm _ytForm;
 
     private Action? _onDataRefreshedHandler;
+    private volatile bool _presentationClosing;
 
     public bool IsOpen => _window != null;
 
     public Action<string>? MusicPlayerSendMessage { get; set; }
+    public Action<string>? PresentationSendMessage { get; set; }
 
     public LibraryService? LibraryService => _interop.LibraryService;
 
@@ -63,6 +66,7 @@ public class NewUiWindow
             {
                 _window = null;
                 _musicPlayerWindow = null;
+                _presentationWindow = null;
 
                 _interop.SendMessage = null;
 
@@ -213,6 +217,113 @@ public class NewUiWindow
         });
     }
 
+    public void ShowPresentationWindow()
+    {
+        var mainWindow = _window;
+        if (mainWindow == null)
+            return;
+
+        mainWindow.Invoke(() =>
+        {
+            if (_presentationWindow != null)
+                return;
+
+            _presentationClosing = false;
+
+            var htmlPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "newui",
+                "presentation.html");
+
+            var pw = new PhotinoWindow()
+                .SetTitle("Presentation - SongRequest V2")
+                .SetSize(1280, 761)
+                .Center()
+                .Load(htmlPath);
+
+            pw.WindowCreated += (_, _) =>
+            {
+                try
+                {
+                    if (pw.WindowHandle != IntPtr.Zero)
+                        SetForegroundWindow(pw.WindowHandle);
+                }
+                catch { }
+            };
+
+            pw.RegisterWebMessageReceivedHandler((sender, message) =>
+            {
+                if (_presentationClosing) return;
+                _interop.HandleMessage(message, json =>
+                {
+                    if (_presentationClosing) return;
+                    try
+                    {
+                        pw.Invoke(() => pw.SendWebMessage(json));
+                    }
+                    catch { }
+                });
+            });
+
+            PresentationSendMessage = json =>
+            {
+                if (_presentationClosing) return;
+                try
+                {
+                    pw.Invoke(() => pw.SendWebMessage(json));
+                }
+                catch { }
+            };
+
+            pw.WindowClosing += (_, _) =>
+            {
+                _presentationClosing = true;
+                _presentationWindow = null;
+                PresentationSendMessage = null;
+
+                // Notify the music player window so the button state updates
+                try
+                {
+                    var mpSend = MusicPlayerSendMessage;
+                    if (mpSend != null)
+                    {
+                        var json = "{\"type\":\"event\",\"eventName\":\"presentationClosed\"}";
+                        mpSend(json);
+                    }
+                }
+                catch { }
+
+                return true;
+            };
+
+            _presentationWindow = pw;
+
+            pw.WaitForClose();
+        });
+    }
+
+    public void ClosePresentationWindow()
+    {
+        var mainWindow = _window;
+        if (mainWindow == null)
+            return;
+
+        mainWindow.Invoke(() =>
+        {
+            var pw = _presentationWindow;
+            if (pw == null)
+                return;
+
+            _presentationWindow = null;
+
+            try
+            {
+                pw.Close();
+            }
+            catch { }
+        });
+    }
+
     public void Close()
     {
         var w = _window;
@@ -227,5 +338,6 @@ public class NewUiWindow
 
         _window = null;
         _musicPlayerWindow = null;
+        _presentationWindow = null;
     }
 }

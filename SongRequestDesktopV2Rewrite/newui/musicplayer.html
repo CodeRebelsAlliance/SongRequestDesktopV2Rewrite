@@ -23,6 +23,14 @@
     </div>
     <div id="top-actions">
       <button id="btn-shortcuts" class="top-btn" title="Keyboard Shortcuts"><i class="fas fa-keyboard"></i></button>
+      <div id="pres-btn-wrap">
+        <button id="btn-presentation" class="top-btn pres-split-main" title="Open Presentation"><i class="fas fa-tv"></i> Presentation</button>
+        <button id="btn-pres-source" class="pres-split-arrow" title="Presentation source"><i class="fas fa-caret-down"></i></button>
+        <div id="pres-source-dropdown" class="pres-dropdown" style="display:none">
+          <div class="pres-dropdown-item active" data-source="player"><i class="fas fa-play-circle"></i> Player</div>
+          <div class="pres-dropdown-item" data-source="musicshare"><i class="fas fa-broadcast-tower"></i> MusicShare</div>
+        </div>
+      </div>
       <button id="btn-share" class="top-btn"><i class="fas fa-broadcast-tower"></i> Share</button>
       <button id="btn-settings" class="top-btn" style="display: none;"><i class="fas fa-cog"></i> Settings</button>
     </div>
