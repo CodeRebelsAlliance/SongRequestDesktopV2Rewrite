@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Security.AccessControl;
 using System.Text;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -42,6 +43,7 @@ namespace SongRequestDesktopV2Rewrite
         public int ConcurrentTaskNumber => ConfigService.Instance.Current.Threads;
         public HashSet<string> fetchedYtids = new HashSet<string>();
         public HashSet<string> fetchedBlacklist = new HashSet<string>();
+        public readonly ConcurrentDictionary<string, byte> ProcessingVideos = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
         private Dictionary<string, VideoData> fetchedVideoData = new Dictionary<string, VideoData>(StringComparer.OrdinalIgnoreCase);
         private readonly object _videoCacheSync = new object();
         private readonly string _videoMetadataCachePath = System.IO.Path.Combine(downloadPath, "video-metadata-cache.json");
@@ -52,6 +54,7 @@ namespace SongRequestDesktopV2Rewrite
         private readonly Dictionary<string, SongPanelMetadata> _sentSongPanels = new Dictionary<string, SongPanelMetadata>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, SongPanelMetadata> _blacklistedSongPanels = new Dictionary<string, SongPanelMetadata>(StringComparer.OrdinalIgnoreCase);
         private bool _initialLoadComplete = false;
+        public bool InitialLoadComplete => _initialLoadComplete;
         private SongListSortMode _currentSortMode = SongListSortMode.NewestSentInDate;
         private string _currentSearchText = string.Empty;
 
@@ -479,7 +482,7 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
-        private void SaveVideoDataCache()
+        public void SaveVideoDataCache()
         {
             try
             {
@@ -501,7 +504,7 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
-        private VideoData GetOrCreateVideoData(string videoId)
+        public VideoData GetOrCreateVideoData(string videoId)
         {
             lock (_videoCacheSync)
             {
@@ -966,11 +969,24 @@ namespace SongRequestDesktopV2Rewrite
                 ? TimeSpan.FromTicks(cachedVideoData.DurationTicks)
                 : TimeSpan.Zero;
 
+            void SendProgress(string stage, double progress, string? message = null)
+            {
+                NewUiRef?.SendEvent("downloadProgress", new { videoId, stage, progress, message });
+            }
+
+            bool acquiredLock = ProcessingVideos.TryAdd(videoId, 0);
             try
             {
                 string mp3FilePath = System.IO.Path.Combine(downloadPath, $"{videoId}.mp3");
 
-                if (File.Exists(mp3FilePath))
+                if (!acquiredLock)
+                {
+                    statusText.Text = "Processing...";
+                    statusText.Background = new SolidColorBrush(Color.FromRgb(0x4a, 0x4a, 0x4a));
+                    statusText.Foreground = Brushes.White;
+                    EnableControls(false, playButton, approveButton, blacklistButton, deleteButton, inspectButton, playNextButton);
+                }
+                else if (File.Exists(mp3FilePath))
                 {
                     statusText.Text = "Downloaded";
                     statusText.Background = Brushes.DarkBlue;
@@ -989,6 +1005,7 @@ namespace SongRequestDesktopV2Rewrite
                     }
                     else
                     {
+                        SendProgress("metadata", 0, "Fetching metadata...");
                         var (title, length, creator) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
                         resolvedLength = length;
                         cachedVideoData.Title = title ?? string.Empty;
@@ -999,6 +1016,7 @@ namespace SongRequestDesktopV2Rewrite
                         creatorG = creator;
                         lengthG = length.ToString(@"hh\:mm\:ss");
                         SaveVideoDataCache();
+                        SendProgress("metadata", 100, title ?? videoId);
                     }
 
                     panelEntry.Title = titleG ?? string.Empty;
@@ -1012,8 +1030,10 @@ namespace SongRequestDesktopV2Rewrite
                         dragData.FilePath = mp3FilePath;
                     }
 
+                    SendProgress("thumbnail", 0, "Fetching thumbnail...");
                     var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, cachedVideoData);
                     if (bmp != null) thumbnail.Source = bmp;
+                    SendProgress("thumbnail", 100, "Thumbnail cached");
 
                     // Auto-add to library if setting is enabled
                     if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true
@@ -1050,13 +1070,16 @@ namespace SongRequestDesktopV2Rewrite
                     statusText.Background = Brushes.Orange;
                     statusText.Foreground = Brushes.Black;
 
+                    SendProgress("downloading", 0, "Downloading...");
                     downloadedFilePath = await DownloadVideoAsync(videoUrl);
+                    SendProgress("downloading", 100, "Download complete");
 
                     statusText.Text = "Downloaded";
                     statusText.Background = Brushes.DarkBlue;
                     statusText.Foreground = Brushes.White;
                     EnableControls(true, playButton, approveButton, blacklistButton, deleteButton, inspectButton, playNextButton);
 
+                    SendProgress("metadata", 0, "Fetching metadata...");
                     var (title, length, creator) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
                     resolvedLength = length;
                     cachedVideoData.Title = title ?? string.Empty;
@@ -1070,6 +1093,7 @@ namespace SongRequestDesktopV2Rewrite
                     panelEntry.Creator = creator ?? string.Empty;
                     SaveVideoDataCache();
                     ApplySortingAndFiltering();
+                    SendProgress("metadata", 100, title ?? videoId);
 
                     // Update drag icon data
                     if (dragIcon.Tag is DragSongData dragData)
@@ -1078,8 +1102,10 @@ namespace SongRequestDesktopV2Rewrite
                         dragData.FilePath = downloadedFilePath;
                     }
 
+                    SendProgress("thumbnail", 0, "Fetching thumbnail...");
                     var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, cachedVideoData);
                     if (bmp != null) thumbnail.Source = bmp;
+                    SendProgress("thumbnail", 100, "Thumbnail cached");
 
                     // Auto Enqueue: if enabled and initial load is done, this is a newly sent-in song
                     if (_initialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true)
@@ -1126,6 +1152,8 @@ namespace SongRequestDesktopV2Rewrite
                     statusText.Foreground = Brushes.White;
                     approveButton.Content = "Unapprove";
                 }
+
+                SendProgress("complete", 100, titleG ?? videoId);
 
                 // approve button
                 approveButton.Click += async (s, e) =>
@@ -1236,6 +1264,7 @@ namespace SongRequestDesktopV2Rewrite
             catch (Exception ex)
             {
                 AppendConsoleText("Error while handling: " + ex.Message, Brushes.OrangeRed);
+                SendProgress("error", 0, ex.Message);
                 // basic error handling
                 videoPanel.Background = Brushes.DarkRed;
 
@@ -1244,6 +1273,10 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     ShowYouTubeLimitPrompt();
                 }
+            }
+            finally
+            {
+                if (acquiredLock) ProcessingVideos.TryRemove(videoId, out _);
             }
 
             // end

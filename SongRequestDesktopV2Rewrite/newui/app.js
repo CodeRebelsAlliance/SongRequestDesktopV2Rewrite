@@ -114,7 +114,88 @@
     if (eventName === 'refresh') loadData();
     else if (eventName === 'libraryScanProgress') onLibraryScanProgress(data);
     else if (eventName === 'libraryScanCompleted') onLibraryScanCompleted(data);
+    else if (eventName === 'downloadProgress') onDownloadProgress(data);
   }
+
+  // ── Download progress tracking ──────────────────────────────────
+  const downloadStates = {};
+
+  function onDownloadProgress(data) {
+    if (!data || !data.videoId) return;
+    const vid = data.videoId;
+    if (!downloadStates[vid]) downloadStates[vid] = {};
+    const st = downloadStates[vid];
+    st.stage = data.stage;
+    st.progress = data.progress;
+    st.message = data.message || '';
+    st.time = Date.now();
+
+    const card = document.querySelector('.song-card[data-ytid="' + vid + '"]');
+    if (!card) return;
+    const info = card.querySelector('.info');
+    if (!info) return;
+
+    // Show progress container inside .info so it doesn't break flex row layout
+    let progWrap = info.querySelector('.dl-progress');
+    if (!progWrap) {
+      progWrap = document.createElement('div');
+      progWrap.className = 'dl-progress';
+      const bar = document.createElement('div');
+      bar.className = 'dl-bar';
+      const fill = document.createElement('div');
+      fill.className = 'dl-fill';
+      bar.appendChild(fill);
+      const label = document.createElement('div');
+      label.className = 'dl-label';
+      progWrap.appendChild(bar);
+      progWrap.appendChild(label);
+      info.appendChild(progWrap);
+    }
+    const fill = progWrap.querySelector('.dl-fill');
+    const label = progWrap.querySelector('.dl-label');
+
+    if (data.stage === 'complete') {
+      progWrap.classList.add('dl-done');
+      progWrap.classList.remove('dl-error');
+      fill.style.width = '100%';
+      fill.className = 'dl-fill dl-fill-done';
+      label.innerHTML = '<i class="fas fa-check-circle"></i> ' + escapeHtml(data.message || 'Complete');
+      card.classList.remove('is-loading');
+      // Remove progress after a delay
+      setTimeout(() => { if (progWrap.parentNode) progWrap.remove(); }, 5000);
+      return;
+    }
+
+    if (data.stage === 'error') {
+      progWrap.classList.add('dl-error');
+      progWrap.classList.remove('dl-done');
+      fill.style.width = '100%';
+      fill.className = 'dl-fill dl-fill-error';
+      label.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + escapeHtml(data.message || 'Error');
+      return;
+    }
+
+    // Stage-specific styling
+    const stageIcons = {
+      metadata: 'fa-tag',
+      downloading: 'fa-download',
+      thumbnail: 'fa-image',
+      subtitles: 'fa-closed-captioning'
+    };
+    const stageColors = {
+      metadata: '#5fa8e0',
+      downloading: '#4caf50',
+      thumbnail: '#e0a85f',
+      subtitles: '#a85fe0'
+    };
+    const icon = stageIcons[data.stage] || 'fa-spinner fa-spin';
+    const color = stageColors[data.stage] || '#888';
+    fill.style.width = Math.min(data.progress, 100) + '%';
+    fill.style.background = color;
+    fill.className = 'dl-fill';
+    label.innerHTML = '<i class="fas ' + icon + '" style="color:' + color + '"></i> ' + escapeHtml(data.message || data.stage);
+  }
+
 
   function toast(msg, type) {
     const container = document.getElementById('toast-container');
@@ -783,16 +864,22 @@
       const card = document.createElement('div');
       const hasTitle = v.title !== v.ytid && v.title;
       card.className = 'song-card' + (hasTitle ? '' : ' is-loading');
+      card.dataset.ytid = v.ytid;
 
       const thumbWrap = document.createElement('div');
       thumbWrap.className = 'thumb-wrap' + (thumbCache[v.ytid] ? '' : ' is-loading');
+      const placeholder = document.createElement('span');
+      placeholder.className = 'thumb-placeholder';
+      placeholder.innerHTML = '<i class="fas fa-music"></i>';
+      thumbWrap.appendChild(placeholder);
       const img = document.createElement('img');
       img.alt = '';
       if (thumbCache[v.ytid]) {
         img.src = thumbCache[v.ytid];
+        thumbWrap.classList.add('is-loaded');
       } else {
         img.style.opacity = '0';
-        img.onload = () => { img.style.opacity = '1'; thumbWrap.classList.remove('is-loading'); };
+        img.onload = () => { img.style.opacity = '1'; thumbWrap.classList.remove('is-loading'); thumbWrap.classList.add('is-loaded'); };
         loadThumbnail(v.ytid, img);
       }
       thumbWrap.appendChild(img);
@@ -844,11 +931,41 @@
       fragment.appendChild(card);
     }
     container.replaceChildren(fragment);
+
+    // Re-apply active download progress states to newly rendered cards
+    for (const [vid, st] of Object.entries(downloadStates)) {
+      if (Date.now() - st.time > 30000) continue;
+      const card = container.querySelector('.song-card[data-ytid="' + vid + '"]');
+      if (!card) continue;
+      const info = card.querySelector('.info');
+      if (!info) continue;
+
+      const progWrap = document.createElement('div');
+      progWrap.className = 'dl-progress';
+      const bar = document.createElement('div');
+      bar.className = 'dl-bar';
+      const fill = document.createElement('div');
+      fill.className = 'dl-fill';
+      fill.style.width = Math.min(st.progress || 0, 100) + '%';
+      const colorMap = { metadata: '#5fa8e0', downloading: '#4caf50', thumbnail: '#e0a85f', subtitles: '#a85fe0' };
+      fill.style.background = colorMap[st.stage] || '#888';
+      bar.appendChild(fill);
+      const label = document.createElement('div');
+      label.className = 'dl-label';
+      const iconMap = { metadata: 'fa-tag', downloading: 'fa-download', thumbnail: 'fa-image', subtitles: 'fa-closed-captioning' };
+      const icon = iconMap[st.stage] || 'fa-spinner fa-spin';
+      const color = colorMap[st.stage] || '#888';
+      label.innerHTML = '<i class="fas ' + icon + '" style="color:' + color + '"></i> ' + escapeHtml(st.message || st.stage);
+      progWrap.appendChild(bar);
+      progWrap.appendChild(label);
+      info.appendChild(progWrap);
+    }
   }
 
   function loadThumbnail(videoId, imgEl) {
     if (thumbCache[videoId]) {
       imgEl.src = thumbCache[videoId];
+      imgEl.closest('.thumb-wrap')?.classList.add('is-loaded');
       return;
     }
     send('getThumbnail', { videoId }).then(result => {
@@ -859,10 +976,12 @@
       } else {
         imgEl.style.opacity = '1';
         imgEl.closest('.thumb-wrap')?.classList.remove('is-loading');
+        imgEl.closest('.thumb-wrap')?.classList.add('is-loaded');
       }
     }).catch(() => {
       imgEl.style.opacity = '1';
       imgEl.closest('.thumb-wrap')?.classList.remove('is-loading');
+      imgEl.closest('.thumb-wrap')?.classList.add('is-loaded');
     });
   }
 
@@ -876,14 +995,38 @@
   }
 
   function doAction(action, ytid) {
+    if (action === 'queueSong' || action === 'playNext') {
+      setStatus('Checking ' + ytid + '...');
+      send('isFileDownloaded', { ytid }).then(res => {
+        if (res && res.downloaded) {
+          // File exists — send direct queue/playNext
+          const method = action === 'queueSong' ? 'queueSong' : 'playNext';
+          setStatus((action === 'queueSong' ? 'Queuing' : 'Playing next') + ' ' + ytid + '...');
+          return send(method, { ytid });
+        } else {
+          // Not downloaded — trigger full download pipeline
+          const act = action === 'playNext' ? 'playNext' : 'queue';
+          setStatus('Downloading ' + ytid + '...');
+          return send('downloadAndProcess', { ytid, action: act });
+        }
+      }).then(() => {
+        const msg = action === 'queueSong' ? 'Queued' : 'Playing Next';
+        toast(msg + ' ' + ytid, 'success');
+        log(msg + ' ' + ytid, 'success');
+        loadData();
+      }).catch(e => {
+        toast('Failed to ' + action + ': ' + e.message, 'error');
+        log('Failed to ' + action + ': ' + e.message, 'error');
+      });
+      return;
+    }
+
     const actionMap = {
       'approve': { method: 'approve', msg: 'Approved' },
       'unapprove': { method: 'unapprove', msg: 'Unapproved' },
       'delete': { method: 'delete', msg: 'Deleted' },
       'blacklist': { method: 'blacklist', msg: 'Blacklisted' },
-      'unblacklist': { method: 'unblacklist', msg: 'Unblacklisted' },
-      'queueSong': { method: 'queueSong', msg: 'Queued' },
-      'playNext': { method: 'playNext', msg: 'Playing Next' }
+      'unblacklist': { method: 'unblacklist', msg: 'Unblacklisted' }
     };
     const entry = actionMap[action];
     if (!entry) return;

@@ -341,6 +341,12 @@ public class YoutubeFormInterop
                 case "playNext":
                     result = PlayNextAsync(msg["ytid"]?.ToString());
                     break;
+                case "downloadAndProcess":
+                    result = await DownloadAndProcessSongAsync(msg["ytid"]?.ToString(), msg["action"]?.ToString());
+                    break;
+                case "isFileDownloaded":
+                    result = IsFileDownloaded(msg["ytid"]?.ToString());
+                    break;
                 case "getVersion":
                     result = new { version = About.version };
                     break;
@@ -727,6 +733,163 @@ public class YoutubeFormInterop
         catch (Exception ex)
         {
             return new { error = ex.Message };
+        }
+    }
+
+    private object IsFileDownloaded(string? videoId)
+    {
+        if (string.IsNullOrEmpty(videoId)) return new { downloaded = false };
+        var mp3Path = Path.Combine(YoutubeForm.downloadPath, $"{videoId}.mp3");
+        return new { downloaded = File.Exists(mp3Path) };
+    }
+
+    private async Task<object> DownloadAndProcessSongAsync(string? videoId, string? action)
+    {
+        if (string.IsNullOrEmpty(videoId)) return new { error = "No videoId" };
+        var videoUrl = $"https://www.youtube.com/watch?v={videoId}";
+        var downloadPath = YoutubeForm.downloadPath;
+        var mp3Path = Path.Combine(downloadPath, $"{videoId}.mp3");
+        var actionToTake = action ?? "queue";
+
+        void SendProgress(string stage, double progress, string? message = null)
+        {
+            SendEvent("downloadProgress", new { videoId, stage, progress, message });
+        }
+
+        if (!_ytForm.ProcessingVideos.TryAdd(videoId, 0))
+        {
+            return new { success = true, message = "Already being processed by another path" };
+        }
+
+        try
+        {
+            // Stage 1: Metadata
+            SendProgress("metadata", 0, "Fetching metadata...");
+            var (title, length, creator) = await _ytService.GetVideoMetadataAsync(videoUrl).ConfigureAwait(false);
+
+            var cachedData = _ytForm.GetOrCreateVideoData(videoId);
+            cachedData.Title = title ?? string.Empty;
+            cachedData.Creator = creator ?? string.Empty;
+            cachedData.DurationTicks = length.Ticks;
+            _ytForm.SaveVideoDataCache();
+
+            SendProgress("metadata", 100, title ?? videoId);
+
+            if (File.Exists(mp3Path))
+            {
+                // Already downloaded — skip to post-processing
+                SendProgress("downloading", 100, "Already downloaded");
+            }
+            else
+            {
+                // Stage 2: Download
+                SendProgress("downloading", 0, "Downloading...");
+                var progress = new Progress<double>(pct =>
+                {
+                    SendProgress("downloading", pct * 100, $"Downloading... {pct:P0}");
+                });
+                var result = await _ytService.DownloadVideoWithProgressAsync(videoUrl, downloadPath, progress).ConfigureAwait(false);
+                SendProgress("downloading", 100, "Download complete");
+            }
+
+            // Stage 3: Thumbnail
+            SendProgress("thumbnail", 0, "Fetching thumbnail...");
+            try
+            {
+                var thumbUrl = await _ytService.GetThumbnailUrlAsync(videoUrl).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(thumbUrl))
+                {
+                    using var httpClient = new System.Net.Http.HttpClient();
+                    var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl).ConfigureAwait(false);
+                    var cacheDir = Path.Combine("data", "downloadedvideos", "thumbnail-cache");
+                    Directory.CreateDirectory(cacheDir);
+                    var jpgPath = Path.Combine(cacheDir, $"{videoId}.jpg");
+                    await File.WriteAllBytesAsync(jpgPath, thumbBytes).ConfigureAwait(false);
+
+                    // Also save to library if auto-add is enabled
+                    if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true)
+                    {
+                        var libSong = _libraryService.Data.Songs.FirstOrDefault(s => s.YouTubeId == videoId);
+                        if (libSong != null)
+                        {
+                            _libraryService.SaveSongThumbnail(libSong.Id, thumbBytes);
+                        }
+                    }
+                }
+                SendProgress("thumbnail", 100, "Thumbnail cached");
+            }
+            catch
+            {
+                SendProgress("thumbnail", 100, "Thumbnail skipped");
+            }
+
+            // Stage 4: Subtitles
+            SendProgress("subtitles", 0, "Caching subtitles...");
+            try
+            {
+                var subtitleResult = await _ytService.TryGetSubtitlesAsync(videoUrl).ConfigureAwait(false);
+                if (subtitleResult != null && (!string.IsNullOrWhiteSpace(subtitleResult.PlainText) || !string.IsNullOrWhiteSpace(subtitleResult.TimedLrcText)))
+                {
+                    cachedData.SubtitleText = subtitleResult.PlainText ?? string.Empty;
+                    cachedData.SubtitleTimedText = subtitleResult.TimedLrcText ?? string.Empty;
+                    _ytForm.SaveVideoDataCache();
+                }
+                SendProgress("subtitles", 100, "Subtitles cached");
+            }
+            catch
+            {
+                SendProgress("subtitles", 100, "Subtitles skipped");
+            }
+
+            // Stage 5: Auto-add to library
+            if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true
+                && File.Exists(mp3Path))
+            {
+                var libSong = _libraryService.ImportDownloadedSong(mp3Path, videoId, videoUrl, title, creator);
+                if (libSong != null)
+                {
+                    try
+                    {
+                        var thumbUrl = await _ytService.GetThumbnailUrlAsync(videoUrl).ConfigureAwait(false);
+                        if (!string.IsNullOrEmpty(thumbUrl))
+                        {
+                            using var httpClient = new System.Net.Http.HttpClient();
+                            var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl).ConfigureAwait(false);
+                            var thumbPath = _libraryService.SaveSongThumbnail(libSong.Id, thumbBytes);
+                            libSong.ThumbnailPath = thumbPath;
+                        }
+                    }
+                    catch { }
+                    _libraryService.Save();
+                }
+            }
+
+            // Stage 6: Auto-enqueue / auto-play-next
+            if (_ytForm.InitialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true && File.Exists(mp3Path))
+            {
+                var song = new Song(title ?? videoId, creator ?? "", null, length, mp3Path);
+                _ytForm.Dispatcher.BeginInvoke(() =>
+                {
+                    if (actionToTake == "playNext")
+                        _ytForm.MusicPlayer.AddNextSongExternal(song);
+                    else
+                        _ytForm.MusicPlayer.AddSongExternal(song);
+                });
+            }
+
+            // Done
+            SendProgress("complete", 100, title ?? videoId);
+
+            return new { success = true, title = title ?? videoId, creator, length = length.ToString(), path = mp3Path };
+        }
+        catch (Exception ex)
+        {
+            SendProgress("error", 0, ex.Message);
+            return new { error = ex.Message };
+        }
+        finally
+        {
+            _ytForm.ProcessingVideos.TryRemove(videoId, out _);
         }
     }
 

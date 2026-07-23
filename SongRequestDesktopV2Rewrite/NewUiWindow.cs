@@ -27,6 +27,8 @@ public class NewUiWindow
 
     public LibraryService? LibraryService => _interop.LibraryService;
 
+    public void SendEvent(string eventName, object? data) => _interop.SendEvent(eventName, data);
+
     public NewUiWindow(YoutubeFormInterop interop, YoutubeForm ytForm)
     {
         _interop = interop;
