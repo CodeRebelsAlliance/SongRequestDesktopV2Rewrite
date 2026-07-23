@@ -182,7 +182,7 @@ public class YoutubeFormInterop
                             cfInit = mp.CrossfadeSlider.Value;
                             canControlInit = mp.RemoteCanControlVolume;
                         }
-                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit });
+                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit, lyricsFontScale = (double)ConfigService.Instance.Current.LyricsFontScale, lyricsHidden = ConfigService.Instance.Current.LyricsHidden });
                         SendCurrentNowPlayingToNewUI();
                     });
                     return;
@@ -234,6 +234,18 @@ public class YoutubeFormInterop
                     SendResponse(id, new { volume = volVal, crossfade = cfVal2, canControlVolume = canControlVal });
                     return;
                 }
+                case "saveLyricsSettings":
+                {
+                    var fontScale = msg["fontScale"]?.ToObject<float>() ?? 1.0f;
+                    var hidden = msg["hidden"]?.ToObject<bool>() ?? false;
+                    ConfigService.Instance.Update(cfg =>
+                    {
+                        cfg.LyricsFontScale = fontScale;
+                        cfg.LyricsHidden = hidden;
+                    });
+                    SendResponse(id, new { success = true });
+                    return;
+                }
                 case "addLocalFiles":
                     var mode = msg["mode"]?.ToString() ?? "add";
                     _ytForm.Dispatcher.BeginInvoke(() =>
@@ -267,6 +279,19 @@ public class YoutubeFormInterop
                     var idx = msg["index"]?.ToObject<int>() ?? -1;
                     if (idx >= 0)
                         _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoveQueueItem(idx));
+                    SendResponse(id, new { success = true });
+                    return;
+                case "removePlaylistQueueItem":
+                    var plIdx = msg["index"]?.ToObject<int>() ?? -1;
+                    if (plIdx >= 0)
+                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemovePlaylistQueueItem(plIdx));
+                    SendResponse(id, new { success = true });
+                    return;
+                case "movePlaylistQueueItem":
+                    var plFromIdx = msg["fromIndex"]?.ToObject<int>() ?? -1;
+                    var plToIdx = msg["toIndex"]?.ToObject<int>() ?? -1;
+                    if (plFromIdx >= 0 && plToIdx >= 0)
+                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.MovePlaylistQueueItem(plFromIdx, plToIdx));
                     SendResponse(id, new { success = true });
                     return;
                 case "moveQueueItem":
@@ -442,6 +467,49 @@ public class YoutubeFormInterop
                     break;
                 case "downloadAndPlayYouTube":
                     result = await DownloadAndPlayYouTubeAsync(msg);
+                    break;
+
+                // ── Played Songs Logging ──────────────────
+                case "getPlayedSongs":
+                    result = await GetPlayedSongs();
+                    break;
+                case "clearPlayedSongs":
+                    result = await ClearPlayedSongs();
+                    break;
+
+                // ── Playlists ─────────────────────────────
+                case "getPlaylists":
+                    result = GetPlaylists();
+                    break;
+                case "getPlaylist":
+                    result = GetPlaylist(msg);
+                    break;
+                case "createPlaylist":
+                    result = CreatePlaylist(msg);
+                    break;
+                case "addSongToPlaylist":
+                    result = AddSongToPlaylist(msg);
+                    break;
+                case "removePlaylistEntry":
+                    result = RemovePlaylistEntry(msg);
+                    break;
+                case "reorderPlaylistEntry":
+                    result = ReorderPlaylistEntry(msg);
+                    break;
+                case "deletePlaylist":
+                    result = DeletePlaylist(msg);
+                    break;
+                case "updatePlaylist":
+                    result = UpdatePlaylist(msg);
+                    break;
+                case "playPlaylist":
+                    result = PlayPlaylist(msg);
+                    break;
+                case "shufflePlaylist":
+                    result = ShufflePlaylist(msg);
+                    break;
+                case "clearPlaylistQueue":
+                    result = ClearPlaylistQueue(msg);
                     break;
 
                 case "musicShareStart":
@@ -761,6 +829,7 @@ public class YoutubeFormInterop
             return new { success = true, message = "Already being processed by another path" };
         }
 
+        await _ytForm.DownloadSemaphore.WaitAsync();
         try
         {
             // Stage 1: Metadata
@@ -890,6 +959,7 @@ public class YoutubeFormInterop
         finally
         {
             _ytForm.ProcessingVideos.TryRemove(videoId, out _);
+            _ytForm.DownloadSemaphore.Release();
         }
     }
 
@@ -972,6 +1042,7 @@ public class YoutubeFormInterop
         _musicPlayerSubscribed = true;
         mp.NowPlayingTick += OnNowPlayingTick;
         mp.QueueChanged += OnQueueChanged;
+        mp.PlaylistQueueChanged += OnQueueChanged;
     }
 
     private void OnNowPlayingTick(object? sender, MusicPlayer.NowPlayingEventArgs args)
@@ -1002,19 +1073,24 @@ public class YoutubeFormInterop
                     data["thumbnail"] = thumb;
 
                 // Library-enriched audio quality metadata
+                LibrarySong? currentLibSong = null;
                 if (!string.IsNullOrEmpty(current.songPath))
                 {
-                    var libSong = _libraryService.Data.Songs.FirstOrDefault(s => string.Equals(s.FilePath, current.songPath, StringComparison.OrdinalIgnoreCase));
-                    if (libSong != null)
+                    currentLibSong = _libraryService.Data.Songs.FirstOrDefault(s => string.Equals(s.FilePath, current.songPath, StringComparison.OrdinalIgnoreCase));
+                    if (currentLibSong != null)
                     {
                         var ext = System.IO.Path.GetExtension(current.songPath).TrimStart('.').ToUpperInvariant();
                         data["fileType"] = ext;
-                        if (libSong.BitrateKbps > 0) data["bitrateKbps"] = libSong.BitrateKbps;
+                        if (currentLibSong.BitrateKbps > 0) data["bitrateKbps"] = currentLibSong.BitrateKbps;
 
                         // Record play history
-                        _libraryService.RecordPlay(libSong.Id);
+                        _libraryService.RecordPlay(currentLibSong.Id);
                     }
                 }
+
+                // Log playback to server if enabled
+                var platform = currentLibSong != null && currentLibSong.Source == SongSource.Downloaded ? "youtube" : "spotify";
+                LogPlaybackAsync(current.Title ?? "", current.Artist ?? "", platform);
             }
 
             if (current == null)
@@ -1150,6 +1226,34 @@ public class YoutubeFormInterop
                 };
             }).ToList();
 
+            var playlistQueueData = mp.PlaylistQueue.Select((song, i) =>
+            {
+                string? thumb = null;
+                if (!string.IsNullOrEmpty(song.songPath))
+                    thumb = GetThumbnailForSongPath(song.songPath);
+
+                LibrarySong? lib = null;
+                if (!string.IsNullOrEmpty(song.songPath))
+                    libByPath.TryGetValue(song.songPath, out lib);
+
+                var ext = !string.IsNullOrEmpty(song.songPath)
+                    ? System.IO.Path.GetExtension(song.songPath).TrimStart('.').ToUpperInvariant()
+                    : null;
+
+                return new
+                {
+                    title = song.Title ?? "",
+                    artist = song.Artist ?? "",
+                    duration = song.length ?? "",
+                    songPath = song.songPath ?? "",
+                    index = i,
+                    thumbnail = thumb,
+                    isMissing = lib?.IsMissing ?? false,
+                    bitrateKbps = lib?.BitrateKbps ?? 0,
+                    fileType = ext
+                };
+            }).ToList();
+
             var json = JsonConvert.SerializeObject(new
             {
                 type = "event",
@@ -1157,6 +1261,7 @@ public class YoutubeFormInterop
                 data = new
                 {
                     queue = queueData,
+                    playlistQueue = playlistQueueData,
                     currentSongPath = _currentSongPath,
                     isPlaying = mp.RemoteIsPlaybackActive
                 }
@@ -1300,7 +1405,8 @@ public class YoutubeFormInterop
             libraryAutoScanOnStartup = cfg.LibraryAutoScanOnStartup,
             libraryAutoAddDownloads = cfg.LibraryAutoAddDownloads,
             libraryRemoveMissingOnScan = cfg.LibraryRemoveMissingOnScan,
-            libraryRecommendationsEnabled = cfg.LibraryRecommendationsEnabled
+            libraryRecommendationsEnabled = cfg.LibraryRecommendationsEnabled,
+            logPlayback = cfg.LogPlayback
         };
     }
 
@@ -1374,6 +1480,7 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("libraryAutoAddDownloads", out var lad)) cfg.LibraryAutoAddDownloads = lad.ToObject<bool>();
                 if (settings.TryGetValue("libraryRemoveMissingOnScan", out var lrm)) cfg.LibraryRemoveMissingOnScan = lrm.ToObject<bool>();
                 if (settings.TryGetValue("libraryRecommendationsEnabled", out var lre)) cfg.LibraryRecommendationsEnabled = lre.ToObject<bool>();
+                if (settings.TryGetValue("logPlayback", out var lp)) cfg.LogPlayback = lp.ToObject<bool>();
 
                 if (settings.TryGetValue("normalizeVolume", out var nv2) && !nv2.ToObject<bool>())
                 {
@@ -1864,6 +1971,7 @@ public class YoutubeFormInterop
             {
                 mp.NowPlayingTick -= OnNowPlayingTick;
                 mp.QueueChanged -= OnQueueChanged;
+                mp.PlaylistQueueChanged -= OnQueueChanged;
             }
             _musicPlayerSubscribed = false;
         }
@@ -2460,6 +2568,171 @@ public class YoutubeFormInterop
     }
 
     // ────────────────────────────────────────────────────────
+    //  Playlist interop
+    // ────────────────────────────────────────────────────────
+
+    private object GetPlaylists()
+    {
+        return new { playlists = _libraryService.GetPlaylistsSummary() };
+    }
+
+    private object GetPlaylist(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+        var pl = _libraryService.GetPlaylist(playlistId);
+        if (pl == null) return new { error = "Playlist not found" };
+
+        var songs = new List<object>();
+        foreach (var entry in pl.Entries.OrderBy(e => e.SortOrder))
+        {
+            var song = _libraryService.Data.FindSong(entry.SongId);
+            if (song == null) continue;
+            var thumb = GetThumbnailForSongPath(song.FilePath);
+            songs.Add(new
+            {
+                entryId = entry.Id,
+                songId = song.Id,
+                title = song.Title,
+                artist = song.Artist,
+                duration = song.Duration.TotalSeconds,
+                durationDisplay = song.DurationDisplay,
+                thumbnail = thumb,
+                filePath = song.FilePath,
+                isMissing = song.IsMissing
+            });
+        }
+
+        return new
+        {
+            id = pl.Id,
+            name = pl.Name,
+            emoji = pl.Emoji ?? "",
+            songCount = songs.Count,
+            songs
+        };
+    }
+
+    private object CreatePlaylist(JObject msg)
+    {
+        var name = msg["name"]?.ToString() ?? "Untitled Playlist";
+        var emoji = msg["emoji"]?.ToString();
+        var pl = _libraryService.CreatePlaylist(name, emoji);
+        return new
+        {
+            success = true,
+            id = pl.Id,
+            name = pl.Name,
+            emoji = pl.Emoji ?? "",
+            songCount = 0
+        };
+    }
+
+    private object AddSongToPlaylist(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrEmpty(playlistId) || string.IsNullOrEmpty(songId))
+            return new { error = "Missing playlistId or songId" };
+        var pl = _libraryService.AddSongToPlaylist(playlistId, songId);
+        return pl != null ? new { success = true, songCount = pl.Entries.Count } : new { error = "Playlist not found" };
+    }
+
+    private object RemovePlaylistEntry(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        var entryId = msg["entryId"]?.ToString();
+        if (string.IsNullOrEmpty(playlistId) || string.IsNullOrEmpty(entryId))
+            return new { error = "Missing playlistId or entryId" };
+        return new { success = _libraryService.RemovePlaylistEntry(playlistId, entryId) };
+    }
+
+    private object ReorderPlaylistEntry(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        var entryId = msg["entryId"]?.ToString();
+        var newOrder = msg["newSortOrder"]?.ToObject<int>() ?? 0;
+        if (string.IsNullOrEmpty(playlistId) || string.IsNullOrEmpty(entryId))
+            return new { error = "Missing playlistId or entryId" };
+        return new { success = _libraryService.ReorderPlaylistEntry(playlistId, entryId, newOrder) };
+    }
+
+    private object DeletePlaylist(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+        return new { success = _libraryService.DeletePlaylist(playlistId) };
+    }
+
+    private object UpdatePlaylist(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+        var name = msg["name"]?.ToString();
+        var emoji = msg["emoji"]?.ToString();
+        return new { success = _libraryService.UpdatePlaylist(playlistId, name, emoji) };
+    }
+
+    private object PlayPlaylist(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+        var playlist = _libraryService.GetPlaylist(playlistId);
+        if (playlist == null) return new { error = "Playlist not found" };
+        var songs = ResolvePlaylistToSongs(playlist);
+        if (songs.Count == 0) return new { error = "Playlist is empty" };
+        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.LoadPlaylistToQueue(songs, false));
+        return new { success = true, count = songs.Count };
+    }
+
+    private object ShufflePlaylist(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+        var playlist = _libraryService.GetPlaylist(playlistId);
+        if (playlist == null) return new { error = "Playlist not found" };
+        var songs = ResolvePlaylistToSongs(playlist);
+        if (songs.Count == 0) return new { error = "Playlist is empty" };
+        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.LoadPlaylistToQueue(songs, true));
+        return new { success = true, count = songs.Count };
+    }
+
+    private object ClearPlaylistQueue(JObject msg)
+    {
+        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.ClearPlaylistQueue());
+        return new { success = true };
+    }
+
+    private List<Song> ResolvePlaylistToSongs(Playlist playlist)
+    {
+        var songs = new List<Song>();
+        foreach (var entry in playlist.Entries)
+        {
+            LibrarySong? libSong = null;
+            foreach (var s in _libraryService.Data.Songs)
+            {
+                if (s.Id == entry.SongId)
+                {
+                    libSong = s;
+                    break;
+                }
+            }
+            if (libSong != null)
+            {
+                var song = new Song(
+                    libSong.Title ?? "Unknown",
+                    libSong.Artist ?? "Unknown",
+                    null,
+                    libSong.Duration,
+                    libSong.FilePath ?? ""
+                );
+                songs.Add(song);
+            }
+        }
+        return songs;
+    }
+
+    // ────────────────────────────────────────────────────────
     //  MusicShare interop
     // ────────────────────────────────────────────────────────
 
@@ -2746,5 +3019,68 @@ public class YoutubeFormInterop
             elapsed = elapsed.TotalSeconds,
             bytesSent = _musicShareBytesSent
         };
+    }
+
+    private async Task<object> GetPlayedSongs()
+    {
+        try
+        {
+            var cfg = ConfigService.Instance.Current;
+            var address = cfg?.Address ?? "http://127.0.0.1:5000";
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            if (!string.IsNullOrEmpty(cfg?.BearerToken))
+                client.DefaultRequestHeaders.Add("Authorization", cfg.BearerToken);
+
+            var response = await client.GetAsync($"{address}/api/played-songs").ConfigureAwait(false);
+            var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var parsed = JObject.Parse(json);
+            var songs = parsed["songs"]?.ToObject<List<object>>() ?? new List<object>();
+            return new { success = true, songs };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private async Task<object> ClearPlayedSongs()
+    {
+        try
+        {
+            var cfg = ConfigService.Instance.Current;
+            var address = cfg?.Address ?? "http://127.0.0.1:5000";
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            if (!string.IsNullOrEmpty(cfg?.BearerToken))
+                client.DefaultRequestHeaders.Add("Authorization", cfg.BearerToken);
+
+            var response = await client.PostAsync($"{address}/api/played-songs/clear", null).ConfigureAwait(false);
+            return new { success = response.IsSuccessStatusCode };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private void LogPlaybackAsync(string title, string artist, string platform = "songrequest")
+    {
+        Task.Run(async () =>
+        {
+            try
+            {
+                var cfg = ConfigService.Instance.Current;
+                if (cfg == null || !cfg.LogPlayback) return;
+                var address = cfg.Address ?? "http://127.0.0.1:5000";
+
+                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                if (!string.IsNullOrEmpty(cfg.BearerToken))
+                    client.DefaultRequestHeaders.Add("Authorization", cfg.BearerToken);
+
+                var payload = JsonConvert.SerializeObject(new { title, artist, platform, timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() });
+                var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                await client.PostAsync($"{address}/api/played-songs/add", content).ConfigureAwait(false);
+            }
+            catch { }
+        });
     }
 }

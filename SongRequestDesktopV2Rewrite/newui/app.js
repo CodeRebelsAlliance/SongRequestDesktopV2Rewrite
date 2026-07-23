@@ -362,6 +362,7 @@
       document.getElementById('s-library-auto-add-downloads').checked = cfg.libraryAutoAddDownloads ?? true;
       document.getElementById('s-library-remove-missing').checked = cfg.libraryRemoveMissingOnScan ?? false;
       document.getElementById('s-library-recommendations').checked = cfg.libraryRecommendationsEnabled ?? true;
+      document.getElementById('s-log-playback').checked = cfg.logPlayback ?? false;
       statusEl.textContent = 'Loaded.'; loadData();
       loadLibraryStats();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
@@ -384,6 +385,7 @@
         requestUrl: document.getElementById('s-request-url').value,
         bearerToken: document.getElementById('s-token').value,
         defaultSubmitMethod: document.getElementById('s-default-submit-method').value || 'search',
+        logPlayback: document.getElementById('s-log-playback').checked,
         libraryScanFolders: _libraryScanFolders,
         libraryAllowedExtensions: document.getElementById('s-library-extensions').value.split(',').map(function(e){return e.trim()}).filter(function(e){return e}),
         libraryAutoScanOnStartup: document.getElementById('s-library-auto-scan').checked,
@@ -423,8 +425,42 @@
       document.querySelectorAll('.settings-tab, .settings-panel').forEach(el => el.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('settings-' + btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'logging') loadPlayedSongs();
     });
   });
+
+  // Played songs handlers
+  document.getElementById('s-played-songs-refresh').onclick = loadPlayedSongs;
+  document.getElementById('s-played-songs-clear').onclick = async () => {
+    if (!confirm('Clear all played songs history?')) return;
+    const btn = document.getElementById('s-played-songs-clear');
+    btn.disabled = true; btn.textContent = '...';
+    try {
+      const r = await send('clearPlayedSongs');
+      if (r.success) { loadPlayedSongs(); toast('Played songs cleared'); }
+      else setSettingsStatus(r.error || 'Failed', true);
+    } catch (e) { setSettingsStatus(e.message, true); }
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-trash"></i> Clear All';
+  };
+
+  async function loadPlayedSongs() {
+    const listEl = document.getElementById('s-played-songs-list');
+    listEl.innerHTML = '<div style="color:#888;font-style:italic">Loading...</div>';
+    try {
+      const r = await send('getPlayedSongs');
+      if (r.success && r.songs && r.songs.length) {
+        listEl.innerHTML = r.songs.map(s => {
+          const title = s[0] || '', artist = s[1] || '', ts = s[2], platform = s[3] || '';
+          const timeStr = ts ? new Date(ts * 1000).toLocaleString() : '';
+          return '<div style="padding:4px 0;border-bottom:1px solid #222"><span style="color:#5fa8e0">' + escapeHtml(title) + '</span> <span style="color:#888">&mdash;</span> <span style="color:#aaa">' + escapeHtml(artist) + '</span> <span style="color:#666">[' + escapeHtml(platform) + ']</span>' + (timeStr ? ' <span style="float:right;color:#666;font-size:11px">' + timeStr + '</span>' : '') + '</div>';
+        }).join('');
+      } else {
+        listEl.innerHTML = '<div style="color:#888;font-style:italic">No played songs recorded.</div>';
+      }
+} catch (e) {
+      listEl.innerHTML = '<div style="color:#f55">Error: ' + escapeHtml(e.message) + '</div>';
+    }
+  }
 
   document.getElementById('s-toggle-token').onclick = () => {
     const inp = document.getElementById('s-token');

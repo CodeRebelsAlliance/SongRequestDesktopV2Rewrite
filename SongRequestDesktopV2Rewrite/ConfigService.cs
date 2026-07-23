@@ -35,6 +35,9 @@ namespace SongRequestDesktopV2Rewrite
         private bool _libraryAutoAddDownloads = true;
         private bool _libraryRemoveMissingOnScan = false;
         private bool _libraryRecommendationsEnabled = true;
+        private bool _logPlayback = false;
+        private float _lyricsFontScale = 1.0f;
+        private bool _lyricsHidden = false;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -186,6 +189,24 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _libraryRecommendationsEnabled;
             set => SetField(ref _libraryRecommendationsEnabled, value);
+        }
+
+        public bool LogPlayback
+        {
+            get => _logPlayback;
+            set => SetField(ref _logPlayback, value);
+        }
+
+        public float LyricsFontScale
+        {
+            get => _lyricsFontScale;
+            set => SetField(ref _lyricsFontScale, value);
+        }
+
+        public bool LyricsHidden
+        {
+            get => _lyricsHidden;
+            set => SetField(ref _lyricsHidden, value);
         }
 
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

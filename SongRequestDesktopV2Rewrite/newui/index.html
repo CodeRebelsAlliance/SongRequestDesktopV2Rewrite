@@ -258,11 +258,12 @@
       <button class="modal-close" id="btn-settings-close"><i class="fas fa-times"></i></button>
     </div>
     <div class="modal-body" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0">
-      <div id="settings-tabs" style="display:flex;gap:4px;margin-bottom:12px;flex-shrink:0">
+<div id="settings-tabs" style="display:flex;gap:4px;margin-bottom:12px;flex-shrink:0">
         <button class="settings-tab active" data-tab="general">General</button>
-        <button class="settings-tab" data-tab="security">Security &amp; Server</button>
+        <button class="settings-tab" data-tab="security">Security & Server</button>
         <button class="settings-tab" data-tab="remote">Remote Control</button>
         <button class="settings-tab" data-tab="library">Library</button>
+        <button class="settings-tab" data-tab="logging">Logging</button>
       </div>
       <div id="settings-content" style="flex:1;overflow-y:auto;min-height:0">
         <div id="settings-general" class="settings-panel active">
@@ -419,6 +420,24 @@
             <div style="display:flex;gap:6px">
               <button id="s-library-scan-btn" class="action-btn" style="width:auto;padding:8px 18px;font-size:13px"><i class="fas fa-sync-alt"></i> Scan Library</button>
               <button id="s-library-cancel-scan-btn" class="top-btn" style="display:none;padding:8px 14px;font-size:13px"><i class="fas fa-times"></i> Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div id="settings-logging" class="settings-panel">
+          <div class="settings-card">
+            <div class="settings-card-title">Playback Logging</div>
+            <div class="settings-hint">When enabled, each played song is sent to the server API and stored in the played songs list.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-log-playback" /> Log played songs to server</label>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Played Songs</div>
+            <div class="settings-hint">View and manage the server's played songs history.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+              <button id="s-played-songs-refresh" class="action-btn" style="width:auto;padding:8px 14px;font-size:13px"><i class="fas fa-sync-alt"></i> Refresh</button>
+              <button id="s-played-songs-clear" class="top-btn warn" style="width:auto;padding:8px 14px;font-size:13px"><i class="fas fa-trash"></i> Clear All</button>
+            </div>
+            <div id="s-played-songs-list" style="max-height:300px;overflow-y:auto;font-size:13px;color:#ccc;font-family:Consolas,monospace">
+              <div style="color:#888;font-style:italic">Click Refresh to load played songs.</div>
             </div>
           </div>
         </div>

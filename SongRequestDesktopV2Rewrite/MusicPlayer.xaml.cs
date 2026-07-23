@@ -23,6 +23,9 @@ namespace SongRequestDesktopV2Rewrite
     {
         public ObservableCollection<Song> Queue { get; } = new ObservableCollection<Song>();
 
+        // Playlist queue: songs from a playlist, consumed only after main queue is empty
+        public ObservableCollection<Song> PlaylistQueue { get; } = new ObservableCollection<Song>();
+
         // For overlapping crossfade we use MixingSampleProvider
         private WaveOutEvent _outputDevice;
         private MixingSampleProvider _mixer;
@@ -54,6 +57,7 @@ namespace SongRequestDesktopV2Rewrite
         // Events for external presentation display
         public event EventHandler<NowPlayingEventArgs> NowPlayingTick;
         public event EventHandler QueueChanged;
+        public event EventHandler PlaylistQueueChanged;
 
         public class NowPlayingEventArgs : EventArgs
         {
@@ -555,7 +559,14 @@ namespace SongRequestDesktopV2Rewrite
                                 return;
                             }
 
-                            // Last song ended - stop playback completely
+                            // Last song ended - check playlist queue first
+                            if (PlaylistQueue.Count > 0)
+                            {
+                                AdvanceFromPlaylistQueue();
+                                return;
+                            }
+
+                            // No more songs anywhere - stop playback completely
                             StopPlayback();
                             PlayPauseButton.Content = "▶";
 
@@ -698,6 +709,9 @@ namespace SongRequestDesktopV2Rewrite
                 // remove the previous first entry
                 if (Queue.Count > 0) Queue.RemoveAt(0);
 
+                // Replenish from playlist queue so next crossfade can trigger
+                RefillQueueFromPlaylist();
+
                 // ensure now is current
                 if (Queue.Count > 0)
                 {
@@ -751,6 +765,9 @@ namespace SongRequestDesktopV2Rewrite
 
                 // Remove previous song from queue FIRST
                 if (Queue.Count > 0) Queue.RemoveAt(0);
+
+                // Replenish from playlist queue so next crossfade can trigger
+                RefillQueueFromPlaylist();
 
                 // Now start playback - Queue[0] is the song we want to play
                 var reader = new AudioFileReader(nextSong.songPath);
@@ -1514,6 +1531,10 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     _ = AdvanceToNextImmediate();
                 }
+                else if (PlaylistQueue.Count > 0)
+                {
+                    AdvanceFromPlaylistQueue();
+                }
                 else
                 {
                     PlayPauseButton.Content = "▶";
@@ -1581,6 +1602,7 @@ namespace SongRequestDesktopV2Rewrite
             if (Queue.Count <= 1)
             {
                 if (Queue.Count == 1) Queue.RemoveAt(0);
+                if (AdvanceFromPlaylistQueue()) return;
                 StopPlayback();
                 return;
             }
@@ -2061,6 +2083,77 @@ namespace SongRequestDesktopV2Rewrite
             if (stopPlayback) StopPlayback();
             Queue.Clear();
             ComputeQueueTimings();
+        }
+
+        public void LoadPlaylistToQueue(List<Song> songs, bool shuffle)
+        {
+            PlaylistQueue.Clear();
+            var ordered = shuffle ? songs.OrderBy(_ => Random.Shared.Next()).ToList() : songs;
+            foreach (var s in ordered) PlaylistQueue.Add(s);
+            PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+            // If nothing is playing, start the first playlist song
+            if (Queue.Count == 0 && PlaylistQueue.Count > 0)
+            {
+                AdvanceFromPlaylistQueue();
+            }
+        }
+
+        public void ClearPlaylistQueue()
+        {
+            PlaylistQueue.Clear();
+            PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void RemovePlaylistQueueItem(int index)
+        {
+            if (index >= 0 && index < PlaylistQueue.Count)
+            {
+                PlaylistQueue.RemoveAt(index);
+                PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public void MovePlaylistQueueItem(int fromIndex, int toIndex)
+        {
+            if (fromIndex < 0 || fromIndex >= PlaylistQueue.Count) return;
+            if (toIndex < 0 || toIndex >= PlaylistQueue.Count) return;
+            if (fromIndex == toIndex) return;
+            PlaylistQueue.Move(fromIndex, toIndex);
+            PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public bool AdvanceFromPlaylistQueue()
+        {
+            if (PlaylistQueue.Count == 0) return false;
+            var song = PlaylistQueue[0];
+            PlaylistQueue.RemoveAt(0);
+            // Remove the finished song from Queue first, then add the new one
+            if (Queue.Count > 0) Queue.RemoveAt(0);
+            Queue.Add(song);
+            // Pre-load next playlist song into Queue so crossfade can trigger
+            if (PlaylistQueue.Count > 0)
+            {
+                var next = PlaylistQueue[0];
+                PlaylistQueue.RemoveAt(0);
+                Queue.Add(next);
+            }
+            ComputeQueueTimings();
+            PlaySong(Queue[0]);
+            PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        private void RefillQueueFromPlaylist()
+        {
+            // If Queue has only one song (the current), pull the next from PlaylistQueue
+            // so that crossfade logic (Queue.Count > 1) can trigger
+            if (Queue.Count <= 1 && PlaylistQueue.Count > 0)
+            {
+                var next = PlaylistQueue[0];
+                PlaylistQueue.RemoveAt(0);
+                Queue.Add(next);
+                PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         public bool RemoteIsPlaying => _outputDevice?.PlaybackState == PlaybackState.Playing;

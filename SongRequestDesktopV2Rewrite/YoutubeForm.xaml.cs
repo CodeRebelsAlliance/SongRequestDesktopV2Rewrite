@@ -44,6 +44,8 @@ namespace SongRequestDesktopV2Rewrite
         public HashSet<string> fetchedYtids = new HashSet<string>();
         public HashSet<string> fetchedBlacklist = new HashSet<string>();
         public readonly ConcurrentDictionary<string, byte> ProcessingVideos = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+        private SemaphoreSlim _downloadSemaphore;
+        public SemaphoreSlim DownloadSemaphore => _downloadSemaphore;
         private Dictionary<string, VideoData> fetchedVideoData = new Dictionary<string, VideoData>(StringComparer.OrdinalIgnoreCase);
         private readonly object _videoCacheSync = new object();
         private readonly string _videoMetadataCachePath = System.IO.Path.Combine(downloadPath, "video-metadata-cache.json");
@@ -135,6 +137,13 @@ namespace SongRequestDesktopV2Rewrite
 
             SortModeComboBox.SelectedIndex = 0;
             ApplySortingAndFiltering();
+            
+            InitializeDownloadSemaphore();
+        }
+
+        private void InitializeDownloadSemaphore()
+        {
+            _downloadSemaphore = new SemaphoreSlim(ConcurrentTaskNumber, ConcurrentTaskNumber);
         }
 
         private async void SubmitSongButton_Click(object sender, EventArgs e)
@@ -606,7 +615,6 @@ namespace SongRequestDesktopV2Rewrite
             await SendWordFilterGetRequest();
             var newFetchedYtids = new HashSet<string>();
             var newFetchedBLYtids = new HashSet<string>();
-            var semaphore = new SemaphoreSlim(ConcurrentTaskNumber);
             bool fetchSuccess = true;
 
             try
@@ -620,7 +628,7 @@ namespace SongRequestDesktopV2Rewrite
 
                 var fetchTasks = jsonArray.Select(async entry =>
                 {
-                    await semaphore.WaitAsync();
+                    await _downloadSemaphore.WaitAsync();
                     try
                     {
                         string ytid = entry[0]?.ToString();
@@ -658,7 +666,7 @@ namespace SongRequestDesktopV2Rewrite
                     }
                     finally
                     {
-                        semaphore.Release();
+                        _downloadSemaphore.Release();
                     }
                 }).ToList();
 
@@ -688,7 +696,7 @@ namespace SongRequestDesktopV2Rewrite
 
                 var fetchBlacklistTasks = jsonArray.Select(async entry =>
                 {
-                    await semaphore.WaitAsync();
+                    await _downloadSemaphore.WaitAsync();
                     try
                     {
                         string ytid = entry.ToString();
@@ -698,7 +706,7 @@ namespace SongRequestDesktopV2Rewrite
                         await AddBlacklistedVideoPanel(ytid);
                         fetchedBlacklist.Add(ytid);
                     }
-                    finally { semaphore.Release(); }
+                    finally { _downloadSemaphore.Release(); }
                 }).ToList();
 
                 await Task.WhenAll(fetchBlacklistTasks);
@@ -1065,81 +1073,89 @@ namespace SongRequestDesktopV2Rewrite
                 }
                 else
                 {
-                    EnableControls(false, playButton, approveButton, blacklistButton, deleteButton, inspectButton, playNextButton);
-                    statusText.Text = "Downloading";
-                    statusText.Background = Brushes.Orange;
-                    statusText.Foreground = Brushes.Black;
-
-                    SendProgress("downloading", 0, "Downloading...");
-                    downloadedFilePath = await DownloadVideoAsync(videoUrl);
-                    SendProgress("downloading", 100, "Download complete");
-
-                    statusText.Text = "Downloaded";
-                    statusText.Background = Brushes.DarkBlue;
-                    statusText.Foreground = Brushes.White;
-                    EnableControls(true, playButton, approveButton, blacklistButton, deleteButton, inspectButton, playNextButton);
-
-                    SendProgress("metadata", 0, "Fetching metadata...");
-                    var (title, length, creator) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
-                    resolvedLength = length;
-                    cachedVideoData.Title = title ?? string.Empty;
-                    cachedVideoData.Creator = creator ?? string.Empty;
-                    cachedVideoData.DurationTicks = length.Ticks;
-                    UpdateLabels(title, length, creator, titleText, lengthText, creatorText);
-                    titleG = title;
-                    creatorG = creator;
-                    lengthG = length.ToString(@"hh\:mm\:ss");
-                    panelEntry.Title = title ?? string.Empty;
-                    panelEntry.Creator = creator ?? string.Empty;
-                    SaveVideoDataCache();
-                    ApplySortingAndFiltering();
-                    SendProgress("metadata", 100, title ?? videoId);
-
-                    // Update drag icon data
-                    if (dragIcon.Tag is DragSongData dragData)
+                    await _downloadSemaphore.WaitAsync();
+                    try
                     {
-                        dragData.Title = title;
-                        dragData.FilePath = downloadedFilePath;
-                    }
+                        EnableControls(false, playButton, approveButton, blacklistButton, deleteButton, inspectButton, playNextButton);
+                        statusText.Text = "Downloading";
+                        statusText.Background = Brushes.Orange;
+                        statusText.Foreground = Brushes.Black;
 
-                    SendProgress("thumbnail", 0, "Fetching thumbnail...");
-                    var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, cachedVideoData);
-                    if (bmp != null) thumbnail.Source = bmp;
-                    SendProgress("thumbnail", 100, "Thumbnail cached");
+                        SendProgress("downloading", 0, "Downloading...");
+                        downloadedFilePath = await DownloadVideoAsync(videoUrl);
+                        SendProgress("downloading", 100, "Download complete");
 
-                    // Auto Enqueue: if enabled and initial load is done, this is a newly sent-in song
-                    if (_initialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true)
-                    {
-                        _musicPlayer.AddSong(new Song(titleG, creatorG, thumbnail, resolvedLength, downloadedFilePath));
-                        AppendConsoleText($"🎵 Auto-enqueued: {titleG}", Brushes.LightGreen);
-                    }
+                        statusText.Text = "Downloaded";
+                        statusText.Background = Brushes.DarkBlue;
+                        statusText.Foreground = Brushes.White;
+                        EnableControls(true, playButton, approveButton, blacklistButton, deleteButton, inspectButton, playNextButton);
 
-                    // Auto-add to library if setting is enabled
-                    if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true
-                        && !string.IsNullOrEmpty(downloadedFilePath) && File.Exists(downloadedFilePath))
-                    {
-                        var libSvc = NewUiRef?.LibraryService;
-                        if (libSvc != null)
+                        SendProgress("metadata", 0, "Fetching metadata...");
+                        var (title, length, creator) = await _youTubeService.GetVideoMetadataAsync(videoUrl);
+                        resolvedLength = length;
+                        cachedVideoData.Title = title ?? string.Empty;
+                        cachedVideoData.Creator = creator ?? string.Empty;
+                        cachedVideoData.DurationTicks = length.Ticks;
+                        UpdateLabels(title, length, creator, titleText, lengthText, creatorText);
+                        titleG = title;
+                        creatorG = creator;
+                        lengthG = length.ToString(@"hh\:mm\:ss");
+                        panelEntry.Title = title ?? string.Empty;
+                        panelEntry.Creator = creator ?? string.Empty;
+                        SaveVideoDataCache();
+                        ApplySortingAndFiltering();
+                        SendProgress("metadata", 100, title ?? videoId);
+
+                        // Update drag icon data
+                        if (dragIcon.Tag is DragSongData dragData)
                         {
-                            var libSong = libSvc.ImportDownloadedSong(downloadedFilePath, videoId, videoUrl, titleG, creatorG);
-                            if (libSong != null)
-                            {
-                                try
-                                {
-                                    var thumbUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
-                                    if (!string.IsNullOrEmpty(thumbUrl))
-                                    {
-                                        using var httpClient = new System.Net.Http.HttpClient();
-                                        var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl);
-                                        var thumbPath = libSvc.SaveSongThumbnail(libSong.Id, thumbBytes);
-                                        libSong.ThumbnailPath = thumbPath;
-                                    }
-                                }
-                                catch { }
-                                libSvc.Save();
-                            }
-                            AppendConsoleText($"📚 Added to library: {titleG}", Brushes.LightGreen);
+                            dragData.Title = title;
+                            dragData.FilePath = downloadedFilePath;
                         }
+
+                        SendProgress("thumbnail", 0, "Fetching thumbnail...");
+                        var bmp = await GetOrFetchThumbnailAsync(videoId, videoUrl, cachedVideoData);
+                        if (bmp != null) thumbnail.Source = bmp;
+                        SendProgress("thumbnail", 100, "Thumbnail cached");
+
+                        // Auto Enqueue: if enabled and initial load is done, this is a newly sent-in song
+                        if (_initialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true)
+                        {
+                            _musicPlayer.AddSong(new Song(titleG, creatorG, thumbnail, resolvedLength, downloadedFilePath));
+                            AppendConsoleText($"🎵 Auto-enqueued: {titleG}", Brushes.LightGreen);
+                        }
+
+                        // Auto-add to library if setting is enabled
+                        if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true
+                            && !string.IsNullOrEmpty(downloadedFilePath) && File.Exists(downloadedFilePath))
+                        {
+                            var libSvc = NewUiRef?.LibraryService;
+                            if (libSvc != null)
+                            {
+                                var libSong = libSvc.ImportDownloadedSong(downloadedFilePath, videoId, videoUrl, titleG, creatorG);
+                                if (libSong != null)
+                                {
+                                    try
+                                    {
+                                        var thumbUrl = await _youTubeService.GetThumbnailUrlAsync(videoUrl);
+                                        if (!string.IsNullOrEmpty(thumbUrl))
+                                        {
+                                            using var httpClient = new System.Net.Http.HttpClient();
+                                            var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl);
+                                            var thumbPath = libSvc.SaveSongThumbnail(libSong.Id, thumbBytes);
+                                            libSong.ThumbnailPath = thumbPath;
+                                        }
+                                    }
+                                    catch { }
+                                    libSvc.Save();
+                                }
+                                AppendConsoleText($"📚 Added to library: {titleG}", Brushes.LightGreen);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        _downloadSemaphore.Release();
                     }
                 }
 

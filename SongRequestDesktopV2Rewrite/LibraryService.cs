@@ -202,6 +202,126 @@ namespace SongRequestDesktopV2Rewrite
             get { lock (_lock) return _data; }
         }
 
+        // ──────────────────────────────────────────────────
+        //  Playlists
+        // ──────────────────────────────────────────────────
+
+        public Playlist CreatePlaylist(string name, string? emoji = null)
+        {
+            lock (_lock)
+            {
+                var pl = new Playlist
+                {
+                    Name = string.IsNullOrWhiteSpace(name) ? "Untitled Playlist" : name.Trim(),
+                    Emoji = emoji,
+                    CreatedUtc = DateTime.UtcNow,
+                    LastModifiedUtc = DateTime.UtcNow
+                };
+                _data.Playlists.Add(pl);
+                Save();
+                return pl;
+            }
+        }
+
+        public Playlist? GetPlaylist(string playlistId)
+        {
+            lock (_lock)
+            {
+                return _data.Playlists.FirstOrDefault(p => p.Id == playlistId);
+            }
+        }
+
+        public List<Dictionary<string, object>> GetPlaylistsSummary()
+        {
+            lock (_lock)
+            {
+                return _data.Playlists.Select(p => new Dictionary<string, object>
+                {
+                    ["id"] = p.Id,
+                    ["name"] = p.Name,
+                    ["emoji"] = p.Emoji ?? "",
+                    ["songCount"] = p.Entries.Count,
+                    ["createdUtc"] = p.CreatedUtc,
+                    ["lastModifiedUtc"] = p.LastModifiedUtc
+                }).ToList();
+            }
+        }
+
+        public Playlist? AddSongToPlaylist(string playlistId, string songId)
+        {
+            lock (_lock)
+            {
+                var pl = _data.Playlists.FirstOrDefault(p => p.Id == playlistId);
+                if (pl == null) return null;
+
+                var maxOrder = pl.Entries.Count > 0 ? pl.Entries.Max(e => e.SortOrder) : 0;
+                pl.Entries.Add(new PlaylistEntry
+                {
+                    SongId = songId,
+                    SortOrder = maxOrder + 1,
+                    AddedUtc = DateTime.UtcNow
+                });
+                pl.LastModifiedUtc = DateTime.UtcNow;
+                Save();
+                return pl;
+            }
+        }
+
+        public bool RemovePlaylistEntry(string playlistId, string entryId)
+        {
+            lock (_lock)
+            {
+                var pl = _data.Playlists.FirstOrDefault(p => p.Id == playlistId);
+                if (pl == null) return false;
+                var removed = pl.Entries.RemoveAll(e => e.Id == entryId) > 0;
+                if (removed)
+                {
+                    pl.LastModifiedUtc = DateTime.UtcNow;
+                    Save();
+                }
+                return removed;
+            }
+        }
+
+        public bool ReorderPlaylistEntry(string playlistId, string entryId, int newSortOrder)
+        {
+            lock (_lock)
+            {
+                var pl = _data.Playlists.FirstOrDefault(p => p.Id == playlistId);
+                if (pl == null) return false;
+                var entry = pl.Entries.FirstOrDefault(e => e.Id == entryId);
+                if (entry == null) return false;
+                entry.SortOrder = newSortOrder;
+                pl.LastModifiedUtc = DateTime.UtcNow;
+                Save();
+                return true;
+            }
+        }
+
+        public bool DeletePlaylist(string playlistId)
+        {
+            lock (_lock)
+            {
+                var removed = _data.Playlists.RemoveAll(p => p.Id == playlistId) > 0;
+                if (removed) Save();
+                return removed;
+            }
+        }
+
+        public bool UpdatePlaylist(string playlistId, string? name = null, string? emoji = null)
+        {
+            lock (_lock)
+            {
+                var pl = _data.Playlists.FirstOrDefault(p => p.Id == playlistId);
+                if (pl == null) return false;
+                if (name != null) pl.Name = name.Trim();
+                if (emoji != null) pl.Emoji = emoji;
+                pl.LastModifiedUtc = DateTime.UtcNow;
+                Save();
+                return true;
+            }
+        }
+
         /// <summary>
         /// Reload config from ConfigService and resync scan folders etc.
         /// </summary>
