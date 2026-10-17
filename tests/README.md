@@ -6,7 +6,7 @@ Automated tests for SongRequest Desktop. Three suites:
 |---|---|---|---|
 | Unit | `SongRequestDesktopV2Rewrite.UnitTests` | nothing | fast, hermetic logic tests |
 | Integration | `SongRequestDesktopV2Rewrite.IntegrationTests` | **FFmpeg**, OpenAL | real decode/output/library/MIDI/interop |
-| JavaScript | `tests/js` | **Node 18+** | `newui/keys.js` gesture mapping |
+| JavaScript | `tests/js` | **Node 18+** | `newui/keys.js` gesture mapping + `newui/hostbridge.js` host bridge |
 
 The full plan, feature matrix and remaining work live in
 [`../docs/TESTING.md`](../docs/TESTING.md).
@@ -46,11 +46,15 @@ python3 tests/check-coverage.py TestResults/unit 0.27
   uses the headless `null` driver (`ALSOFT_DRIVERS=null`), applied in three places
   so it cannot be missed:
   1. `tests/coverage.runsettings` (`<RunConfiguration><EnvironmentVariables>`) —
-     the test host applies it **before** loading the test assembly, which is the
-     only ordering that is guaranteed to beat an already-loaded native library;
+     the test host applies it to the process environment **before** the test
+     assembly is loaded;
   2. the `Tests` job environment in the workflow;
   3. a `[ModuleInitializer]` in each test project (also makes a bare
      `dotnet test` work without the settings file).
+
+  The module initializers use `NativeEnvironment.Set` (libc `setenv`) on purpose:
+  `Environment.SetEnvironmentVariable` only updates the *managed* environment on
+  Unix, and OpenAL — being native — reads the real one via `getenv()`.
 
   If a machine still cannot open an OpenAL device at all, the audio tests
   **skip** instead of failing (`Fixtures.OpenAlAvailable`).

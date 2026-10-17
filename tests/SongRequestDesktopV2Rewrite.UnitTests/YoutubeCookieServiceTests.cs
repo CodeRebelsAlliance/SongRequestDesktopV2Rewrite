@@ -6,6 +6,62 @@ namespace SongRequestDesktopV2Rewrite.UnitTests;
 
 public class YoutubeCookieServiceTests
 {
+    // ── yt-dlp invocation (the cookie-only export) ─────────────────────────
+
+    [Fact]
+    public void BuildYtDlpArguments_ExportsCookiesWithoutWalkingTheFeed()
+    {
+        var args = YoutubeCookieService.BuildYtDlpArguments("firefox", "/tmp/cookies.txt");
+
+        // Must read from the browser and write the jar.
+        Assert.Contains("--cookies-from-browser", args);
+        Assert.Equal("firefox", args[args.IndexOf("--cookies-from-browser") + 1]);
+        Assert.Contains("--cookies", args);
+        Assert.Equal("/tmp/cookies.txt", args[args.IndexOf("--cookies") + 1]);
+
+        // Must stay a single simulated, flat entry: pointing yt-dlp at the bare
+        // homepage walks the whole logged-in "recommended" playlist (hundreds of
+        // items) and never finishes, so the jar is never written.
+        Assert.Contains("--simulate", args);
+        Assert.Contains("--flat-playlist", args);
+        Assert.Equal("1", args[args.IndexOf("--playlist-items") + 1]);
+
+        // Deterministic: ignore the user's yt-dlp config.
+        Assert.Contains("--ignore-config", args);
+
+        Assert.Contains("https://www.youtube.com/", args);
+        Assert.DoesNotContain("--skip-download", args);
+    }
+
+    // ── domain filtering ──────────────────────────────────────────────────
+
+    [Fact]
+    public void FilterToYouTube_KeepsOnlyYouTubeCookies()
+    {
+        var cookies = new List<Cookie>
+        {
+            new("SID", "v1", "/", ".youtube.com"),
+            new("SAPISID", "v2", "/", "youtube.com"),
+            new("__Secure-1PSID", "v3", "/", ".google.com"),
+            new("session-id", "v4", "/", ".amazon.de"),
+            new("cf_clearance", "v5", "/", ".fandom.com"),
+            new("nid", "v6", "/", ".googlevideo.com"),
+        };
+
+        var kept = YoutubeCookieService.FilterToYouTube(cookies);
+
+        Assert.Equal(new[] { "SID", "SAPISID", "nid" }, kept.Select(c => c.Name));
+    }
+
+    [Fact]
+    public void FilterToYouTube_EmptyInput_IsEmpty()
+        => Assert.Empty(YoutubeCookieService.FilterToYouTube(new List<Cookie>()));
+
+    [Fact]
+    public void ImportTimeout_IsBelowTheUiRequestTimeout()
+        => Assert.True(YoutubeCookieService.ImportTimeout < TimeSpan.FromSeconds(60),
+            "the import must fail before the UI's 60s request timeout, so the user sees a real error");
+
     [Fact]
     public void ParseCookies_NetscapeFormat()
     {

@@ -38,6 +38,7 @@ public class NewUiWindow
 
     private ITrayIcon? _tray;
     private volatile bool _forceClose;
+    private bool _webViewReady;
 
     private Thread? _thread;
 
@@ -122,6 +123,13 @@ public class NewUiWindow
 
             w.RegisterWebMessageReceivedHandler((sender, message) =>
             {
+                // The webview is alive and rendering: the startup did not crash.
+                if (!_webViewReady)
+                {
+                    _webViewReady = true;
+                    StartupGuard.Complete();
+                }
+
                 _interop.HandleMessage(message);
             });
 

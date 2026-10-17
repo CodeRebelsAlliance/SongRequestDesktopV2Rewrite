@@ -13,10 +13,10 @@ internal static class Fixtures
     [ModuleInitializer]
     internal static void Init()
     {
-        // Run OpenAL Soft with no real output device (belt-and-braces: the same
-        // setting is also applied by tests/coverage.runsettings, which the test
-        // host applies before this assembly is even loaded).
-        Environment.SetEnvironmentVariable("ALSOFT_DRIVERS", "null");
+        // Run OpenAL Soft with no real output device. Must go through libc's
+        // setenv: OpenAL is native and reads the environment with getenv(), so a
+        // managed-only assignment would silently do nothing.
+        NativeEnvironment.Set("ALSOFT_DRIVERS", "null");
 
         // Keep per-user config/cookies off the real machine during tests.
         AppPaths.AppDataDir = NewTempDir();

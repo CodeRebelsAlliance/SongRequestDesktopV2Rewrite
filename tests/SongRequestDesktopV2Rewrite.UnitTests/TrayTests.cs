@@ -75,4 +75,36 @@ public class AppLaunchArgsTests
             AppLaunchArgs.Parse(Array.Empty<string>());
         }
     }
+
+    [Fact]
+    public void Parse_DetectsTheGraphicsFlags()
+    {
+        try
+        {
+            AppLaunchArgs.Parse(new[] { "--safe-mode", "--x11" });
+            Assert.True(AppLaunchArgs.SafeMode);
+            Assert.True(AppLaunchArgs.ForceX11);
+            Assert.False(AppLaunchArgs.ForceWayland);
+            Assert.False(AppLaunchArgs.PreferGpu);
+
+            AppLaunchArgs.Parse(new[] { "--wayland", "--gpu" });
+            Assert.True(AppLaunchArgs.ForceWayland);
+            Assert.True(AppLaunchArgs.PreferGpu);
+            Assert.False(AppLaunchArgs.ForceX11);
+            Assert.False(AppLaunchArgs.SafeMode);
+
+            AppLaunchArgs.Parse(new[] { "--SAFE-MODE" });
+            Assert.True(AppLaunchArgs.SafeMode);
+
+            AppLaunchArgs.Parse(Array.Empty<string>());
+            Assert.False(AppLaunchArgs.SafeMode);
+            Assert.False(AppLaunchArgs.PreferGpu);
+            Assert.False(AppLaunchArgs.ForceX11);
+            Assert.False(AppLaunchArgs.ForceWayland);
+        }
+        finally
+        {
+            AppLaunchArgs.Parse(Array.Empty<string>());
+        }
+    }
 }

@@ -64,6 +64,33 @@ browser. See
   
   Either the URL was invalid, or it is other Content that is hosted as a livestream or community post, or you have reached a rate limit
 
+- **Linux: the window stays black/tiny, or the app exits immediately with
+  `Gdk-Message: … Error 71 (Protocol error) dispatching to Wayland display.`**
+  
+  This is a WebKitGTK 2.4x issue with its DMA-BUF renderer on some
+  driver/compositor combinations (most often the **NVIDIA** driver, also some
+  virtual GPUs) — it happens inside the native webview, so the app cannot catch
+  it. The console usually also shows `Failed to create GBM buffer of size …:
+  Invalid argument`.
+
+  SongRequest applies the known-good mitigations automatically before the webview
+  is created (`WEBKIT_DISABLE_DMABUF_RENDERER=1`, plus
+  `__NV_DISABLE_EXPLICIT_SYNC=1` on NVIDIA). If you still hit it, use these:
+
+  | Command / variable | Effect |
+  | --- | --- |
+  | `./SongRequest\ V2 --safe-mode` (or `SONGREQUEST_SAFE_MODE=1`) | no DMA-BUF, no GPU compositing, X11 backend |
+  | `./SongRequest\ V2 --x11` / `--wayland` | force the GTK backend |
+  | `./SongRequest\ V2 --gpu` (or `SONGREQUEST_WEBKIT_DMABUF=1`) | keep the hardware-accelerated path |
+
+  If two starts in a row are interrupted before the UI loads, the app switches to
+  safe mode by itself and remembers it (so you don't crash on every other launch);
+  `--gpu` clears that again. The chosen settings are printed on startup:
+  `[SongRequest] webview environment: applied […]`.
+
+  Anything you export yourself always wins — the app never overrides a variable
+  that is already set.
+
 ## Libraries and Dependencies
 
 - .NET Runtime is **not** required separately — the self-contained release includes it

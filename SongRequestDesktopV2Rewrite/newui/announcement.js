@@ -43,10 +43,10 @@
   }
 
   if (!window.external) window.external = {};
-  window.external.receiveMessage = handleIncoming;
-  if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener) {
-    window.chrome.webview.addEventListener('message', function (e) { handleIncoming(e.data); });
-  }
+  // Register the host -> page handler. Photino exposes
+  // window.external.receiveMessage(callback); it must be *called* (assigning to
+  // it replaces Photino's shim, after which no host message is ever delivered).
+  SongRequestHost.registerHostMessageHandler(handleIncoming);
 
   // ── UI ─────────────────────────────────────────────────────────
   const micBtn = document.getElementById('ann-mic');

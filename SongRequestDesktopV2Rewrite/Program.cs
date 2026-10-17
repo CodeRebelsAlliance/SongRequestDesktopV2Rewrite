@@ -12,6 +12,15 @@ public static class Program
     {
         AppLaunchArgs.Parse(args);
 
+        // Must happen before Photino/GTK/WebKitGTK initialise: WebKitGTK reads its
+        // configuration (DMA-BUF renderer, explicit sync) at load time.
+        var webViewEnvironment = LinuxWebViewEnvironment.Apply();
+        Print(webViewEnvironment.Describe());
+
+        // A native webview failure cannot be caught, so record the attempt and only
+        // clear it once the webview has actually rendered (NewUiWindow).
+        StartupGuard.Begin();
+
         AppBootstrap.Initialize();
 
         // Windows: keep the per-user "Apps & features" entry (and the generated
@@ -29,5 +38,10 @@ public static class Program
         window.RunBlocking();
 
         AppBootstrap.Shutdown();
+    }
+
+    private static void Print(string message)
+    {
+        try { Console.WriteLine("[SongRequest] " + message); } catch { }
     }
 }

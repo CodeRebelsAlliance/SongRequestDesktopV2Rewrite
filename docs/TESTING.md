@@ -15,7 +15,9 @@ remaining work. For how to run them, see [`../tests/README.md`](../tests/README.
   RtMidi, interop event bus, Linux MPRIS on the session bus, loopback checks that
   backend requests carry the identifying User-Agent; skipped automatically when
   FFmpeg/devices/a bus are absent).
-- **`tests/js/keys.test.js`** — **6 tests** via `node --test tests/js`.
+- **`tests/js/`** — **10 tests** via `node --test tests/js`: `keys.test.js`
+  (keyboard-gesture mapping) and `hostbridge.test.js` (the Photino host↔page
+  message bridge).
 - CI (`.github/workflows/release.yml`) runs a **`Tests` job** (unit + integration +
   JS + coverage floors) alongside the multi-platform `build`/`release` jobs, and
   writes a detailed failure report to the job summary.
@@ -55,6 +57,10 @@ Run everything locally:
 | System media (unit) | `MediaSessionBridge` engine→session (metadata/state/position, de-dup) and session→engine (play/pause/toggle/next/prev/stop/seek/volume/raise/quit); `MediaArtwork` data-URL decode, resolution order, video id, stable key; `NullSystemMediaSession`; `WindowsSmtcLoader` degradation + companion metadata contract (name / `ISystemMediaSession` / `Create` / Windows target) |
 | Windows packaging (unit) | "Apps & features" registry values (name/publisher/version/uninstall strings/NoModify/NoRepair/InstallDate preserved), uninstaller script (registry + autostart cleanup, `/quiet`, confirmations, quoting of `&` in paths, self-delete), version parsing, install-folder size |
 | Backend requests (unit + integration) | every backend call carries the identifying `User-Agent` (`SongRequest Desktop v<version>`) and bearer token — `BackendHttpClient` header application (unit) and the exact wire value received by a loopback listener from `FetchingService` and an interop command (integration) |
+| Linux webview env (unit) | WebKitGTK/DMA-BUF mitigation matrix (`ComputeVariables`), NVIDIA/Wayland detection, safe-mode escalation after repeated interrupted starts, `--gpu`/`--safe-mode`/env overrides, user-set variables never overridden; `NativeEnvironment` proves values reach native `getenv()` |
+| Photino host bridge (JavaScript) | `hostbridge.js` registers the host→page handler by *calling* `window.external.receiveMessage(callback)` (assigning to it replaces Photino's shim and silently breaks every response), falls back to `chrome.webview`, and reports when no channel exists |
+| Cookie import (unit) | `BuildYtDlpArguments` keeps the export to a single simulated/flat entry (pointing yt-dlp at the bare homepage walks the logged-in "recommended" feed and never finishes), YouTube-only domain filtering, and an import timeout below the UI's request timeout |
+| Cookie import (integration) | real yt-dlp plumbing: a hung import is killed and reported before the UI gives up, and an unknown browser fails fast with a clear error |
 | System media (integration) | Linux **MPRIS**: service registration, per-interface `GetAll`/`Get`, metadata/state/position/artUrl round-trip, every transport command, `PropertiesChanged` signal |
 | Library | playlist CRUD, play history, persistence across instances |
 | Interop bus | request/response dispatch; read-only + safe-stateful command tables; **event envelope** (`SendEvent`) |
@@ -331,10 +337,12 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 ## 5. Mocking / determinism strategy
 
 - **No real audio device in CI**: OpenAL runs with the headless `null` driver.
-  `ALSOFT_DRIVERS=null` is applied by `tests/coverage.runsettings` (before the test
-  assembly loads), by the workflow's `Tests` job env and by a `[ModuleInitializer]`
-  in both test projects; if a runner still cannot open a device, the OpenAL tests
-  **skip** rather than fail. Real-device behaviour is
+  `ALSOFT_DRIVERS=null` is applied by `tests/coverage.runsettings` (process
+  environment), by the workflow's `Tests` job env and by a `[ModuleInitializer]`
+  in both test projects — the latter through `NativeEnvironment.Set`, because
+  `Environment.SetEnvironmentVariable` does **not** reach native `getenv()` on
+  Unix. If a runner still cannot open a device, the OpenAL tests **skip** rather
+  than fail. Real-device behaviour is
   manual.
 - **FFmpeg**: CI runners have `ffmpeg`; generate fixtures **at test time** with
   `ffmpeg -f lavfi …` (sine/silence, silence+tone) and assert RMS/seek, not
