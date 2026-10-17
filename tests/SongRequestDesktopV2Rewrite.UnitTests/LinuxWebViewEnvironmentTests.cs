@@ -305,4 +305,39 @@ public class StartupGuardTests : IDisposable
 
         Assert.Equal(0, StartupGuard.UnfinishedStarts);
     }
+
+    [Fact]
+    public void TrayDisabled_IsRememberedUntilCleared()
+    {
+        Assert.False(StartupGuard.TrayDisabled);
+
+        StartupGuard.DisableTray();
+        Assert.True(StartupGuard.TrayDisabled);
+
+        // Changing the tray settings in the UI lets it be tried again.
+        StartupGuard.ClearTrayDisabled();
+        Assert.False(StartupGuard.TrayDisabled);
+    }
+
+    [Fact]
+    public void TrayUsed_IsTrackedSoOnlyTheTrayIsBlamedForItsOwnCrash()
+    {
+        Assert.False(StartupGuard.TrayUsedLastRun);
+
+        StartupGuard.NoteTrayUsed();
+        Assert.True(StartupGuard.TrayUsedLastRun);
+
+        StartupGuard.ClearTrayUsed();
+        Assert.False(StartupGuard.TrayUsedLastRun);
+    }
+
+    [Fact]
+    public void EnterSafeMode_MarksThisRunAsACrashRecovery()
+    {
+        StartupGuard.EnterSafeMode();
+
+        // Run-scoped flag (other tests may have set it already), so only assert the effect.
+        Assert.True(StartupGuard.CrashRecoveryThisRun);
+        Assert.True(StartupGuard.SafeModePersisted);
+    }
 }

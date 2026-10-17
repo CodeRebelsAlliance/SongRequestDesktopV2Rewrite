@@ -395,6 +395,10 @@ public sealed class MusicEngine
     // ──────────────────────────────────────────────────────────────
 
     public int OutputDeviceNumber { get; set; } = -1;
+
+    /// <summary>Creates the audio output; tests replace it to avoid touching real devices.</summary>
+    public Func<IAudioOutput> OutputFactory { get; set; } = AudioOutputFactory.Create;
+
     public double CrossfadeSeconds { get; set; } = 4;
     public double CrossfadeMax { get; set; } = 10;
     public bool IsUserSeeking { get; set; }
@@ -428,6 +432,47 @@ public sealed class MusicEngine
     public Action? AnnouncementOpenHandler { get; set; }
 
     private DateTime _lastSecondaryTickUtc = DateTime.MinValue;
+
+    /// <summary>How often the playback tick runs (drives the progress bar and track changes).</summary>
+    public int TickIntervalMs { get; set; } = 100;
+
+    /// <summary>
+    /// Whether the engine drives its own playback tick while playing. On by default;
+    /// tests can turn it off and call <see cref="ProcessTick"/> themselves.
+    /// </summary>
+    public bool AutoTick { get; set; } = true;
+
+    private System.Threading.Timer? _tickTimer;
+    private int _tickTimerRunning;
+
+    /// <summary>
+    /// Starts the periodic tick that reports the position and notices the end of a
+    /// track. The audio pipeline cannot signal EOF itself (the crossfade mixer pads
+    /// with silence), so without this nothing would advance to the next song.
+    /// </summary>
+    private void EnsureTickTimer()
+    {
+        if (!AutoTick) return;
+        if (System.Threading.Interlocked.CompareExchange(ref _tickTimerRunning, 1, 0) != 0) return;
+
+        _tickTimer = new System.Threading.Timer(_ =>
+        {
+            // A throwing timer callback would kill the process.
+            try { ProcessTick(); } catch { }
+        }, null, TickIntervalMs, TickIntervalMs);
+    }
+
+    private void StopTickTimer()
+    {
+        var timer = System.Threading.Interlocked.Exchange(ref _tickTimer, null);
+        if (timer != null)
+        {
+            try { timer.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite); } catch { }
+            try { timer.Dispose(); } catch { }
+        }
+
+        System.Threading.Volatile.Write(ref _tickTimerRunning, 0);
+    }
 
     public void SetVolume(float volume)
     {
@@ -470,7 +515,7 @@ public sealed class MusicEngine
             CapturingProvider.SamplesCaptured += (_, samples) => AudioSamplesCaptured?.Invoke(this, samples);
         }
 
-        Output = AudioOutputFactory.Create();
+        Output = OutputFactory();
         if (OutputDeviceNumber >= 0)
         {
             try { Output.DeviceNumber = OutputDeviceNumber; } catch { }
@@ -483,6 +528,7 @@ public sealed class MusicEngine
         ComputeQueueTimings();
         PlayStateChanged?.Invoke(true);
         NowPlayingChanged?.Invoke(Queue.Count > 0 ? Queue[0] : null);
+        EnsureTickTimer();
 
         var current = Queue.Count > 0 ? Queue[0] : null;
         if (current != null && CurrentReader != null)
@@ -569,6 +615,7 @@ public sealed class MusicEngine
         Mixer = null!;
         CapturingProvider = null;
 
+        StopTickTimer();
         PlayStateChanged?.Invoke(false);
         NowPlayingTick?.Invoke(this, new NowPlayingEventArgs());
     }

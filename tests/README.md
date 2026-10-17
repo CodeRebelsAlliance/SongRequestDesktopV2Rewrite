@@ -80,8 +80,8 @@ in that results directory is below the floor. Current floors:
 
 | Suite | Floor | Typical (local) | Typical (CI) |
 |---|---|---|---|
-| Unit | **0.36** | ~0.49 | ~0.49 |
-| Integration | **0.17** | ~0.21 | ~0.19 |
+| Unit | **0.36** | ~0.51 | ~0.49 |
+| Integration | **0.17** | ~0.23 | ~0.19 |
 
 Raise the floors (in `tests/run-tests.sh` and `.github/workflows/release.yml`)
 as coverage improves — never lower them.

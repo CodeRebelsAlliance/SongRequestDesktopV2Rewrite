@@ -65,6 +65,8 @@ Run everything locally:
 | Linux desktop integration (unit) | generated `.desktop` entry (name/`Exec` quoting/`Icon`/`StartupWMClass`/categories), XDG data-home path, and that the app-id/icon calls are safe no-ops when unavailable |
 | Cookie browser preference (unit) | `saveCookieBrowser` persists the chosen browser and both `getStartupData` and `getSettings` report it, so the startup prompt and the settings picker default to it |
 | Interop null tolerance (unit) | `saveSettings`/`saveRemoteConfig` accept `null` values from the web UI (a `<select>` with no MIDI device sends NaN → `null`, which previously failed the save with "Can not convert Null to Int32") |
+| Playback tick (unit) | the engine drives its own `MusicEngine.ProcessTick()` while playing (the crossfade mixer pads with silence, so the output can never report EOF), so the music player gets position/now-playing updates and the queue advances at end of track |
+| Sub-window lifecycle (unit) | `StartupGuard` tray limits (`TrayDisabled`, `TrayUsedLastRun`, crash recovery) and that changing the tray settings clears the guard so the tray can be retried |
 | Download gate (unit) | automatic downloads are deferred until the user made the YouTube-cookie decision (or cookies are saved); skipped ids stay out of `fetchedYtids` so the next fetch retries them; `completeSetup` opens the gate |
 | System media (integration) | Linux **MPRIS**: service registration, per-interface `GetAll`/`Get`, metadata/state/position/artUrl round-trip, every transport command, `PropertiesChanged` signal |
 | Library | playlist CRUD, play history, persistence across instances |
@@ -76,6 +78,7 @@ Run everything locally:
 | FFmpeg decode (integration) | wav/mp3/m4a/flac + **Opus-in-WebM labelled `.mp3`**, seek forward/backward, byte positions |
 | OpenAL output (integration) | null-driver play/pause/stop, `PlaybackStopped` at EOF **and** on Stop, device enumeration + selection, buffered feed, 4 concurrent outputs |
 | Clip cache (integration) | short → in-memory, long → streaming, independent cursors, preload |
+| Track transitions (integration) | two real 3s songs + 1s crossfade through the real engine/output: the crossfade starts before the track ends, the queue advances (`First` → `Second`) and the queue drains — with no output EOF signal (the mixer pads with silence), so it fails if the playback tick is ever removed |
 | JS | `keys.js` gesture mapping (letters/digits/F-keys/numpad/OEM/modifiers) |
 
 ### Test seams added

@@ -17,6 +17,25 @@ public class NewUiWindow
     private const int SwHide = 0;
     private const int SwRestore = 9;
 
+    /// <summary>
+    /// Hides a sub-window instead of destroying it.
+    ///
+    /// Tearing down a WebKitGTK view blocks the GTK thread on some setups (the window
+    /// stays on screen and the whole UI stops handling messages), so "closing" a
+    /// sub-window only hides it; reopening it is then instant because the web view is
+    /// already loaded. No-op elsewhere.
+    /// </summary>
+    private static void SetSubWindowVisible(string titlePrefix, bool visible)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        try
+        {
+            if (visible) GtkWindows.Show(titlePrefix);
+            else GtkWindows.Hide(titlePrefix);
+        }
+        catch { }
+    }
+
     /// <summary>Brings a Photino window to the foreground (Windows only; no-op elsewhere).</summary>
     private static void BringToFront(PhotinoWindow window)
     {
@@ -85,6 +104,12 @@ public class NewUiWindow
     private ITrayIcon? _tray;
     private volatile bool _forceClose;
     private bool _webViewReady;
+    private bool _traySetupDone;
+    private Action<string>? _musicPlayerSend;
+    private Action<string>? _presentationSend;
+    private Action<string>? _soundboardSend;
+    private Action<string>? _visualizationSend;
+    private Action<string>? _announcementSend;
 
     private Thread? _thread;
 
@@ -157,11 +182,13 @@ public class NewUiWindow
 
             w.RegisterWebMessageReceivedHandler((sender, message) =>
             {
-                // The webview is alive and rendering: the startup did not crash.
+                // The webview is alive and rendering. The startup marker is only cleared
+                // once the tray has been set up too (see ScheduleTraySetup), so a native
+                // crash while creating the tray still counts as an unfinished start.
                 if (!_webViewReady)
                 {
                     _webViewReady = true;
-                    StartupGuard.Complete();
+                    if (_traySetupDone) StartupGuard.Complete();
                 }
 
                 _interop.HandleMessage(message);
@@ -215,7 +242,10 @@ public class NewUiWindow
 
             _ytForm.HideHostWindow();
 
-            TrySetupTray(w);
+            // The tray is created from the GTK main loop once the window is fully
+            // constructed — creating AppIndicator/GTK widgets from Photino's window
+            // callback (while GTK is still setting the window up) segfaults GTK.
+            ScheduleTraySetup(w);
 
             // Expose playback to the OS media controls (MPRIS/SMTC/...).
             try { _interop.StartSystemMediaIntegration(w.WindowHandle); } catch { }
@@ -283,15 +313,83 @@ public class NewUiWindow
         Program.ExitApplication();
     }
 
+    /// <summary>Writes a diagnostic line to the console and to the app's log file.</summary>
+    private static void ConfigurationLog(string message)
+    {
+        try { Console.WriteLine("[SongRequest] " + message); } catch { }
+    }
+
+    /// <summary>
+    /// Creates the tray icon a moment after the window is up, on the GTK thread.
+    ///
+    /// Building GTK widgets (the AppIndicator menu) inside Photino's window-created
+    /// callback crashes GTK — the style provider is not ready yet — so the work is
+    /// deferred until the window is fully constructed and then marshalled through
+    /// <see cref="PhotinoWindow.Invoke"/>.
+    /// </summary>
+    private void ScheduleTraySetup(PhotinoWindow window)
+    {
+        _ = System.Threading.Tasks.Task.Run(async () =>
+        {
+            await System.Threading.Tasks.Task.Delay(500).ConfigureAwait(false);
+            try
+            {
+                window.Invoke(() =>
+                {
+                    TrySetupTray(window);
+
+                    // "Start minimised" only hides to the tray once the tray exists.
+                    var cfg = ConfigService.Instance.Current;
+                    if ((AppLaunchArgs.StartMinimized || cfg?.StartMinimized == true)
+                        && _tray is { IsSupported: true }
+                        && cfg?.MinimizeToTray == true)
+                    {
+                        HideWindow(window);
+                    }
+
+                    _traySetupDone = true;
+                    if (_webViewReady) StartupGuard.Complete();
+                });
+            }
+            catch
+            {
+                // The window may already be gone.
+            }
+        });
+    }
+
     private void TrySetupTray(PhotinoWindow w)
     {
         try
         {
             var cfg = ConfigService.Instance.Current;
             var wantsTray = cfg?.CloseToTray == true || cfg?.MinimizeToTray == true;
-            if (!wantsTray || !TrayIconFactory.IsSupported) return;
+            if (!wantsTray)
+            {
+                StartupGuard.ClearTrayUsed();
+                return;
+            }
+
+            if (!TrayIconFactory.IsSupported) return;
+
+            // A GTK/AppIndicator crash here is native and cannot be caught, so if the
+            // last starts never got as far as the webview, skip the tray this time and
+            // remember it (the user can re-enable it later; the app must stay launchable).
+            if (!wantsTray) return;
+
+            if (StartupGuard.TrayDisabled
+                || (StartupGuard.CrashRecoveryThisRun && StartupGuard.TrayUsedLastRun))
+            {
+                // Creating the tray crashed a previous start (a native GTK/AppIndicator
+                // abort the app cannot catch), so leave it off until the user re-enables
+                // it under Settings → Startup & Window.
+                StartupGuard.DisableTray();
+                ConfigurationLog("tray: disabled after a previous crash - re-enable it under Settings -> Startup & Window");
+                return;
+            }
 
             var iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SRshortLogo.png");
+            StartupGuard.NoteTrayUsed();
             var tray = TrayIconFactory.Create("SongRequest V2", iconPath);
             if (!tray.IsSupported)
             {
@@ -378,7 +476,13 @@ public class NewUiWindow
         mainWindow.Invoke(() =>
         {
             if (_musicPlayerWindow != null)
+            {
+                // The window is only hidden when "closed": show it again and resume
+                // sending it data.
+                SetSubWindowVisible("Music Player - ", true);
+                MusicPlayerSendMessage = _musicPlayerSend;
                 return;
+            }
 
             var htmlPath = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
@@ -415,11 +519,14 @@ public class NewUiWindow
                 catch { }
             };
 
+            _musicPlayerSend = MusicPlayerSendMessage;
+
             mp.WindowClosing += (_, _) =>
             {
-                _musicPlayerWindow = null;
+                // Hide instead of closing: destroying the web view blocks the GTK thread.
+                SetSubWindowVisible("Music Player - ", false);
                 MusicPlayerSendMessage = null;
-                return true;
+                return false;
             };
 
             _musicPlayerWindow = mp;
@@ -434,24 +541,9 @@ public class NewUiWindow
 
     public void CloseMusicPlayerWindow()
     {
-        var mainWindow = _window;
-        if (mainWindow == null)
-            return;
-
-        mainWindow.Invoke(() =>
-        {
-            var mp = _musicPlayerWindow;
-            if (mp == null)
-                return;
-
-            _musicPlayerWindow = null;
-
-            try
-            {
-                mp.Close();
-            }
-            catch { }
-        });
+        // The window instance is kept (hidden) so reopening it is instant and no
+        // web-view teardown can block the UI thread.
+        SetSubWindowVisible("Music Player - ", false);;
     }
 
     public void ShowPresentationWindow()
@@ -463,7 +555,13 @@ public class NewUiWindow
         mainWindow.Invoke(() =>
         {
             if (_presentationWindow != null)
+            {
+                // The window is only hidden when "closed": show it again and resume
+                // sending it data.
+                SetSubWindowVisible("Presentation - ", true);
+                PresentationSendMessage = _presentationSend;
                 return;
+            }
 
             _presentationClosing = false;
 
@@ -504,11 +602,14 @@ public class NewUiWindow
                 catch { }
             };
 
+            _presentationSend = PresentationSendMessage;
+
             pw.WindowClosing += (_, _) =>
             {
                 _presentationClosing = true;
-                _presentationWindow = null;
                 PresentationSendMessage = null;
+                // Hide instead of closing: destroying the web view blocks the GTK thread.
+                SetSubWindowVisible("Presentation - ", false);
 
                 // Notify the music player window so the button state updates
                 try
@@ -522,7 +623,8 @@ public class NewUiWindow
                 }
                 catch { }
 
-                return true;
+                // Cancel the close so GTK keeps the web view (destroying it would block).
+                return false;
             };
 
             _presentationWindow = pw;
@@ -533,24 +635,9 @@ public class NewUiWindow
 
     public void ClosePresentationWindow()
     {
-        var mainWindow = _window;
-        if (mainWindow == null)
-            return;
-
-        mainWindow.Invoke(() =>
-        {
-            var pw = _presentationWindow;
-            if (pw == null)
-                return;
-
-            _presentationWindow = null;
-
-            try
-            {
-                pw.Close();
-            }
-            catch { }
-        });
+        // The window instance is kept (hidden) so reopening it is instant and no
+        // web-view teardown can block the UI thread.
+        SetSubWindowVisible("Presentation - ", false);;
     }
 
     public void ShowSoundboardWindow()
@@ -562,7 +649,13 @@ public class NewUiWindow
         mainWindow.Invoke(() =>
         {
             if (_soundboardWindow != null)
+            {
+                // The window is only hidden when "closed": show it again and resume
+                // sending it data.
+                SetSubWindowVisible("Soundboard - ", true);
+                SoundboardSendMessage = _soundboardSend;
                 return;
+            }
 
             var htmlPath = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
@@ -598,12 +691,15 @@ public class NewUiWindow
                 catch { }
             };
 
+            _soundboardSend = SoundboardSendMessage;
+
             sb.WindowClosing += (_, _) =>
             {
-                _soundboardWindow = null;
+                // Hide instead of closing: destroying the web view blocks the GTK thread.
+                SetSubWindowVisible("Soundboard - ", false);
                 SoundboardSendMessage = null;
                 try { _interop.OnSoundboardClosed(); } catch { }
-                return true;
+                return false;
             };
 
             _soundboardWindow = sb;
@@ -614,24 +710,9 @@ public class NewUiWindow
 
     public void CloseSoundboardWindow()
     {
-        var mainWindow = _window;
-        if (mainWindow == null)
-            return;
-
-        mainWindow.Invoke(() =>
-        {
-            var sb = _soundboardWindow;
-            if (sb == null)
-                return;
-
-            _soundboardWindow = null;
-
-            try
-            {
-                sb.Close();
-            }
-            catch { }
-        });
+        // The window instance is kept (hidden) so reopening it is instant and no
+        // web-view teardown can block the UI thread.
+        SetSubWindowVisible("Soundboard - ", false);;
     }
 
     public void ShowVisualizationWindow()
@@ -643,7 +724,13 @@ public class NewUiWindow
         mainWindow.Invoke(() =>
         {
             if (_visualizationWindow != null)
+            {
+                // The window is only hidden when "closed": show it again and resume
+                // sending it data.
+                SetSubWindowVisible("Visualization - ", true);
+                VisualizationSendMessage = _visualizationSend;
                 return;
+            }
 
             var htmlPath = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
@@ -679,40 +766,27 @@ public class NewUiWindow
                 catch { }
             };
 
+            _visualizationSend = VisualizationSendMessage;
+
             vw.WindowClosing += (_, _) =>
             {
-                _visualizationWindow = null;
+                // Hide instead of closing: destroying the web view blocks the GTK thread.
+                SetSubWindowVisible("Visualization - ", false);
                 VisualizationSendMessage = null;
                 try { _interop.OnVisualizationClosed(); } catch { }
-                return true;
+                return false;
             };
 
             _visualizationWindow = vw;
-
             vw.WaitForClose();
         });
     }
 
     public void CloseVisualizationWindow()
     {
-        var mainWindow = _window;
-        if (mainWindow == null)
-            return;
-
-        mainWindow.Invoke(() =>
-        {
-            var vw = _visualizationWindow;
-            if (vw == null)
-                return;
-
-            _visualizationWindow = null;
-
-            try
-            {
-                vw.Close();
-            }
-            catch { }
-        });
+        // The window instance is kept (hidden) so reopening it is instant and no
+        // web-view teardown can block the UI thread.
+        SetSubWindowVisible("Visualization - ", false);;
     }
 
     public void ShowAnnouncementWindow()
@@ -724,7 +798,13 @@ public class NewUiWindow
         mainWindow.Invoke(() =>
         {
             if (_announcementWindow != null)
+            {
+                // The window is only hidden when "closed": show it again and resume
+                // sending it data.
+                SetSubWindowVisible("Announcement - ", true);
+                AnnouncementSendMessage = _announcementSend;
                 return;
+            }
 
             var htmlPath = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
@@ -760,12 +840,15 @@ public class NewUiWindow
                 catch { }
             };
 
+            _announcementSend = AnnouncementSendMessage;
+
             aw.WindowClosing += (_, _) =>
             {
-                _announcementWindow = null;
+                // Hide instead of closing: destroying the web view blocks the GTK thread.
+                SetSubWindowVisible("Announcement - ", false);
                 AnnouncementSendMessage = null;
                 try { _interop.OnAnnouncementClosed(); } catch { }
-                return true;
+                return false;
             };
 
             _announcementWindow = aw;
@@ -776,24 +859,9 @@ public class NewUiWindow
 
     public void CloseAnnouncementWindow()
     {
-        var mainWindow = _window;
-        if (mainWindow == null)
-            return;
-
-        mainWindow.Invoke(() =>
-        {
-            var aw = _announcementWindow;
-            if (aw == null)
-                return;
-
-            _announcementWindow = null;
-
-            try
-            {
-                aw.Close();
-            }
-            catch { }
-        });
+        // The window instance is kept (hidden) so reopening it is instant and no
+        // web-view teardown can block the UI thread.
+        SetSubWindowVisible("Announcement - ", false);;
     }
 
     /// <summary>

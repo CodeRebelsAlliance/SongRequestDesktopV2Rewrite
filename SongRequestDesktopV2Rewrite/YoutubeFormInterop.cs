@@ -2398,6 +2398,13 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("startMinimized", out var sm)) cfg.StartMinimized = sm.ToObject<bool>();
                 if (settings.TryGetValue("minimizeToTray", out var mtt)) cfg.MinimizeToTray = mtt.ToObject<bool>();
                 if (settings.TryGetValue("closeToTray", out var ctt)) cfg.CloseToTray = ctt.ToObject<bool>();
+
+                // Changing the tray settings is the user's way of retrying it after it
+                // was switched off by the crash guard.
+                if (settings.ContainsKey("minimizeToTray") || settings.ContainsKey("closeToTray"))
+                {
+                    try { StartupGuard.ClearTrayDisabled(); } catch { }
+                }
                 if (settings.TryGetValue("globalKeyboardShortcuts", out var gks)) cfg.GlobalKeyboardShortcuts = gks.ToObject<bool>();
                 if (settings.TryGetValue("systemMediaIntegration", out var smi)) cfg.SystemMediaIntegration = smi.ToObject<bool>();
 

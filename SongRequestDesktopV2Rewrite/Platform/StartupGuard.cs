@@ -24,6 +24,7 @@ public static class StartupGuard
 {
     internal const string MarkerFileName = "startup-in-progress.marker";
     internal const string SafeModeFileName = "safe-mode.marker";
+    internal const string TrayDisabledFileName = "tray-disabled.marker";
 
     /// <summary>How many unfinished starts in a row before safe mode kicks in.</summary>
     internal const int FailureThreshold = 2;
@@ -80,9 +81,13 @@ public static class StartupGuard
     /// <summary>Clears the marker once the webview is confirmed to be rendering.</summary>
     public static void Complete() => Delete(MarkerPath);
 
+    /// <summary>True when this run recovered from repeated unfinished starts.</summary>
+    public static bool CrashRecoveryThisRun { get; private set; }
+
     /// <summary>Remembers that this machine needs the conservative webview setup.</summary>
     public static void EnterSafeMode()
     {
+        CrashRecoveryThisRun = true;
         try
         {
             Directory.CreateDirectory(AppPaths.LocalAppDataDir);
@@ -95,6 +100,54 @@ public static class StartupGuard
 
     /// <summary>Forgets safe mode (used by <c>--gpu</c>).</summary>
     public static void ClearSafeMode() => Delete(SafeModePath);
+
+    private static string TrayDisabledPath => Path.Combine(AppPaths.LocalAppDataDir, TrayDisabledFileName);
+
+    /// <summary>
+    /// True when the tray icon was switched off after a start crashed while creating
+    /// it (GTK/AppIndicator failures are native and cannot be caught).
+    /// </summary>
+    public static bool TrayDisabled
+    {
+        get
+        {
+            try { return File.Exists(TrayDisabledPath); } catch { return false; }
+        }
+    }
+
+    /// <summary>Remembers that the tray must stay off (cleared when the user re-enables it).</summary>
+    public static void DisableTray()
+    {
+        try
+        {
+            Directory.CreateDirectory(AppPaths.LocalAppDataDir);
+            File.WriteAllText(TrayDisabledPath, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+        }
+        catch { }
+    }
+
+    /// <summary>Lets the tray be tried again (used when the user changes the tray settings).</summary>
+    public static void ClearTrayDisabled() => Delete(TrayDisabledPath);
+
+    private static string TrayUsedPath => Path.Combine(AppPaths.LocalAppDataDir, "tray-used.marker");
+
+    /// <summary>True when the previous start had created a tray icon.</summary>
+    public static bool TrayUsedLastRun
+    {
+        get
+        {
+            try { return File.Exists(TrayUsedPath); } catch { return false; }
+        }
+    }
+
+    /// <summary>Records that this start created a tray icon (so a crash can be blamed on it).</summary>
+    public static void NoteTrayUsed()
+    {
+        try { Directory.CreateDirectory(AppPaths.LocalAppDataDir); File.WriteAllText(TrayUsedPath, "1"); } catch { }
+    }
+
+    /// <summary>Forgets that a tray icon was used.</summary>
+    public static void ClearTrayUsed() => Delete(TrayUsedPath);
 
     private static void Delete(string path)
     {

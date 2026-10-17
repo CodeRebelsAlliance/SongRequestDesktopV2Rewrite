@@ -227,6 +227,30 @@ public class InteropDispatchTests
     }
 
     [Fact]
+    public async Task SaveSettings_ClearingTheCrashGuardLetsTheTrayBeRetried()
+    {
+        var (_, interop, responses) = Create();
+        StartupGuard.DisableTray();
+        try
+        {
+            Assert.True(StartupGuard.TrayDisabled);
+
+            var response = await Request(interop, responses, "saveSettings", "tray1", msg =>
+            {
+                msg["settings"] = new JObject { ["minimizeToTray"] = false, ["closeToTray"] = false };
+            });
+
+            Assert.True(response["result"]?["success"]?.ToObject<bool>() == true, response["result"]?.ToString());
+            Assert.False(StartupGuard.TrayDisabled);
+        }
+        finally
+        {
+            StartupGuard.ClearTrayDisabled();
+            while (responses.TryDequeue(out _)) { }
+        }
+    }
+
+    [Fact]
     public async Task SaveRemoteConfig_ToleratesNullValuesFromTheWebUi()
     {
         var (_, interop, responses) = Create();

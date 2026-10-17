@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace SongRequestDesktopV2Rewrite;
@@ -56,7 +55,9 @@ public sealed class HeadlessHost : ISongRequestHost
         var effective = (cookies != null && cookies.Count > 0) ? cookies : YoutubeCookieService.LoadSaved();
         YoutubeService = new YoutubeService(effective);
         Engine.Cache.Changed += () => OnDataRefreshed?.Invoke();
+
     }
+
 
     // No WPF dispatcher: the interop runs on the Photino thread, so run inline.
     public void RunOnUi(Action action) => action();

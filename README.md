@@ -73,6 +73,20 @@ browser. See
   "confirm you're not a bot" videos with a *video unavailable* error, which is why the
   app waits for your decision instead of hammering YouTube first.
 
+- **A sub-window (Visualization / Soundboard / Music Player …) does not close**
+
+  Fixed: closing a sub-window now hides it (and reopening shows it again instantly)
+  instead of tearing the web view down, which used to leave the window on screen with
+  the whole UI no longer reacting.
+
+- **The app does not start any more, or no window appears**
+
+  If a previous start died before the UI came up, the app protects itself: two
+  unfinished starts in a row switch on a conservative webview setup, and if the crash
+  happened while the tray icon was being created the tray is left off — the next start
+  works again. Re-enable the tray with **Settings → Startup & Window** (changing either
+  tray option clears the guard).
+
 - **The window closed but the app is still running**
 
   With **Settings → Startup & Window → Close to tray** enabled, clicking the window's
