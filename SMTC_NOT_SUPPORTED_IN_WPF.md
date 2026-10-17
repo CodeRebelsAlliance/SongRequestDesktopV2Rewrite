@@ -1,5 +1,17 @@
 # System Media Transport Controls (SMTC) - Why It Doesn't Work in WPF
 
+> **Update (cross-platform migration).** The app no longer runs on WPF.
+> System media integration is now implemented on **Linux (MPRIS)** and
+> **Windows (SMTC)** — toggle in **Settings → System Integration**. See
+> [`docs/SYSTEM-MEDIA-INTEGRATION.md`](docs/SYSTEM-MEDIA-INTEGRATION.md).
+>
+> Windows SMTC was previously impossible in the WPF app; it is now reached
+> through a **Windows-only companion assembly** (`net10.0-windows10.0.19041.0`)
+> that the cross-platform `net10.0` app loads at runtime, so the main build stays
+> single-target. Only **macOS (MPNowPlaying)** remains unimplemented.
+>
+> The reasons below explain why the old WPF approach failed.
+
 ## The Problem
 
 System Media Transport Controls (SMTC) is a **UWP-only API** that doesn't work in WPF applications running on .NET 10. 

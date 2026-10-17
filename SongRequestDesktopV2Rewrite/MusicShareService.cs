@@ -7,9 +7,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Media.Imaging;
-using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
 
 namespace SongRequestDesktopV2Rewrite
 {
@@ -70,12 +67,8 @@ namespace SongRequestDesktopV2Rewrite
                 Timeout = TimeSpan.FromSeconds(30)
             };
 
-            // Set User-Agent to identify the app/version to the server
-            try
-            {
-                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"SongRequest Desktop v{About.version}");
-            }
-            catch { }
+            // Identify the app/version to the server.
+            BackendHttpClient.ApplyUserAgent(_httpClient);
 
             // Add authorization header using the same bearer token as YouTube fetching
             if (!string.IsNullOrEmpty(cfg?.BearerToken))
@@ -360,31 +353,7 @@ namespace SongRequestDesktopV2Rewrite
                         {
                             System.Diagnostics.Debug.WriteLine($"📥 Received {chunks.Length} LARGE audio chunk(s) (seq {chunks[0].SequenceNumber}-{chunks[^1].SequenceNumber})");
 
-                            foreach (var chunk in chunks)
-                            {
-                                _audioBuffer.Enqueue(chunk);
-                                AudioChunkReceived?.Invoke(this, chunk);
-                                lastSequence = Math.Max(lastSequence, chunk.SequenceNumber);
-                            }
-
-                            BufferLevelChanged?.Invoke(this, _audioBuffer.Count);
-
-                            if (_audioBuffer.Count > 3) // Enough buffer (fewer large chunks needed)
-                            {
-                                if (Status != ShareStatus.Streaming)
-                                {
-                                    System.Diagnostics.Debug.WriteLine($"📡 Status: Buffering → Streaming");
-                                    Status = ShareStatus.Streaming;
-                                }
-                            }
-                            else if (_audioBuffer.Count <= 1)
-                            {
-                                if (Status != ShareStatus.Buffering)
-                                {
-                                    System.Diagnostics.Debug.WriteLine($"⏳ Status: Streaming → Buffering (low buffer)");
-                                    Status = ShareStatus.Buffering;
-                                }
-                            }
+                            lastSequence = Math.Max(lastSequence, ProcessReceivedChunks(chunks));
                         }
                         else
                         {
@@ -411,6 +380,38 @@ namespace SongRequestDesktopV2Rewrite
                     await Task.Delay(500, cancellationToken);
                 }
             }
+        }
+
+        /// <summary>
+        /// Enqueues received chunks, raises the receive events and updates the
+        /// buffering/streaming status. Returns the highest sequence number seen
+        /// (0 when empty). Extracted from the poll loop so it can be tested
+        /// without a server.
+        /// </summary>
+        internal int ProcessReceivedChunks(System.Collections.Generic.IReadOnlyList<AudioChunk> chunks)
+        {
+            if (chunks == null || chunks.Count == 0) return 0;
+
+            int maxSequence = 0;
+            foreach (var chunk in chunks)
+            {
+                _audioBuffer.Enqueue(chunk);
+                AudioChunkReceived?.Invoke(this, chunk);
+                if (chunk.SequenceNumber > maxSequence) maxSequence = chunk.SequenceNumber;
+            }
+
+            BufferLevelChanged?.Invoke(this, _audioBuffer.Count);
+
+            if (_audioBuffer.Count > 3)
+            {
+                if (Status != ShareStatus.Streaming) Status = ShareStatus.Streaming;
+            }
+            else if (_audioBuffer.Count <= 1)
+            {
+                if (Status != ShareStatus.Buffering) Status = ShareStatus.Buffering;
+            }
+
+            return maxSequence;
         }
 
         /// <summary>
@@ -459,47 +460,6 @@ namespace SongRequestDesktopV2Rewrite
         {
             var random = new Random();
             return random.Next(100000, 999999).ToString();
-        }
-
-        public static string? BitmapSourceToBase64(BitmapSource? bitmap)
-        {
-            if (bitmap == null) return null;
-
-            try
-            {
-                var encoder = new JpegBitmapEncoder { QualityLevel = 85 };
-                encoder.Frames.Add(BitmapFrame.Create(bitmap));
-
-                using var stream = new MemoryStream();
-                encoder.Save(stream);
-                return Convert.ToBase64String(stream.ToArray());
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        public static BitmapSource? Base64ToBitmapSource(string? base64)
-        {
-            if (string.IsNullOrEmpty(base64)) return null;
-
-            try
-            {
-                var bytes = Convert.FromBase64String(base64);
-                var bitmap = new BitmapImage();
-                using var stream = new MemoryStream(bytes);
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.StreamSource = stream;
-                bitmap.EndInit();
-                bitmap.Freeze();
-                return bitmap;
-            }
-            catch
-            {
-                return null;
-            }
         }
 
         #endregion

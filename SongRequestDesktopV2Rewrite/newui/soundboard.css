@@ -1,0 +1,112 @@
+/* Soundboard window styles. Shared components (modals, buttons, toasts,
+   scrollbars, settings fields) come from styles.css. */
+
+#sb-root { display: flex; flex-direction: column; height: 100vh; background: #101010; }
+
+/* Top bar */
+#sb-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; background: #202020; border: 1px solid #303030; border-radius: 12px;
+    padding: 10px 14px; margin: 6px 6px 0 6px; flex-shrink: 0;
+}
+#sb-top-left { display: flex; align-items: center; gap: 10px; }
+#sb-logo { width: 32px; height: 30px; border-radius: 4px; }
+#sb-title { color: #fff; font-size: 18px; font-weight: 800; letter-spacing: .4px; white-space: nowrap; }
+#sb-top-center { display: flex; gap: 14px; color: #bbb; font-size: 13px; white-space: nowrap; }
+#sb-top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+#sb-midi-toggle { display: flex; align-items: center; gap: 5px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+#sb-midi-toggle input { width: 15px; height: 15px; accent-color: #2a5a2a; cursor: pointer; }
+
+.top-btn.accent { background: #2a4a7a; border-color: #3a5a9a; color: #cfe0ff; }
+.top-btn.accent:hover { background: #35598f; }
+.top-btn.success { background: #2a5a2a; border-color: #3a7a3a; color: #d8ffd8; }
+.top-btn.success:hover { background: #3a7a3a; }
+.top-btn.danger { background: #5a2a2a; border-color: #7a3a3a; color: #ffd0d0; }
+.top-btn.danger:hover { background: #7a3a3a; }
+.top-btn.active-assign { background: #ffc107 !important; border-color: #ffc107 !important; color: #1a1a1a !important; font-weight: 700; }
+
+/* Main */
+#sb-main {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    background: #202020; border: 1px solid #303030; border-radius: 12px;
+    margin: 6px; padding: 12px; overflow: hidden;
+}
+#sb-grid-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
+#sb-grid { display: grid; gap: 8px; height: 100%; box-sizing: border-box; align-content: stretch; }
+
+/* Grid buttons */
+.sb-btn {
+    position: relative; background: var(--btn-color, #2a2a2a); border: 2px solid #404040; border-radius: 12px;
+    cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    padding: 8px 8px 10px; overflow: hidden; user-select: none; min-height: 88px; min-width: 0;
+    transition: border-color .15s ease, background .15s ease; text-align: center;
+}
+.sb-btn:hover { border-color: #5b8def; background: #353535; }
+.sb-btn.empty { opacity: .6; }
+.sb-btn.playing { border-color: #4caf50; }
+.sb-btn.pressed { background: #1a1a1a; border-color: #7ad1ff; }
+.sb-btn .sb-name { font-size: 13px; font-weight: 700; color: #fff; word-break: break-word; line-height: 1.15; max-width: 100%; }
+.sb-btn .sb-icon { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; font-size: 26px; line-height: 1; }
+.sb-btn .sb-status { font-size: 10px; color: #aaa; margin-bottom: 2px; }
+.sb-btn .sb-progress { position: absolute; left: 0; bottom: 0; height: 6px; width: 0%; background: #5b8def; transition: width .1s linear; }
+.sb-btn .sb-overlay { position: absolute; inset: 0; background: rgba(76, 209, 124, .28); opacity: 0; transition: opacity .15s ease; pointer-events: none; }
+.sb-btn.dragover .sb-overlay { opacity: 1; }
+
+/* Bottom bar */
+#sb-bottombar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border-top: 1px solid #303030; margin-top: 10px; padding-top: 10px; flex-shrink: 0;
+}
+#sb-master { width: 150px; accent-color: #5b8def; }
+.sb-bb-label { color: #ddd; font-size: 13px; }
+#sb-master-label { width: 44px; text-align: right; }
+.sb-device-select { width: 210px; }
+
+/* Context menu */
+.context-menu {
+    position: fixed; z-index: 9997; min-width: 190px; background: #1e1e1e;
+    border: 1px solid #444; border-radius: 8px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+    animation: ctxMenuIn .12s ease;
+}
+.context-menu-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; color: #ddd; font-size: 13px; cursor: pointer; }
+.context-menu-item:hover { background: #2f2f2f; color: #fff; }
+.context-menu-item i { width: 15px; text-align: center; color: #999; }
+.context-menu-danger { color: #f77; }
+.context-menu-danger i { color: #f77; }
+.context-menu-danger:hover { background: #3a1a1a; }
+@keyframes ctxMenuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Modal helpers */
+.sb-modal-body { overflow-y: auto; }
+.sb-modal-footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid #333; }
+
+/* Edit modal specifics */
+.sb-color-palette { display: flex; gap: 6px; flex-wrap: wrap; }
+.sb-color-swatch { width: 34px; height: 34px; border-radius: 6px; border: 2px solid #404040; cursor: pointer; transition: transform .1s ease, border-color .1s ease; }
+.sb-color-swatch:hover { transform: translateY(-1px); }
+.sb-color-swatch.selected { border-color: #fff; }
+.sb-color-preview { width: 40px; height: 28px; border-radius: 4px; border: 2px solid #404040; background: #202020; }
+.sb-midi-status { background: #1a1a1a; border: 1px solid #5b8def; border-radius: 6px; padding: 10px 12px; font-size: 12px; color: #999; white-space: pre-line; }
+.sb-midi-status.mapped { color: #4caf50; }
+.sb-shortcut-display { flex: 1; background: #202020; border: 1px solid #5b8def; border-radius: 6px; padding: 7px 10px; color: #fff; font-size: 13px; font-family: Consolas, monospace; min-width: 80px; }
+.sb-keybind-detected { flex: none; text-align: center; font-size: 18px; padding: 16px; color: #5b8def; margin: 10px 0 4px 0; }
+
+/* Pages modal */
+.sb-pages-list { max-height: 260px; overflow-y: auto; border: 1px solid #333; border-radius: 8px; padding: 6px; margin-bottom: 12px; }
+.sb-page-item { padding: 8px 12px; border-radius: 6px; color: #ddd; font-size: 13px; cursor: pointer; }
+.sb-page-item:hover { background: #2a2a2a; }
+.sb-page-item.selected { background: #2a4a7a; color: #fff; }
+.sb-pages-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sb-addform { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid #333; }
+.sb-addform .settings-input { width: auto; }
+.sb-addform select.settings-input { width: 80px; }
+
+/* Keys modal */
+.sb-keys-list { display: flex; flex-direction: column; gap: 8px; }
+.sb-key-row { display: flex; align-items: center; gap: 8px; }
+.sb-key-row .sb-key-label { flex: 0 0 150px; color: #ddd; font-size: 13px; }
+.sb-key-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: #2a5a2a; }
+.sb-key-row .sb-shortcut-display { flex: 1; }
+
+/* MIDI assign status */
+.sb-midiassign-status { color: #ccc; white-space: pre-line; min-height: 60px; }

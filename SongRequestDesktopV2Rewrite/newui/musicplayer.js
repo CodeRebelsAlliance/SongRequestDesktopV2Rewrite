@@ -547,6 +547,16 @@
         _presOpen = false;
         if (btnPresentation) btnPresentation.classList.remove('active');
         break;
+      case 'openMusicShare': {
+        var shareBtnEl = document.getElementById('btn-share');
+        if (shareBtnEl) shareBtnEl.click();
+        break;
+      }
+      case 'musicPlayerConfig': {
+        var annBtn = document.getElementById('btn-announcement');
+        if (annBtn) annBtn.style.display = (data && data.enableAnnouncements === false) ? 'none' : '';
+        break;
+      }
     }
   }
 
@@ -1929,6 +1939,8 @@
   var receiveTotal = document.getElementById('receive-total');
   var receiveProgressFill = document.getElementById('receive-progress-fill');
   var shareReceiveAudio = document.getElementById('share-receive-audio');
+  var shareReceiveVolume = document.getElementById('share-receive-volume');
+  var shareReceiveVolumeValue = document.getElementById('share-receive-volume-value');
   var shareIsSharing = false;
   var shareIsReceiving = false;
 
@@ -1987,6 +1999,13 @@
       receiveStartBtn.textContent = 'Connecting...';
       receiveStartBtn.disabled = true;
     }
+  });
+
+  shareReceiveVolume.addEventListener('input', function() {
+    shareReceiveVolumeValue.textContent = this.value + '%';
+  });
+  shareReceiveVolume.addEventListener('change', function() {
+    hostSend('musicShareSetVolume', { value: parseFloat(this.value) / 100 });
   });
 
   function shareFormatStatus(status) {
@@ -2517,6 +2536,16 @@
         btnPresentation.classList.add('active');
       }
     });
+  }
+
+  var btnVisualization = document.getElementById('btn-visualization');
+  if (btnVisualization) {
+    btnVisualization.addEventListener('click', function() { hostSend('showVisualization'); });
+  }
+
+  var btnAnnouncement = document.getElementById('btn-announcement');
+  if (btnAnnouncement) {
+    btnAnnouncement.addEventListener('click', function() { hostSend('announcementOpen'); });
   }
 
   var btnPresSource = document.getElementById('btn-pres-source');

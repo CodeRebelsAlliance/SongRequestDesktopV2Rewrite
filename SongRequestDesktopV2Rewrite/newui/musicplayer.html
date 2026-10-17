@@ -31,6 +31,8 @@
           <div class="pres-dropdown-item" data-source="musicshare"><i class="fas fa-broadcast-tower"></i> MusicShare</div>
         </div>
       </div>
+      <button id="btn-visualization" class="top-btn" title="Audio Visualization"><i class="fas fa-wave-square"></i></button>
+      <button id="btn-announcement" class="top-btn" title="Announcements" style="display:none"><i class="fas fa-microphone"></i></button>
       <button id="btn-share" class="top-btn"><i class="fas fa-broadcast-tower"></i> Share</button>
       <button id="btn-settings" class="top-btn" style="display: none;"><i class="fas fa-cog"></i> Settings</button>
     </div>
@@ -385,6 +387,11 @@
             <input type="checkbox" id="share-receive-audio" checked>
             <span class="share-toggle-label">Receive Audio</span>
           </label>
+          <div id="share-receive-volume-field" style="display:flex;align-items:center;gap:8px;margin:6px 0">
+            <span class="share-toggle-label" style="flex:0 0 auto"><i class="fas fa-volume-up"></i> Volume</span>
+            <input type="range" id="share-receive-volume" min="0" max="100" value="100" style="flex:1;accent-color:#5b8def">
+            <span id="share-receive-volume-value" class="share-stats-text" style="flex:0 0 38px;text-align:right">100%</span>
+          </div>
           <button id="btn-receive-start" class="share-btn share-btn-accent" disabled>Connect</button>
         </div>
       </div>

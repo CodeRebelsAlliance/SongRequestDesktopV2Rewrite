@@ -7,26 +7,59 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Windows.Media.Imaging;
 
 namespace SongRequestDesktopV2Rewrite;
 
 public class YoutubeFormInterop
 {
-    private readonly YoutubeForm _ytForm;
+    private readonly ISongRequestHost _ytForm;
     private readonly YoutubeService _ytService;
     private readonly LibraryService _libraryService;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _pendingRequests = new();
 
     public Action<string>? SendMessage { get; set; }
-    public YoutubeForm YtForm => _ytForm;
+
+    /// <summary>Runs an action synchronously on the UI/host thread.</summary>
+    public Action<Action> RunOnUi { get; set; } = a => a();
+
+    /// <summary>Posts an action to the UI/host thread.</summary>
+    public Action<Action> PostToUi { get; set; } = a => a();
+
+    /// <summary>Shows a native open-file dialog. Args: (title, filter, multiselect) → selected paths or null.</summary>
+    public Func<string, string, bool, string[]?>? ShowOpenFileDialog { get; set; }
+
+    public ISongRequestHost YtForm => _ytForm;
     public LibraryService LibraryService => _libraryService;
 
     private string? _currentSongPath;
     private bool _musicPlayerSubscribed;
+    private bool _pendingMusicShareOpen;
     private LyricsService? _musicPlayerLyricsService;
     private readonly object _musicPlayerLyricsCacheLock = new();
     private readonly System.Collections.Generic.Dictionary<string, LyricsResult> _musicPlayerLyricsCache = new(StringComparer.OrdinalIgnoreCase);
+
+    // MIDI assignment capture (remote control settings)
+    private readonly object _midiCaptureLock = new();
+    private bool _midiCaptureSubscribed;
+    private readonly EventHandler<string> _midiActivityHandler;
+
+    // Soundboard engine (lazily created when the soundboard is shown)
+    private SoundboardEngine? _soundboard;
+    private readonly object _soundboardLock = new();
+
+    // Visualization audio streamer (lazily created when the visualization is shown)
+    private VisualizationStreamer? _vizStreamer;
+    private readonly object _vizLock = new();
+
+    // Announcement engine (lazily created; kept alive across window open/close)
+    private AnnouncementEngine? _announcement;
+    private readonly object _announcementLock = new();
+
+    // System media integration (MPRIS/SMTC/...). Started once the UI is up.
+    private MediaSessionBridge? _mediaSessionBridge;
+    private readonly object _mediaSessionLock = new();
+    private Task? _mediaSessionStartTask;
+    private IntPtr _mediaSessionWindowHandle;
 
     // MusicShare interop state
     private MusicShareService? _musicShareService;
@@ -43,17 +76,48 @@ public class YoutubeFormInterop
     private bool _musicShareCachedHasSyncedLyrics;
     private string? _musicShareCachedThumbnail;
     private MusicShareMetadata? _musicShareLastMetadata;
+    private MusicShareAudioPlayer? _musicShareAudioPlayer;
+    private float _musicShareReceiveVolume = 1.0f;
     private sealed class CachedSubtitleData
     {
         public string SubtitleText { get; set; } = string.Empty;
         public string SubtitleTimedText { get; set; } = string.Empty;
     }
 
-    public YoutubeFormInterop(YoutubeForm ytForm, YoutubeService ytService)
+    public YoutubeFormInterop(ISongRequestHost ytForm, YoutubeService ytService)
     {
         _ytForm = ytForm;
         _ytService = ytService;
         _libraryService = new LibraryService();
+
+        // Marshal host operations through the host (WPF dispatcher today; headless host later).
+        RunOnUi = ytForm.RunOnUi;
+        PostToUi = ytForm.PostToUi;
+
+        // Forward MIDI activity (processed remote-control input) to the web UI
+        _midiActivityHandler = (_, message) => SendEvent("midiActivity", new { message });
+        try { RemoteControlService.Instance.MidiActivity += _midiActivityHandler; } catch { }
+
+        // Route legacy "open Music Share" calls to the Photino share modal.
+        try
+        {
+            var mp = _ytForm.Music;
+            if (mp != null)
+            {
+                mp.OpenMusicShareHandler = () => MusicPlayerSendEvent("openMusicShare", null);
+                mp.OpenVisualizationHandler = () =>
+                {
+                    EnsureVisualization();
+                    _ytForm.NewUiRef?.ShowVisualizationWindow();
+                };
+                mp.AnnouncementOpenHandler = () =>
+                {
+                    EnsureAnnouncement();
+                    _ytForm.NewUiRef?.ShowAnnouncementWindow();
+                };
+            }
+        }
+        catch { }
     }
 
     public async void HandleMessage(string json)
@@ -134,7 +198,7 @@ public class YoutubeFormInterop
                     return;
                 case "presentationReady":
                 {
-                    _ytForm.Dispatcher.BeginInvoke(() =>
+                    PostToUi(() =>
                     {
                         SubscribeToMusicPlayer();
                         SendPresentationCurrentState();
@@ -161,24 +225,28 @@ public class YoutubeFormInterop
                     ShowSoundboard();
                     SendResponse(id, new { success = true });
                     return;
-                case "showSettings":
-                    ShowSettings();
+                case "showVisualization":
+                    ShowVisualization();
+                    SendResponse(id, new { success = true });
+                    return;
+                case "closeVisualization":
+                    _ytForm.NewUiRef?.CloseVisualizationWindow();
                     SendResponse(id, new { success = true });
                     return;
                 case "playPause":
-                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteTogglePlayPause());
+                    PostToUi(() => _ytForm.Music.TogglePlayPause());
                     SendResponse(id, new { success = true });
                     return;
                 case "skipNext":
-                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteSkipNext());
+                    PostToUi(() => _ytForm.Music.Next());
                     SendResponse(id, new { success = true });
                     return;
                 case "skipPrevious":
-                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemotePrevious());
+                    PostToUi(() => _ytForm.Music.Previous());
                     SendResponse(id, new { success = true });
                     return;
                 case "stop":
-                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteStop());
+                    PostToUi(() => _ytForm.Music.Stop());
                     SendResponse(id, new { success = true });
                     return;
                 case "seek":
@@ -187,44 +255,55 @@ public class YoutubeFormInterop
                     if (posVal != null)
                     {
                         double pos = posVal.Value;
-                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteSeek(pos));
+                        PostToUi(() => _ytForm.Music.Seek(pos));
                     }
                     SendResponse(id, new { success = true });
                     return;
                 }
                 case "toggleRepeat":
                 {
-                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteToggleRepeat());
+                    PostToUi(() => _ytForm.Music.ToggleRepeat());
                     SendResponse(id, new { success = true });
                     return;
                 }
                 case "clearQueue":
-                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.ClearQueue(false));
+                    PostToUi(() => _ytForm.Music.ClearQueue());
                     SendResponse(id, new { success = true });
                     return;
                 case "musicPlayerReady":
                 {
-                    _ytForm.Dispatcher.BeginInvoke(() =>
+                    PostToUi(() =>
                     {
                         SubscribeToMusicPlayer();
                         SendQueueUpdate();
                         double volInit = 0.8, cfInit = 4.0;
                         bool canControlInit = true;
-                        var mp = _ytForm.MusicPlayer;
+                        var mp = _ytForm.Music;
                         if (mp != null)
                         {
-                            volInit = mp.RemoteVolumeValue;
-                            cfInit = mp.CrossfadeSlider.Value;
-                            canControlInit = mp.RemoteCanControlVolume;
+                            volInit = mp.VolumeValue;
+                            cfInit = mp.CrossfadeSeconds;
+                            canControlInit = mp.CanControlVolume;
                         }
                         SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit, lyricsFontScale = (double)ConfigService.Instance.Current.LyricsFontScale, lyricsHidden = ConfigService.Instance.Current.LyricsHidden });
                         SendCurrentNowPlayingToNewUI();
+
+                        MusicPlayerSendEvent("musicPlayerConfig", new
+                        {
+                            enableAnnouncements = ConfigService.Instance.Current?.EnableAnnouncements ?? true
+                        });
+
+                        if (_pendingMusicShareOpen)
+                        {
+                            _pendingMusicShareOpen = false;
+                            MusicPlayerSendEvent("openMusicShare", null);
+                        }
                     });
                     return;
                 }
                 case "shuffleQueue":
                 {
-                    _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoteShuffleQueue());
+                    PostToUi(() => _ytForm.Music.ShuffleQueue());
                     SendResponse(id, new { success = true });
                     return;
                 }
@@ -232,10 +311,10 @@ public class YoutubeFormInterop
                 {
                     var volVal = msg["value"]?.ToObject<double>() ?? -1;
                     if (volVal >= 0)
-                        _ytForm.Dispatcher.BeginInvoke(() =>
+                        PostToUi(() =>
                         {
-                            if (_ytForm.MusicPlayer != null)
-                                _ytForm.MusicPlayer.VolumeSlider.Value = Math.Clamp(volVal, 0.0, 1.0);
+                            if (_ytForm.Music != null)
+                                _ytForm.Music.SetVolume((float)volVal);
                         });
                     SendResponse(id, new { success = true });
                     return;
@@ -244,10 +323,10 @@ public class YoutubeFormInterop
                 {
                     var cfVal = msg["value"]?.ToObject<double>() ?? -1;
                     if (cfVal >= 0)
-                        _ytForm.Dispatcher.BeginInvoke(() =>
+                        PostToUi(() =>
                         {
-                            if (_ytForm.MusicPlayer != null)
-                                _ytForm.MusicPlayer.CrossfadeSlider.Value = Math.Clamp(cfVal, 0.0, 10.0);
+                            if (_ytForm.Music != null)
+                                _ytForm.Music.SetCrossfade(cfVal);
                         });
                     SendResponse(id, new { success = true });
                     return;
@@ -256,14 +335,14 @@ public class YoutubeFormInterop
                 {
                     double volVal = 0.8, cfVal2 = 4.0;
                     bool canControlVal = true;
-                    _ytForm.Dispatcher.Invoke(() =>
+                    RunOnUi(() =>
                     {
-                        var mp = _ytForm.MusicPlayer;
+                        var mp = _ytForm.Music;
                         if (mp != null)
                         {
-                            volVal = mp.RemoteVolumeValue;
-                            cfVal2 = mp.CrossfadeSlider.Value;
-                            canControlVal = mp.RemoteCanControlVolume;
+                            volVal = mp.VolumeValue;
+                            cfVal2 = mp.CrossfadeSeconds;
+                            canControlVal = mp.CanControlVolume;
                         }
                     });
                     SendResponse(id, new { volume = volVal, crossfade = cfVal2, canControlVolume = canControlVal });
@@ -282,20 +361,18 @@ public class YoutubeFormInterop
                     return;
                 }
                 case "addLocalFiles":
+                {
                     var mode = msg["mode"]?.ToString() ?? "add";
-                    _ytForm.Dispatcher.BeginInvoke(() =>
+                    var files = ShowOpenFileDialog?.Invoke("Add Audio Files",
+                        "*.mp3;*.wav;*.m4a;*.aac;*.ogg;*.flac;*.wma", true);
+                    if (files != null && files.Length > 0)
                     {
-                        var dialog = new Microsoft.Win32.OpenFileDialog
+                        PostToUi(() =>
                         {
-                            Filter = "Audio files|*.mp3;*.wav;*.m4a;*.flac|All files|*.*",
-                            Multiselect = true
-                        };
-                        if (dialog.ShowDialog() == true)
-                        {
-                            var mp = _ytForm.MusicPlayer;
+                            var mp = _ytForm.Music;
                             if (mp != null)
                             {
-                                foreach (var filePath in dialog.FileNames)
+                                foreach (var filePath in files)
                                 {
                                     if (mp.TryCreateSongFromFile(filePath, out var song, out _))
                                     {
@@ -306,39 +383,40 @@ public class YoutubeFormInterop
                                     }
                                 }
                             }
-                        }
-                    });
+                        });
+                    }
                     SendResponse(id, new { success = true });
                     return;
+                }
                 case "removeQueueItem":
                     var idx = msg["index"]?.ToObject<int>() ?? -1;
                     if (idx >= 0)
-                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemoveQueueItem(idx));
+                        PostToUi(() => _ytForm.Music.RemoveQueueItem(idx));
                     SendResponse(id, new { success = true });
                     return;
                 case "removePlaylistQueueItem":
                     var plIdx = msg["index"]?.ToObject<int>() ?? -1;
                     if (plIdx >= 0)
-                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.RemovePlaylistQueueItem(plIdx));
+                        PostToUi(() => _ytForm.Music.RemovePlaylistQueueItem(plIdx));
                     SendResponse(id, new { success = true });
                     return;
                 case "movePlaylistQueueItem":
                     var plFromIdx = msg["fromIndex"]?.ToObject<int>() ?? -1;
                     var plToIdx = msg["toIndex"]?.ToObject<int>() ?? -1;
                     if (plFromIdx >= 0 && plToIdx >= 0)
-                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.MovePlaylistQueueItem(plFromIdx, plToIdx));
+                        PostToUi(() => _ytForm.Music.MovePlaylistQueueItem(plFromIdx, plToIdx));
                     SendResponse(id, new { success = true });
                     return;
                 case "moveQueueItem":
                     var fromIdx = msg["fromIndex"]?.ToObject<int>() ?? -1;
                     var toIdx = msg["toIndex"]?.ToObject<int>() ?? -1;
                     if (fromIdx >= 0 && toIdx >= 0)
-                        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.MoveQueueItem(fromIdx, toIdx));
+                        PostToUi(() => _ytForm.Music.MoveQueueItem(fromIdx, toIdx));
                     SendResponse(id, new { success = true });
                     return;
                 case "requestLyrics":
                 {
-                    _ytForm.Dispatcher.BeginInvoke(() => _ = FetchAndSendLyricsForSongAsync());
+                    PostToUi(() => _ = FetchAndSendLyricsForSongAsync());
                     SendResponse(id, new { success = true });
                     return;
                 }
@@ -408,13 +486,16 @@ public class YoutubeFormInterop
                     result = IsFileDownloaded(msg["ytid"]?.ToString());
                     break;
                 case "getVersion":
-                    result = new { version = About.version };
+                    result = new { version = AppInfo.version };
                     break;
                 case "checkForUpdates":
                     result = await CheckForUpdatesAsync();
                     break;
                 case "getSettings":
                     result = GetFullConfig();
+                    break;
+                case "reloadConfig":
+                    result = ReloadConfig();
                     break;
                 case "saveSettings":
                     result = await SaveSettingsAsync(msg);
@@ -431,6 +512,21 @@ public class YoutubeFormInterop
                 case "getRemoteConfig":
                     result = GetRemoteConfig();
                     break;
+                case "saveRemoteConfig":
+                    result = SaveRemoteConfig(msg);
+                    break;
+                case "applyMidiDevices":
+                    result = ApplyMidiDevices(msg);
+                    break;
+                case "testMidiFeedback":
+                    result = TestMidiFeedback();
+                    break;
+                case "startMidiCapture":
+                    result = StartMidiCapture();
+                    break;
+                case "stopMidiCapture":
+                    result = StopMidiCapture();
+                    break;
                 case "getStartupData":
                     result = GetStartupData();
                     break;
@@ -440,11 +536,33 @@ public class YoutubeFormInterop
                 case "triggerAuth":
                     result = await TriggerAuthAsync();
                     break;
+                case "getAuthBrowsers":
+                    result = GetAuthBrowsers();
+                    break;
+                case "getToolStatus":
+                    result = GetToolStatus();
+                    break;
+                case "downloadTools":
+                    result = StartToolDownload(msg);
+                    break;
+                case "dismissToolPrompt":
+                    ConfigService.Instance.Update(c => c.ToolPromptDismissed = true);
+                    result = new { success = true };
+                    break;
+                case "grabCookies":
+                    result = await GrabCookiesAsync(msg);
+                    break;
+                case "submitCookies":
+                    result = SubmitCookies(msg);
+                    break;
+                case "clearAuthCookies":
+                    result = ClearAuthCookies();
+                    break;
                 case "completeSetup":
                     result = CompleteSetup(msg);
                     break;
                 case "installUpdate":
-                    result = await InstallUpdateAsync(msg);
+                    result = StartUpdate(msg);
                     break;
 
                 // ── Library ──────────────────────────────
@@ -562,6 +680,124 @@ public class YoutubeFormInterop
                 case "musicShareGetStatus":
                     result = MusicShareGetStatus();
                     break;
+                case "musicShareSetVolume":
+                    result = MusicShareSetVolume(msg);
+                    break;
+
+                // ── Announcement ──────────────────────────
+                case "announcementOpen":
+                    result = OpenAnnouncement();
+                    break;
+                case "announcementClose":
+                    result = CloseAnnouncement();
+                    break;
+                case "announcementGetState":
+                    result = EnsureAnnouncement().GetState();
+                    break;
+                case "announcementStart":
+                    result = await AnnouncementStartAsync();
+                    break;
+                case "announcementStop":
+                    result = await AnnouncementStopAsync();
+                    break;
+                case "announcementPress":
+                    result = await AnnouncementPressAsync();
+                    break;
+                case "announcementRelease":
+                    result = await AnnouncementReleaseAsync();
+                    break;
+                case "announcementSetDimDb":
+                    result = AnnouncementSetDimDb(msg);
+                    break;
+                case "announcementSetPlaySound":
+                    result = AnnouncementSetPlaySound(msg);
+                    break;
+                case "announcementSetPushToTalk":
+                    result = AnnouncementSetPushToTalk(msg);
+                    break;
+
+                // ── Soundboard ────────────────────────────
+                case "soundboardGetState":
+                    result = EnsureSoundboard().BuildState();
+                    break;
+                case "soundboardPlay":
+                    result = EnsureSoundboard().PlayButton(msg["row"]?.ToObject<int>() ?? -1, msg["col"]?.ToObject<int>() ?? -1);
+                    break;
+                case "soundboardStopAll":
+                    result = EnsureSoundboard().StopAll();
+                    break;
+                case "soundboardSetMasterVolume":
+                    result = EnsureSoundboard().SetMasterVolume(msg["value"]?.ToObject<double>() ?? 1.0);
+                    break;
+                case "soundboardSetOutputDevice":
+                    result = EnsureSoundboard().SetOutputDevice(msg["deviceNumber"]?.ToObject<int>() ?? -1);
+                    break;
+                case "soundboardSetPage":
+                    result = EnsureSoundboard().SetCurrentPage(msg["index"]?.ToObject<int>() ?? 0);
+                    break;
+                case "soundboardStepPage":
+                    result = EnsureSoundboard().StepPage(msg["delta"]?.ToObject<int>() ?? 0);
+                    break;
+                case "soundboardAddPage":
+                    result = EnsureSoundboard().AddPage(msg["name"]?.ToString() ?? "Untitled Page",
+                        msg["columns"]?.ToObject<int>() ?? 4, msg["rows"]?.ToObject<int>() ?? 3);
+                    break;
+                case "soundboardDeletePage":
+                    result = EnsureSoundboard().DeletePage(msg["index"]?.ToObject<int>() ?? -1);
+                    break;
+                case "soundboardRenamePage":
+                    result = EnsureSoundboard().RenamePage(msg["index"]?.ToObject<int>() ?? -1, msg["name"]?.ToString() ?? "");
+                    break;
+                case "soundboardMovePage":
+                    result = EnsureSoundboard().MovePage(msg["index"]?.ToObject<int>() ?? -1, msg["delta"]?.ToObject<int>() ?? 0);
+                    break;
+                case "soundboardSetGridSize":
+                    result = EnsureSoundboard().SetGridSize(msg["columns"]?.ToObject<int>() ?? 4, msg["rows"]?.ToObject<int>() ?? 3);
+                    break;
+                case "soundboardBrowseFile":
+                    result = BrowseSoundboardFile(msg["row"]?.ToObject<int>() ?? -1, msg["col"]?.ToObject<int>() ?? -1);
+                    break;
+                case "soundboardUpdateButton":
+                    result = UpdateSoundboardButton(msg);
+                    break;
+                case "soundboardDeleteButton":
+                    result = EnsureSoundboard().DeleteButton(msg["row"]?.ToObject<int>() ?? -1, msg["col"]?.ToObject<int>() ?? -1);
+                    break;
+                case "soundboardClearMidi":
+                    result = EnsureSoundboard().ClearMidiMapping(msg["row"]?.ToObject<int>() ?? -1, msg["col"]?.ToObject<int>() ?? -1);
+                    break;
+                case "soundboardSetMidiEnabled":
+                    result = EnsureSoundboard().SetMidiEnabled(msg["enabled"]?.ToObject<bool>() ?? false);
+                    break;
+                case "soundboardSetMidiDevices":
+                    result = EnsureSoundboard().SetMidiDevices(
+                        msg["inputDevice"]?.ToObject<int>() ?? -1, msg["outputDevice"]?.ToObject<int>() ?? -1);
+                    break;
+                case "soundboardSetAssignMode":
+                    result = EnsureSoundboard().SetAssignMode(msg["enabled"]?.ToObject<bool>() ?? false);
+                    break;
+                case "soundboardStartMidiAssign":
+                    result = EnsureSoundboard().StartMidiAssign();
+                    break;
+                case "soundboardSetButtonMidi":
+                    result = SetSoundboardButtonMidi(msg);
+                    break;
+                case "soundboardSetEmptyFeedback":
+                    result = EnsureSoundboard().SetEmptyFeedbackVelocity(msg["velocity"]?.ToObject<int>() ?? 10);
+                    break;
+                case "soundboardTestMidiFeedback":
+                    result = EnsureSoundboard().TestMidiFeedback();
+                    break;
+                case "soundboardSaveKeyboardShortcuts":
+                    result = EnsureSoundboard().SaveKeyboardShortcuts(msg["shortcuts"] ?? new JObject());
+                    break;
+                case "soundboardImportYoutube":
+                    result = await ImportYoutubeToSoundboardAsync(msg);
+                    break;
+                case "soundboardClose":
+                    _ytForm.NewUiRef?.CloseSoundboardWindow();
+                    result = new { success = true };
+                    break;
 
                 default:
                     result = new { error = $"Unknown method: {method}" };
@@ -598,6 +834,16 @@ public class YoutubeFormInterop
         SendMessage?.Invoke(json);
     }
 
+    private void MusicPlayerSendEvent(string eventName, object? data)
+    {
+        try
+        {
+            var json = JsonConvert.SerializeObject(new { type = "event", eventName, data });
+            _ytForm.NewUiRef?.MusicPlayerSendMessage?.Invoke(json);
+        }
+        catch { }
+    }
+
     private async Task<object> FetchDataAsync()
     {
         var cfg = ConfigService.Instance.Current;
@@ -606,10 +852,8 @@ public class YoutubeFormInterop
         var baseUrl = (cfg.Address ?? "http://127.0.0.1:5000") + "/fetch?method=";
         string dbJson, blacklistJson;
 
-        using (var client = new HttpClient { Timeout = TimeSpan.FromSeconds(45) })
+        using (var client = BackendHttpClient.Create(cfg, TimeSpan.FromSeconds(45)))
         {
-            client.DefaultRequestHeaders.Add("Authorization", cfg.BearerToken);
-
             var dbResponse = await client.PostAsync(baseUrl + "get-database", new MultipartFormDataContent()).ConfigureAwait(false);
             dbResponse.EnsureSuccessStatusCode();
             dbJson = await dbResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -666,7 +910,7 @@ public class YoutubeFormInterop
         foreach (var (ytid, timestampUtc, message, isApproved) in newEntries)
         {
             var videoUrl = $"https://www.youtube.com/watch?v={ytid}";
-            _ytForm.Dispatcher.BeginInvoke(async () =>
+            PostToUi(async () =>
             {
                 try
                 {
@@ -681,6 +925,9 @@ public class YoutubeFormInterop
 
         // Keep fetchedYtids in sync so the library delete guard works
         _ytForm.fetchedYtids = knownYtids;
+
+        // Mark that the initial load finished so downloads auto-enqueue under Autopilot.
+        _ytForm.InitialLoadComplete = true;
 
         // Server returns array of strings; enrich with cached metadata
         var blacklistArr = JArray.Parse(blacklistJson);
@@ -820,7 +1067,7 @@ public class YoutubeFormInterop
         if (string.IsNullOrEmpty(videoUrl)) return new { error = "No URL" };
         try
         {
-            var downloadPath = YoutubeForm.downloadPath;
+            var downloadPath = AppPaths.DownloadPath;
             var result = await _ytService.DownloadAndConvertVideoAsync(videoUrl, downloadPath).ConfigureAwait(false);
 
             // Auto-add to library if enabled
@@ -842,7 +1089,7 @@ public class YoutubeFormInterop
     private object IsFileDownloaded(string? videoId)
     {
         if (string.IsNullOrEmpty(videoId)) return new { downloaded = false };
-        var mp3Path = Path.Combine(YoutubeForm.downloadPath, $"{videoId}.mp3");
+        var mp3Path = Path.Combine(AppPaths.DownloadPath, $"{videoId}.mp3");
         return new { downloaded = File.Exists(mp3Path) };
     }
 
@@ -850,7 +1097,7 @@ public class YoutubeFormInterop
     {
         if (string.IsNullOrEmpty(videoId)) return new { error = "No videoId" };
         var videoUrl = $"https://www.youtube.com/watch?v={videoId}";
-        var downloadPath = YoutubeForm.downloadPath;
+        var downloadPath = AppPaths.DownloadPath;
         var mp3Path = Path.Combine(downloadPath, $"{videoId}.mp3");
         var actionToTake = action ?? "queue";
 
@@ -972,12 +1219,12 @@ public class YoutubeFormInterop
             if (_ytForm.InitialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true && File.Exists(mp3Path))
             {
                 var song = new Song(title ?? videoId, creator ?? "", null, length, mp3Path);
-                _ytForm.Dispatcher.BeginInvoke(() =>
+                PostToUi(() =>
                 {
                     if (actionToTake == "playNext")
-                        _ytForm.MusicPlayer.AddNextSongExternal(song);
+                        _ytForm.Music.AddNextSongExternal(song);
                     else
-                        _ytForm.MusicPlayer.AddSongExternal(song);
+                        _ytForm.Music.AddSongExternal(song);
                 });
             }
 
@@ -1034,10 +1281,9 @@ public class YoutubeFormInterop
         if (cfg == null) return new { error = "No config" };
         try
         {
-            using var httpClient = new HttpClient();
+            using var httpClient = BackendHttpClient.Create(cfg);
             var url = $"{cfg.Address}/fetch?method=add";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Headers.Add("Authorization", cfg.BearerToken);
             var content = new MultipartFormDataContent();
             content.Add(new StringContent(ytid), "ytid");
             request.Content = content;
@@ -1053,15 +1299,8 @@ public class YoutubeFormInterop
 
     private void ShowMusicPlayer()
     {
-        if (ConfigService.Instance.Current.UseNewUI)
-        {
-            SubscribeToMusicPlayer();
-            _ytForm.NewUiRef?.ShowMusicPlayerWindow();
-        }
-        else
-        {
-            _ytForm.Dispatcher.Invoke(() => _ytForm.ShowMusicPlayer());
-        }
+        SubscribeToMusicPlayer();
+        _ytForm.NewUiRef?.ShowMusicPlayerWindow();
     }
 
     private void CloseNewMusicPlayer()
@@ -1072,7 +1311,7 @@ public class YoutubeFormInterop
     private void SubscribeToMusicPlayer()
     {
         if (_musicPlayerSubscribed) return;
-        var mp = _ytForm.MusicPlayer;
+        var mp = _ytForm.Music;
         if (mp == null) return;
         _musicPlayerSubscribed = true;
         mp.NowPlayingTick += OnNowPlayingTick;
@@ -1080,7 +1319,7 @@ public class YoutubeFormInterop
         mp.PlaylistQueueChanged += OnQueueChanged;
     }
 
-    private void OnNowPlayingTick(object? sender, MusicPlayer.NowPlayingEventArgs args)
+    private void OnNowPlayingTick(object? sender, NowPlayingEventArgs args)
     {
         var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
         if (mpSend == null) return;
@@ -1091,8 +1330,8 @@ public class YoutubeFormInterop
             {
                 ["currentTime"] = args.CurrentTime.TotalSeconds,
                 ["totalTime"] = args.TotalTime.TotalSeconds,
-                ["isPlaying"] = _ytForm.MusicPlayer?.RemoteIsPlaying ?? false,
-                ["isPlaybackActive"] = _ytForm.MusicPlayer?.RemoteIsPlaybackActive ?? false
+                ["isPlaying"] = _ytForm.Music.IsPlaying,
+                ["isPlaybackActive"] = _ytForm.Music.IsPlaybackActive
             };
 
             var current = args.Current;
@@ -1131,7 +1370,7 @@ public class YoutubeFormInterop
             if (current == null)
                 _currentSongPath = null;
 
-            data["currentSongPath"] = _currentSongPath;
+            data["currentSongPath"] = _currentSongPath ?? string.Empty;
 
             var json = JsonConvert.SerializeObject(new
             {
@@ -1166,11 +1405,11 @@ public class YoutubeFormInterop
 
         try
         {
-            var mp = _ytForm.MusicPlayer;
+            var mp = _ytForm.Music;
             if (mp == null) return;
 
             Song? current = null;
-            _ytForm.Dispatcher.Invoke(() => { current = mp.Queue?.FirstOrDefault(); });
+            RunOnUi(() => { current = mp.Queue?.FirstOrDefault(); });
 
             if (current == null) return;
 
@@ -1179,8 +1418,8 @@ public class YoutubeFormInterop
                 ["title"] = current.Title ?? "",
                 ["artist"] = current.Artist ?? "",
                 ["duration"] = current.length ?? "",
-                ["isPlaying"] = mp.RemoteIsPlaying,
-                ["isPlaybackActive"] = mp.RemoteIsPlaybackActive
+                ["isPlaying"] = mp.IsPlaying,
+                ["isPlaybackActive"] = mp.IsPlaybackActive
             };
 
             var thumb = GetThumbnailForSongPath(current.songPath);
@@ -1226,7 +1465,7 @@ public class YoutubeFormInterop
 
         try
         {
-            var mp = _ytForm.MusicPlayer;
+            var mp = _ytForm.Music;
             if (mp == null) return;
 
             // Build a path→library lookup for enriching queue items
@@ -1309,7 +1548,7 @@ public class YoutubeFormInterop
                     queue = queueData,
                     playlistQueue = playlistQueueData,
                     currentSongPath = _currentSongPath,
-                    isPlaying = mp.RemoteIsPlaybackActive
+                    isPlaying = mp.IsPlaybackActive
                 }
             });
             mpSend(json);
@@ -1327,7 +1566,7 @@ public class YoutubeFormInterop
             var source = ConfigService.Instance.Current?.PresentationSource ?? "player";
             if (source != "player") return;
 
-            var mp = _ytForm.MusicPlayer;
+            var mp = _ytForm.Music;
             if (mp == null) return;
 
             var queue = mp.Queue;
@@ -1361,7 +1600,7 @@ public class YoutubeFormInterop
         }
     }
 
-    private string? GetThumbnailForSongPath(string songPath)
+    private string? GetThumbnailForSongPath(string? songPath)
     {
         try
         {
@@ -1427,16 +1666,305 @@ public class YoutubeFormInterop
 
     private void ShowSoundboard()
     {
-        _ytForm.Dispatcher.Invoke(() => _ytForm.ShowSoundboard());
+        _ = EnsureSoundboard();
+        _ytForm.NewUiRef?.ShowSoundboardWindow();
     }
 
-    private void ShowSettings()
+    // ──────────────────────────────────────────────────
+    //  Soundboard helpers
+    // ──────────────────────────────────────────────────
+
+    private SoundboardEngine EnsureSoundboard()
     {
-        _ytForm.Dispatcher.Invoke(() =>
+        lock (_soundboardLock)
         {
-            var settings = new Settings();
-            settings.Show();
-        });
+            if (_soundboard == null)
+            {
+                _soundboard = new SoundboardEngine();
+                _soundboard.PlaybackUpdated += data => SoundboardSendEvent("soundboardPlayback", data);
+                _soundboard.MidiCaptured += data => SoundboardSendEvent("soundboardMidiCaptured", data);
+                _soundboard.MidiError += message => SoundboardSendEvent("soundboardMidiError", new { message });
+            }
+            return _soundboard;
+        }
+    }
+
+    /// <summary>Stops playback and releases MIDI when the soundboard window closes.</summary>
+    public void OnSoundboardClosed()
+    {
+        SoundboardEngine? engine;
+        lock (_soundboardLock)
+        {
+            engine = _soundboard;
+            _soundboard = null;
+        }
+        engine?.Dispose();
+    }
+
+    private void SoundboardSendEvent(string eventName, object? data)
+    {
+        try
+        {
+            var json = JsonConvert.SerializeObject(new { type = "event", eventName, data });
+            _ytForm.NewUiRef?.SoundboardSendMessage?.Invoke(json);
+        }
+        catch { }
+    }
+
+    // ──────────────────────────────────────────────────
+    //  Visualization helpers
+    // ──────────────────────────────────────────────────
+
+    private void ShowVisualization()
+    {
+        EnsureVisualization();
+        _ytForm.NewUiRef?.ShowVisualizationWindow();
+    }
+
+    private VisualizationStreamer? EnsureVisualization()
+    {
+        lock (_vizLock)
+        {
+            var mp = _ytForm.Music;
+            if (mp == null) return null;
+            if (_vizStreamer == null)
+            {
+                _vizStreamer = new VisualizationStreamer(_ytForm.Music);
+                _vizStreamer.FrameReady += data => VisualizationSendEvent("audioSamples", data);
+            }
+            return _vizStreamer;
+        }
+    }
+
+    /// <summary>Releases the audio stream subscription when the visualization window closes.</summary>
+    public void OnVisualizationClosed()
+    {
+        VisualizationStreamer? streamer;
+        lock (_vizLock)
+        {
+            streamer = _vizStreamer;
+            _vizStreamer = null;
+        }
+        streamer?.Dispose();
+    }
+
+    private void VisualizationSendEvent(string eventName, object? data)
+    {
+        try
+        {
+            var json = JsonConvert.SerializeObject(new { type = "event", eventName, data });
+            _ytForm.NewUiRef?.VisualizationSendMessage?.Invoke(json);
+        }
+        catch { }
+    }
+
+    // ──────────────────────────────────────────────────
+    //  Announcement helpers
+    // ──────────────────────────────────────────────────
+
+    private AnnouncementEngine EnsureAnnouncement()
+    {
+        lock (_announcementLock)
+        {
+            if (_announcement == null)
+            {
+                var mp = _ytForm.Music ?? throw new InvalidOperationException("Music player unavailable");
+                var engine = new AnnouncementEngine(_ytForm.Music);
+                engine.StateChanged += data => AnnouncementSendEvent("announcementState", data);
+
+                // Route remote-control announcement actions to the web window.
+                mp.RemoteAnnouncementHandler = async () =>
+                {
+                    EnsureAnnouncement();
+                    _ytForm.NewUiRef?.ShowAnnouncementWindow();
+                    await _announcement!.PressOrToggleAsync();
+                };
+                mp.RemoteAnnouncementReleaseHandler = async () =>
+                {
+                    if (_announcement != null) await _announcement.ReleaseAsync();
+                };
+                mp.RemoteAnnouncementActiveProvider = () => _announcement?.IsActive ?? false;
+                mp.AnnouncementSettingsChanged = () => _announcement?.NotifySettingsChanged();
+
+                _announcement = engine;
+            }
+            return _announcement;
+        }
+    }
+
+    private object OpenAnnouncement()
+    {
+        var engine = EnsureAnnouncement();
+        _ytForm.NewUiRef?.ShowAnnouncementWindow();
+        return engine.GetState();
+    }
+
+    private object CloseAnnouncement()
+    {
+        _ytForm.NewUiRef?.CloseAnnouncementWindow();
+        return new { success = true };
+    }
+
+    private async Task<object> AnnouncementStartAsync()
+    {
+        await EnsureAnnouncement().StartAsync().ConfigureAwait(false);
+        return new { success = true };
+    }
+
+    private async Task<object> AnnouncementStopAsync()
+    {
+        await EnsureAnnouncement().StopAsync().ConfigureAwait(false);
+        return new { success = true };
+    }
+
+    private async Task<object> AnnouncementPressAsync()
+    {
+        await EnsureAnnouncement().PressOrToggleAsync().ConfigureAwait(false);
+        return new { success = true };
+    }
+
+    private async Task<object> AnnouncementReleaseAsync()
+    {
+        await EnsureAnnouncement().ReleaseAsync().ConfigureAwait(false);
+        return new { success = true };
+    }
+
+    /// <summary>Restores the music if an announcement is in progress when the window closes.</summary>
+    public void OnAnnouncementClosed()
+    {
+        var engine = _announcement;
+        if (engine != null) _ = engine.OnClosedAsync();
+    }
+
+    private void AnnouncementSendEvent(string eventName, object? data)
+    {
+        try
+        {
+            var json = JsonConvert.SerializeObject(new { type = "event", eventName, data });
+            _ytForm.NewUiRef?.AnnouncementSendMessage?.Invoke(json);
+        }
+        catch { }
+    }
+
+    private object AnnouncementSetDimDb(JObject msg)
+    {
+        var value = msg["value"]?.ToObject<double>() ?? 20.0;
+        ConfigService.Instance.Update(cfg => cfg.AnnouncementDimDb = Math.Clamp(value, 0.0, 50.0));
+        _announcement?.NotifySettingsChanged();
+        return new { success = true };
+    }
+
+    private object AnnouncementSetPlaySound(JObject msg)
+    {
+        var enabled = msg["enabled"]?.ToObject<bool>() ?? true;
+        ConfigService.Instance.Update(cfg => cfg.AnnouncementPlaySound = enabled);
+        _announcement?.NotifySettingsChanged();
+        return new { success = true };
+    }
+
+    private object AnnouncementSetPushToTalk(JObject msg)
+    {
+        var enabled = msg["enabled"]?.ToObject<bool>() ?? true;
+        ConfigService.Instance.Update(cfg => cfg.AnnouncementPushToTalk = enabled);
+        _announcement?.NotifySettingsChanged();
+        return new { success = true };
+    }
+
+    private object BrowseSoundboardFile(int row, int col)
+    {
+        try
+        {
+            var files = ShowOpenFileDialog?.Invoke("Select Sound File",
+                "*.mp3;*.wav;*.m4a;*.aac;*.ogg;*.flac;*.wma", false);
+            var chosen = files != null && files.Length > 0 ? files[0] : null;
+
+            if (string.IsNullOrEmpty(chosen))
+                return new { cancelled = true };
+
+            if (!SoundboardEngine.IsSupportedAudioFile(chosen))
+                return new { error = "Unsupported file format." };
+
+            var fileName = SoundboardEngine.CopyIntoSoundboardFolder(chosen);
+            var duration = SoundboardEngine.ReadAudioDuration(
+                Path.Combine(SoundboardConfiguration.GetSoundboardFolder(), fileName));
+            return new { success = true, fileName, duration, name = Path.GetFileNameWithoutExtension(fileName) };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private object UpdateSoundboardButton(JObject msg)
+    {
+        var row = msg["row"]?.ToObject<int>() ?? -1;
+        var col = msg["col"]?.ToObject<int>() ?? -1;
+        int? customDevice = msg["customOutputDeviceNumber"] == null || msg["customOutputDeviceNumber"]!.Type == JTokenType.Null
+            ? null
+            : msg["customOutputDeviceNumber"]!.ToObject<int>();
+
+        return EnsureSoundboard().UpdateButton(
+            row, col,
+            msg["name"]?.ToString() ?? "",
+            msg["icon"]?.ToString() ?? "",
+            msg["color"]?.ToString() ?? "",
+            msg["soundFile"]?.ToString() ?? "",
+            msg["fadeIn"]?.ToObject<bool>() ?? false,
+            msg["fadeOut"]?.ToObject<bool>() ?? false,
+            msg["repeatMode"]?.ToString() ?? "none",
+            msg["volume"]?.ToObject<double>() ?? 1.0,
+            customDevice,
+            msg["shortcutEnabled"]?.ToObject<bool>() ?? false,
+            msg["shortcutGesture"]?.ToString() ?? "");
+    }
+
+    private object SetSoundboardButtonMidi(JObject msg)
+    {
+        var row = msg["row"]?.ToObject<int>() ?? -1;
+        var col = msg["col"]?.ToObject<int>() ?? -1;
+        var mapping = msg["mapping"] as JObject;
+        MidiMapping? result = null;
+        if (mapping != null)
+        {
+            result = new MidiMapping
+            {
+                Channel = mapping["channel"]?.ToObject<int>() ?? 1,
+                Note = mapping["note"]?.ToObject<int>() ?? 0,
+                MessageType = mapping["messageType"]?.ToString() ?? "NoteOn",
+                VelocityPressed = mapping["velocityPressed"]?.ToObject<int>() ?? 127,
+                VelocityUnpressed = mapping["velocityUnpressed"]?.ToObject<int>() ?? 0
+            };
+        }
+        return EnsureSoundboard().SetButtonMidi(row, col, result);
+    }
+
+    private async Task<object> ImportYoutubeToSoundboardAsync(JObject msg)
+    {
+        var row = msg["row"]?.ToObject<int>() ?? -1;
+        var col = msg["col"]?.ToObject<int>() ?? -1;
+        var url = msg["url"]?.ToString();
+        if (string.IsNullOrWhiteSpace(url)) return new { error = "No URL" };
+
+        try
+        {
+            SoundboardSendEvent("soundboardImportProgress", new { row, col, stage = "downloading", progress = 0 });
+            var downloadPath = AppPaths.DownloadPath;
+            var result = await _ytService.DownloadAndConvertVideoAsync(url, downloadPath).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(result) || !File.Exists(result))
+                return new { error = "Download failed" };
+
+            SoundboardSendEvent("soundboardImportProgress", new { row, col, stage = "importing", progress = 100 });
+            var fileName = SoundboardEngine.CopyIntoSoundboardFolder(result);
+            var duration = SoundboardEngine.ReadAudioDuration(
+                Path.Combine(SoundboardConfiguration.GetSoundboardFolder(), fileName));
+            SoundboardSendEvent("soundboardImportProgress", new { row, col, stage = "done", progress = 100 });
+            return new { success = true, fileName, duration, name = Path.GetFileNameWithoutExtension(fileName) };
+        }
+        catch (Exception ex)
+        {
+            SoundboardSendEvent("soundboardImportProgress", new { row, col, stage = "error", progress = 0, message = ex.Message });
+            return new { error = ex.Message };
+        }
     }
 
     private Task<object> QueueSongAsync(string? videoId)
@@ -1445,7 +1973,7 @@ public class YoutubeFormInterop
         if (string.IsNullOrEmpty(ytid)) return Task.FromResult<object>(new { error = "No videoId" });
         try
         {
-            _ytForm.Dispatcher.InvokeAsync(() => _ytForm.QueueSongById(ytid));
+            PostToUi(() => _ytForm.QueueSongById(ytid));
             return Task.FromResult<object>(new { success = true });
         }
         catch (Exception ex)
@@ -1460,7 +1988,7 @@ public class YoutubeFormInterop
         if (string.IsNullOrEmpty(ytid)) return Task.FromResult<object>(new { error = "No videoId" });
         try
         {
-            _ytForm.Dispatcher.InvokeAsync(() => _ytForm.PlayNextById(ytid));
+            PostToUi(() => _ytForm.PlayNextById(ytid));
             return Task.FromResult<object>(new { success = true });
         }
         catch (Exception ex)
@@ -1493,7 +2021,22 @@ public class YoutubeFormInterop
             libraryAutoAddDownloads = cfg.LibraryAutoAddDownloads,
             libraryRemoveMissingOnScan = cfg.LibraryRemoveMissingOnScan,
             libraryRecommendationsEnabled = cfg.LibraryRecommendationsEnabled,
-            logPlayback = cfg.LogPlayback
+            logPlayback = cfg.LogPlayback,
+            useNewUI = cfg.UseNewUI,
+            autoStart = cfg.AutoStart,
+            startMinimized = cfg.StartMinimized,
+            minimizeToTray = cfg.MinimizeToTray,
+            closeToTray = cfg.CloseToTray,
+            traySupported = TrayIconFactory.IsSupported,
+            autoStartSupported = AutoStart.IsSupported,
+            globalKeyboardShortcuts = cfg.GlobalKeyboardShortcuts,
+            globalShortcutsSupported = RemoteControlService.Instance.GlobalShortcutsSupported,
+            registeredGlobalShortcuts = RemoteControlService.Instance.RegisteredGlobalShortcuts,
+            toolPromptDismissed = cfg.ToolPromptDismissed,
+            systemMediaIntegration = cfg.SystemMediaIntegration,
+            systemMediaSupported = MediaSessionFactory.IsSupported,
+            systemMediaBackend = MediaSessionFactory.SupportedBackendName,
+            systemMediaActive = SystemMediaActive
         };
     }
 
@@ -1502,32 +2045,262 @@ public class YoutubeFormInterop
         var cfg = ConfigService.Instance.Current;
         if (cfg == null) return new { };
         var remote = RemoteControlConfiguration.Ensure(cfg.RemoteControl);
-        static string ShortcutLabel(KeyboardShortcutConfig? k) =>
-            k != null && k.Enabled && !string.IsNullOrEmpty(k.Gesture) ? k.Gesture : "";
-        static string MidiLabel(MidiMapping? m) =>
-            m != null && m.IsConfigured ? $"Ch{m.Channel} {m.MessageType} {m.Note}" : "";
+
+        // Keybinds keyed by action id (matches the web UI action ids)
+        var keybinds = new Dictionary<string, object>
+        {
+            ["PlayPause"] = KeybindData(remote.PlayPauseKeybind),
+            ["SkipNext"] = KeybindData(remote.SkipNextKeybind),
+            ["Previous"] = KeybindData(remote.PreviousKeybind),
+            ["Stop"] = KeybindData(remote.StopKeybind),
+            ["VolumeUp"] = KeybindData(remote.VolumeUpKeybind),
+            ["VolumeDown"] = KeybindData(remote.VolumeDownKeybind),
+            ["CrossfadeUp"] = KeybindData(remote.CrossfadeUpKeybind),
+            ["CrossfadeDown"] = KeybindData(remote.CrossfadeDownKeybind),
+            ["Announcement"] = KeybindData(remote.AnnouncementKeybind),
+            ["AnnouncementPlaySoundToggle"] = KeybindData(remote.AnnouncementPlaySoundToggleKeybind),
+            ["AnnouncementPushToTalkToggle"] = KeybindData(remote.AnnouncementPushToTalkToggleKeybind),
+            ["AnnouncementDimDbUp"] = KeybindData(remote.AnnouncementDimDbUpKeybind),
+            ["AnnouncementDimDbDown"] = KeybindData(remote.AnnouncementDimDbDownKeybind)
+        };
+
+        var midis = new Dictionary<string, object?>
+        {
+            ["PlayPause"] = MidiData(remote.PlayPauseMidi),
+            ["SkipNext"] = MidiData(remote.SkipNextMidi),
+            ["Previous"] = MidiData(remote.PreviousMidi),
+            ["Stop"] = MidiData(remote.StopMidi),
+            ["Volume"] = MidiData(remote.VolumeMidi),
+            ["Crossfade"] = MidiData(remote.CrossfadeMidi),
+            ["Announcement"] = MidiData(remote.AnnouncementMidi),
+            ["AnnouncementPlaySoundToggle"] = MidiData(remote.AnnouncementPlaySoundToggleMidi),
+            ["AnnouncementPushToTalkToggle"] = MidiData(remote.AnnouncementPushToTalkToggleMidi),
+            ["AnnouncementDimDb"] = MidiData(remote.AnnouncementDimDbMidi)
+        };
+
         return new
         {
             midiEnabled = remote.MidiEnabled,
             midiInputDevice = remote.MidiInputDevice,
             midiOutputDevice = remote.MidiOutputDevice,
-            mappings = new
-            {
-                playPause = new { keybind = ShortcutLabel(remote.PlayPauseKeybind), midi = MidiLabel(remote.PlayPauseMidi) },
-                skipNext = new { keybind = ShortcutLabel(remote.SkipNextKeybind), midi = MidiLabel(remote.SkipNextMidi) },
-                previous = new { keybind = ShortcutLabel(remote.PreviousKeybind), midi = MidiLabel(remote.PreviousMidi) },
-                stop = new { keybind = ShortcutLabel(remote.StopKeybind), midi = MidiLabel(remote.StopMidi) },
-                volumeUp = new { keybind = ShortcutLabel(remote.VolumeUpKeybind), midi = "" },
-                volumeDown = new { keybind = ShortcutLabel(remote.VolumeDownKeybind), midi = "" },
-                crossfadeUp = new { keybind = ShortcutLabel(remote.CrossfadeUpKeybind), midi = "" },
-                crossfadeDown = new { keybind = ShortcutLabel(remote.CrossfadeDownKeybind), midi = "" },
-                announcement = new { keybind = ShortcutLabel(remote.AnnouncementKeybind), midi = MidiLabel(remote.AnnouncementMidi) },
-                announcementSound = new { keybind = ShortcutLabel(remote.AnnouncementPlaySoundToggleKeybind), midi = MidiLabel(remote.AnnouncementPlaySoundToggleMidi) },
-                announcementPushToTalk = new { keybind = ShortcutLabel(remote.AnnouncementPushToTalkToggleKeybind), midi = MidiLabel(remote.AnnouncementPushToTalkToggleMidi) },
-                announcementDimUp = new { keybind = ShortcutLabel(remote.AnnouncementDimDbUpKeybind), midi = "" },
-                announcementDimDown = new { keybind = ShortcutLabel(remote.AnnouncementDimDbDownKeybind), midi = "" }
-            }
+            inputs = GetMidiInputDeviceList(),
+            outputs = GetMidiOutputDeviceList(),
+            keybinds,
+            midis
         };
+    }
+
+    private static object KeybindData(KeyboardShortcutConfig? k) => new
+    {
+        enabled = k?.Enabled == true && !string.IsNullOrWhiteSpace(k.Gesture),
+        gesture = k?.Gesture ?? string.Empty
+    };
+
+    private static object? MidiData(MidiMapping? m)
+    {
+        if (m == null || !m.IsConfigured) return null;
+        return new
+        {
+            channel = m.Channel,
+            note = m.Note,
+            messageType = m.MessageType,
+            velocityPressed = m.VelocityPressed,
+            velocityUnpressed = m.VelocityUnpressed
+        };
+    }
+
+    private List<object> GetMidiInputDeviceList() =>
+        RemoteControlService.Instance.MidiService.GetInputDevices()
+            .Select(d => (object)new { number = d.DeviceNumber, name = d.Name })
+            .ToList();
+
+    private List<object> GetMidiOutputDeviceList() =>
+        RemoteControlService.Instance.MidiService.GetOutputDevices()
+            .Select(d => (object)new { number = d.DeviceNumber, name = d.Name })
+            .ToList();
+
+    private object ReloadConfig()
+    {
+        try
+        {
+            ConfigService.Instance.Reload();
+            RemoteControlService.Instance.ApplyConfig();
+            return new { success = true };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private object SaveRemoteConfig(JObject msg)
+    {
+        try
+        {
+            ConfigService.Instance.Update(cfg =>
+            {
+                var remote = RemoteControlConfiguration.Ensure(cfg.RemoteControl);
+
+                if (msg.TryGetValue("midiEnabled", out var me)) remote.MidiEnabled = me.ToObject<bool>();
+                if (msg.TryGetValue("midiInputDevice", out var mi)) remote.MidiInputDevice = mi.ToObject<int>();
+                if (msg.TryGetValue("midiOutputDevice", out var mo)) remote.MidiOutputDevice = mo.ToObject<int>();
+
+                if (msg["keybinds"] is JObject kb)
+                {
+                    ApplyKeybind(kb, "PlayPause", remote.PlayPauseKeybind);
+                    ApplyKeybind(kb, "SkipNext", remote.SkipNextKeybind);
+                    ApplyKeybind(kb, "Previous", remote.PreviousKeybind);
+                    ApplyKeybind(kb, "Stop", remote.StopKeybind);
+                    ApplyKeybind(kb, "VolumeUp", remote.VolumeUpKeybind);
+                    ApplyKeybind(kb, "VolumeDown", remote.VolumeDownKeybind);
+                    ApplyKeybind(kb, "CrossfadeUp", remote.CrossfadeUpKeybind);
+                    ApplyKeybind(kb, "CrossfadeDown", remote.CrossfadeDownKeybind);
+                    ApplyKeybind(kb, "Announcement", remote.AnnouncementKeybind);
+                    ApplyKeybind(kb, "AnnouncementPlaySoundToggle", remote.AnnouncementPlaySoundToggleKeybind);
+                    ApplyKeybind(kb, "AnnouncementPushToTalkToggle", remote.AnnouncementPushToTalkToggleKeybind);
+                    ApplyKeybind(kb, "AnnouncementDimDbUp", remote.AnnouncementDimDbUpKeybind);
+                    ApplyKeybind(kb, "AnnouncementDimDbDown", remote.AnnouncementDimDbDownKeybind);
+                }
+
+                if (msg["midis"] is JObject midi)
+                {
+                    ApplyMidi(midi, "PlayPause", m => remote.PlayPauseMidi = m);
+                    ApplyMidi(midi, "SkipNext", m => remote.SkipNextMidi = m);
+                    ApplyMidi(midi, "Previous", m => remote.PreviousMidi = m);
+                    ApplyMidi(midi, "Stop", m => remote.StopMidi = m);
+                    ApplyMidi(midi, "Volume", m => remote.VolumeMidi = m);
+                    ApplyMidi(midi, "Crossfade", m => remote.CrossfadeMidi = m);
+                    ApplyMidi(midi, "Announcement", m => remote.AnnouncementMidi = m);
+                    ApplyMidi(midi, "AnnouncementPlaySoundToggle", m => remote.AnnouncementPlaySoundToggleMidi = m);
+                    ApplyMidi(midi, "AnnouncementPushToTalkToggle", m => remote.AnnouncementPushToTalkToggleMidi = m);
+                    ApplyMidi(midi, "AnnouncementDimDb", m => remote.AnnouncementDimDbMidi = m);
+                }
+            });
+
+            RemoteControlService.Instance.ApplyConfig();
+            return new { success = true };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private static void ApplyKeybind(JObject keybinds, string action, KeyboardShortcutConfig target)
+    {
+        if (keybinds[action] is not JObject o) return;
+        target.Gesture = o["gesture"]?.ToString() ?? string.Empty;
+        target.Enabled = (o["enabled"]?.ToObject<bool>() ?? false) && !string.IsNullOrWhiteSpace(target.Gesture);
+    }
+
+    private static void ApplyMidi(JObject midis, string action, Action<MidiMapping?> setter)
+    {
+        if (!midis.ContainsKey(action)) return;
+        if (midis[action] is not JObject o)
+        {
+            setter(null);
+            return;
+        }
+        setter(new MidiMapping
+        {
+            Channel = o["channel"]?.ToObject<int>() ?? 1,
+            Note = o["note"]?.ToObject<int>() ?? 0,
+            MessageType = o["messageType"]?.ToString() ?? "NoteOn",
+            VelocityPressed = o["velocityPressed"]?.ToObject<int>() ?? 127,
+            VelocityUnpressed = o["velocityUnpressed"]?.ToObject<int>() ?? 0
+        });
+    }
+
+    private object ApplyMidiDevices(JObject msg)
+    {
+        try
+        {
+            var enabled = msg["enabled"]?.ToObject<bool>() ?? false;
+            var input = msg["inputDevice"]?.ToObject<int>() ?? -1;
+            var output = msg["outputDevice"]?.ToObject<int>() ?? -1;
+            RemoteControlService.Instance.ApplyMidiDevices(input, output, enabled);
+            return new { success = true };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private object TestMidiFeedback()
+    {
+        try
+        {
+            var svc = RemoteControlService.Instance.MidiService;
+            if (!svc.IsEnabled || svc.OutputDeviceNumber == null)
+                return new { error = "Please enable MIDI and select an output device first." };
+
+            for (int note = 0; note < 128; note++) svc.SendNoteOn(1, note, 64);
+            _ = Task.Delay(500).ContinueWith(_ =>
+            {
+                for (int note = 0; note < 128; note++) svc.SendNoteOff(1, note);
+            });
+            return new { success = true };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private object StartMidiCapture()
+    {
+        try
+        {
+            var svc = RemoteControlService.Instance.MidiService;
+            lock (_midiCaptureLock)
+            {
+                if (!_midiCaptureSubscribed)
+                {
+                    svc.MidiMessageReceived += OnMidiCaptureMessage;
+                    _midiCaptureSubscribed = true;
+                }
+            }
+            return new { success = true };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private object StopMidiCapture()
+    {
+        try
+        {
+            UnsubscribeMidiCapture();
+            return new { success = true };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private void UnsubscribeMidiCapture()
+    {
+        try
+        {
+            var svc = RemoteControlService.Instance.MidiService;
+            lock (_midiCaptureLock)
+            {
+                if (!_midiCaptureSubscribed) return;
+                svc.MidiMessageReceived -= OnMidiCaptureMessage;
+                _midiCaptureSubscribed = false;
+            }
+        }
+        catch { }
+    }
+
+    private void OnMidiCaptureMessage(object? sender, MidiMessage message)
+    {
+        var parsed = MidiEventParser.Parse(message);
+        if (parsed != null) SendEvent("midiInput", parsed);
     }
 
     private async Task<object> SaveSettingsAsync(JObject msg)
@@ -1568,11 +2341,39 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("libraryRemoveMissingOnScan", out var lrm)) cfg.LibraryRemoveMissingOnScan = lrm.ToObject<bool>();
                 if (settings.TryGetValue("libraryRecommendationsEnabled", out var lre)) cfg.LibraryRecommendationsEnabled = lre.ToObject<bool>();
                 if (settings.TryGetValue("logPlayback", out var lp)) cfg.LogPlayback = lp.ToObject<bool>();
+                if (settings.TryGetValue("useNewUI", out var un)) cfg.UseNewUI = un.ToObject<bool>();
+                if (settings.TryGetValue("autoStart", out var asu)) cfg.AutoStart = asu.ToObject<bool>();
+                if (settings.TryGetValue("startMinimized", out var sm)) cfg.StartMinimized = sm.ToObject<bool>();
+                if (settings.TryGetValue("minimizeToTray", out var mtt)) cfg.MinimizeToTray = mtt.ToObject<bool>();
+                if (settings.TryGetValue("closeToTray", out var ctt)) cfg.CloseToTray = ctt.ToObject<bool>();
+                if (settings.TryGetValue("globalKeyboardShortcuts", out var gks)) cfg.GlobalKeyboardShortcuts = gks.ToObject<bool>();
+                if (settings.TryGetValue("systemMediaIntegration", out var smi)) cfg.SystemMediaIntegration = smi.ToObject<bool>();
 
                 if (settings.TryGetValue("normalizeVolume", out var nv2) && !nv2.ToObject<bool>())
                 {
                     cfg.NormalizationActive = false;
                 }
+            });
+
+            // Apply the OS-level autostart registration (best-effort).
+            ApplyAutoStart();
+
+            // Re-register global hotkeys if the toggle changed.
+            if (settings.ContainsKey("globalKeyboardShortcuts"))
+            {
+                try { RemoteControlService.Instance.ApplyConfig(); } catch { }
+            }
+
+            // Start/stop the OS media-control integration if the toggle changed.
+            if (settings.ContainsKey("systemMediaIntegration"))
+            {
+                try { ApplySystemMediaIntegration(); } catch { }
+            }
+
+            // Keep the (already open) music player's Announcement button in sync.
+            MusicPlayerSendEvent("musicPlayerConfig", new
+            {
+                enableAnnouncements = ConfigService.Instance.Current?.EnableAnnouncements ?? true
             });
 
             return new { success = true };
@@ -1581,6 +2382,102 @@ public class YoutubeFormInterop
         {
             return new { error = ex.Message };
         }
+    }
+
+    /// <summary>Applies the OS-level autostart registration from the current config (best-effort).</summary>
+    private void ApplyAutoStart()
+    {
+        try
+        {
+            var cfg = ConfigService.Instance.Current;
+            if (cfg == null) return;
+            AutoStart.SetEnabled(cfg.AutoStart, cfg.StartMinimized);
+        }
+        catch { }
+    }
+
+    /// <summary>Whether the OS media-control integration is currently connected.</summary>
+    public bool SystemMediaActive
+    {
+        get { lock (_mediaSessionLock) return _mediaSessionBridge != null; }
+    }
+
+    /// <summary>
+    /// Starts the OS media-control integration (MPRIS/SMTC/...) if it is enabled
+    /// and supported. Called after the UI is up — never from the constructor, so
+    /// headless tests do not open a D-Bus service.
+    /// </summary>
+    /// <param name="windowHandle">
+    /// The top-level window handle (required by SMTC on Windows; ignored elsewhere).
+    /// Remembered so the toggle can restart the session later.
+    /// </param>
+    public void StartSystemMediaIntegration(IntPtr windowHandle = default)
+    {
+        try
+        {
+            if (windowHandle != IntPtr.Zero) _mediaSessionWindowHandle = windowHandle;
+
+            if (ConfigService.Instance.Current?.SystemMediaIntegration != true) return;
+            if (!MediaSessionFactory.IsSupported) return;
+
+            lock (_mediaSessionLock)
+            {
+                if (_mediaSessionBridge != null || _mediaSessionStartTask != null) return;
+                _mediaSessionStartTask = StartSystemMediaIntegrationAsync(_mediaSessionWindowHandle);
+            }
+        }
+        catch { }
+    }
+
+    private async Task StartSystemMediaIntegrationAsync(IntPtr windowHandle)
+    {
+        try
+        {
+            var session = await MediaSessionFactory.CreateAsync(windowHandle).ConfigureAwait(false);
+            if (!session.IsSupported)
+            {
+                try { session.Dispose(); } catch { }
+                return;
+            }
+
+            var bridge = new MediaSessionBridge(
+                _ytForm.Music,
+                session,
+                song => MediaArtwork.Resolve(song, AppPaths.NowPlayingArtworkDir),
+                _ytForm.RunOnUi);
+
+            bridge.RaiseRequested += (_, _) => { try { _ytForm.ShowMusicPlayer(); } catch { } };
+            bridge.QuitRequested += (_, _) => { try { RunOnUi(() => _ytForm.NewUiRef?.Close()); } catch { } };
+
+            lock (_mediaSessionLock) { _mediaSessionBridge = bridge; }
+            bridge.Refresh();
+        }
+        catch
+        {
+            // Media integration is optional; never let it break playback.
+        }
+    }
+
+    /// <summary>Starts or stops the media integration to match the current config.</summary>
+    public void ApplySystemMediaIntegration()
+    {
+        if (ConfigService.Instance.Current?.SystemMediaIntegration == true)
+            StartSystemMediaIntegration();
+        else
+            StopSystemMediaIntegration();
+    }
+
+    private void StopSystemMediaIntegration()
+    {
+        MediaSessionBridge? bridge;
+        lock (_mediaSessionLock)
+        {
+            bridge = _mediaSessionBridge;
+            _mediaSessionBridge = null;
+            _mediaSessionStartTask = null;
+        }
+
+        try { bridge?.Dispose(); } catch { }
     }
 
     private async Task<object> ToggleSendinAsync()
@@ -1637,7 +2534,7 @@ public class YoutubeFormInterop
         var state = LaunchOptionsStorage.Load();
         return new
         {
-            version = About.version,
+            version = AppInfo.version,
             launchOptions = new
             {
                 rememberSelection = state.RememberSelection,
@@ -1667,32 +2564,104 @@ public class YoutubeFormInterop
         }
     }
 
-    private Task<object> TriggerAuthAsync()
+    private async Task<object> TriggerAuthAsync()
     {
-        var tcs = new TaskCompletionSource<object>();
-        System.Windows.Application.Current.Dispatcher.Invoke(async () =>
+        // Browser selection is required; the web UI shows a picker.
+        await Task.CompletedTask;
+        return new { success = false, needsBrowser = true, browsers = YoutubeCookieService.SupportedBrowsers };
+    }
+
+    private object GetAuthBrowsers() => new { browsers = YoutubeCookieService.SupportedBrowsers };
+
+    private object GetToolStatus()
+    {
+        var status = ToolManager.GetStatus();
+        return new
         {
-            try
+            ffmpeg = new { found = status.Ffmpeg.Found, path = status.Ffmpeg.Path ?? "" },
+            ffprobe = new { found = status.Ffprobe.Found, path = status.Ffprobe.Path ?? "" },
+            ytDlp = new { found = status.YtDlp.Found, path = status.YtDlp.Path ?? "" },
+            audioReady = status.AudioReady,
+            allPresent = status.AllPresent,
+            toolsDirectory = ToolManager.ResolveTargetDirectory()
+        };
+    }
+
+    private object StartToolDownload(JObject msg)
+    {
+        try
+        {
+            bool ffmpeg = msg["ffmpeg"]?.ToObject<bool>() ?? false;
+            bool ytDlp = msg["ytDlp"]?.ToObject<bool>() ?? false;
+            if (!ffmpeg && !ytDlp) return new { error = "Nothing selected to download" };
+
+            _ = Task.Run(async () =>
             {
-                var authForm = new Authentication();
-                authForm.CookiesRetrieved += cookies =>
+                try
                 {
-                    tcs.TrySetResult(new { success = true, cookieCount = cookies.Count });
-                };
-                authForm.Show();
-                // If auth window closes without retrieving cookies, treat as failure
-                authForm.Closed += (s, e) =>
+                    if (ffmpeg) await ToolManager.InstallFfmpegAsync(p => SendEvent("toolProgress", p)).ConfigureAwait(false);
+                    if (ytDlp) await ToolManager.InstallYtDlpAsync(p => SendEvent("toolProgress", p)).ConfigureAwait(false);
+                }
+                catch (Exception ex)
                 {
-                    if (!tcs.Task.IsCompleted)
-                        tcs.TrySetResult(new { success = false, error = "Authentication window closed" });
-                };
-            }
-            catch (Exception ex)
-            {
-                tcs.TrySetResult(new { success = false, error = ex.Message });
-            }
-        });
-        return tcs.Task;
+                    SendEvent("toolProgress", new ToolInstallProgress { Tool = "tools", Stage = "error", Message = ex.Message });
+                }
+                finally
+                {
+                    SendEvent("toolStatus", GetToolStatus());
+                }
+            });
+
+            return new { success = true, started = true };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }    private async Task<object> GrabCookiesAsync(JObject msg)
+    {
+        var browser = msg["browser"]?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(browser)) return new { error = "No browser specified" };
+
+        var (ok, cookies, error) = await YoutubeCookieService.GrabFromBrowserAsync(browser).ConfigureAwait(false);
+        if (!ok || cookies.Count == 0)
+            return new { error = error ?? "No cookies found" };
+
+        ApplyCookies(cookies);
+        return new { success = true, cookieCount = cookies.Count };
+    }
+
+    private object SubmitCookies(JObject msg)
+    {
+        var text = msg["text"]?.ToString() ?? "";
+        var cookies = YoutubeCookieService.ParseCookies(text);
+        if (cookies.Count == 0) return new { error = "No valid cookies found in the provided text" };
+        ApplyCookies(cookies);
+        return new { success = true, cookieCount = cookies.Count };
+    }
+
+    private void ApplyCookies(IReadOnlyList<System.Net.Cookie> cookies)
+    {
+        try
+        {
+            YoutubeCookieService.Save(cookies);
+            _ytService.SetCookies(cookies);
+        }
+        catch { }
+    }
+
+    private object ClearAuthCookies()
+    {
+        try
+        {
+            YoutubeCookieService.Clear();
+            _ytService.SetCookies(Array.Empty<System.Net.Cookie>());
+            return new { success = true };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
     }
 
     private object CompleteSetup(JObject msg)
@@ -1706,19 +2675,19 @@ public class YoutubeFormInterop
             // Apply startup mode for the web UI
             if (_ytForm != null)
             {
-                _ytForm.Dispatcher.Invoke(() =>
+                RunOnUi(() =>
                 {
                     switch (mode)
                     {
                         case StartupMode.MusicPlayer:
-                            _ytForm.ShowMusicPlayer();
+                            ShowMusicPlayer();
                             break;
                         case StartupMode.MusicShare:
-                            _ytForm.ShowMusicPlayer();
-                            _ytForm.ShowMusicShare();
+                            ShowMusicPlayer();
+                            _pendingMusicShareOpen = true;
                             break;
                         case StartupMode.Soundboard:
-                            _ytForm.ShowSoundboard();
+                            ShowSoundboard();
                             break;
                     }
                 });
@@ -1732,7 +2701,7 @@ public class YoutubeFormInterop
         }
     }
 
-    private async Task<object> InstallUpdateAsync(JObject msg)
+    private object StartUpdate(JObject msg)
     {
         try
         {
@@ -1740,20 +2709,20 @@ public class YoutubeFormInterop
             if (string.IsNullOrEmpty(downloadUrl))
                 return new { error = "No download URL" };
 
-            var cfg = ConfigService.Instance.Current;
-            var result = await UpdateService.CheckForUpdatesAsync().ConfigureAwait(false);
-            if (!result.UpdateAvailable)
-                return new { error = "No update available" };
-
-            // Run through the WPF UpdatePrompt flow on the UI thread
-            var tcs = new TaskCompletionSource<bool>();
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            _ = Task.Run(async () =>
             {
-                var prompt = new UpdatePrompt(downloadUrl, result.LatestVersion, result.CurrentVersion, result.ReleaseNotes);
-                var result2 = prompt.ShowDialog();
-                tcs.SetResult(result2 ?? false);
+                try
+                {
+                    await UpdateInstaller.InstallAsync(downloadUrl, p =>
+                        SendEvent("updateProgress", new { stage = p.Stage, progress = p.Percent, message = p.Message }));
+                }
+                catch (Exception ex)
+                {
+                    SendEvent("updateProgress", new { stage = "error", progress = 0, message = ex.Message });
+                }
             });
-            return new { success = await tcs.Task.ConfigureAwait(false) };
+
+            return new { success = true, started = true };
         }
         catch (Exception ex)
         {
@@ -1772,7 +2741,10 @@ public class YoutubeFormInterop
                 latestVersion = info.LatestVersion,
                 currentVersion = info.CurrentVersion,
                 downloadUrl = info.DownloadUrl,
-                releaseNotes = info.ReleaseNotes
+                releaseNotes = info.ReleaseNotes,
+                platform = info.Platform,
+                assetName = info.AssetName,
+                error = info.Error
             };
         }
         catch (Exception ex)
@@ -1788,9 +2760,9 @@ public class YoutubeFormInterop
 
         if (song == null)
         {
-            _ytForm.Dispatcher.Invoke(() =>
+            RunOnUi(() =>
             {
-                song = _ytForm.MusicPlayer?.Queue?.FirstOrDefault();
+                song = _ytForm.Music.Queue?.FirstOrDefault();
             });
         }
 
@@ -1880,11 +2852,11 @@ public class YoutubeFormInterop
     {
         try
         {
-            var mp = _ytForm.MusicPlayer;
+            var mp = _ytForm.Music;
             if (mp == null) return;
 
             Song? next = null;
-            _ytForm.Dispatcher.Invoke(() =>
+            RunOnUi(() =>
             {
                 if (mp.Queue.Count > 1)
                     next = mp.Queue[1];
@@ -2024,7 +2996,7 @@ public class YoutubeFormInterop
             var videoId = Path.GetFileNameWithoutExtension(songPath);
             if (string.IsNullOrWhiteSpace(videoId)) return false;
 
-            var cachePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, YoutubeForm.downloadPath, "video-metadata-cache.json"));
+            var cachePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppPaths.DownloadPath, "video-metadata-cache.json"));
             if (!File.Exists(cachePath)) return false;
 
             var json = File.ReadAllText(cachePath);
@@ -2045,6 +3017,30 @@ public class YoutubeFormInterop
 
     public void Dispose()
     {
+        UnsubscribeMidiCapture();
+        try { RemoteControlService.Instance.MidiActivity -= _midiActivityHandler; } catch { }
+        try { StopSystemMediaIntegration(); } catch { }
+        try { _soundboard?.Dispose(); _soundboard = null; } catch { }
+        try { _vizStreamer?.Dispose(); _vizStreamer = null; } catch { }
+        try { TeardownMusicShareAudio(); } catch { }
+        try
+        {
+            _announcement?.Dispose();
+            _announcement = null;
+            var mp = _ytForm.Music;
+            if (mp != null)
+            {
+                mp.RemoteAnnouncementHandler = null;
+                mp.RemoteAnnouncementReleaseHandler = null;
+                mp.RemoteAnnouncementActiveProvider = null;
+                mp.AnnouncementSettingsChanged = null;
+                mp.OpenMusicShareHandler = null;
+                mp.OpenVisualizationHandler = null;
+                mp.AnnouncementOpenHandler = null;
+            }
+        }
+        catch { }
+
         foreach (var kv in _pendingRequests)
         {
             kv.Value.TrySetCanceled();
@@ -2058,7 +3054,7 @@ public class YoutubeFormInterop
 
         if (_musicPlayerSubscribed)
         {
-            var mp = _ytForm.MusicPlayer;
+            var mp = _ytForm.Music;
             if (mp != null)
             {
                 mp.NowPlayingTick -= OnNowPlayingTick;
@@ -2445,32 +3441,13 @@ public class YoutubeFormInterop
 
     private static Song CreateSongFromLibrary(LibrarySong libSong)
     {
-        var img = new System.Windows.Controls.Image();
-        var defaultUri = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/SRshortLogo.png"));
-        img.Source = defaultUri;
-
-        if (!string.IsNullOrEmpty(libSong.ThumbnailPath) && File.Exists(libSong.ThumbnailPath))
-        {
-            try
-            {
-                var bytes = File.ReadAllBytes(libSong.ThumbnailPath);
-                using var ms = new MemoryStream(bytes);
-                var bmp = new System.Windows.Media.Imaging.BitmapImage();
-                bmp.BeginInit();
-                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                bmp.StreamSource = ms;
-                bmp.EndInit();
-                bmp.Freeze();
-                img.Source = bmp;
-            }
-            catch { }
-        }
-
         var title = !string.IsNullOrWhiteSpace(libSong.Title) ? libSong.Title : Path.GetFileNameWithoutExtension(libSong.FilePath);
         var artist = !string.IsNullOrWhiteSpace(libSong.Artist) ? libSong.Artist : "Unknown";
         var duration = libSong.Duration > TimeSpan.Zero ? libSong.Duration : TimeSpan.FromSeconds(1);
 
-        return new Song(title, artist, img, duration, libSong.FilePath);
+        // The thumbnail is resolved for the web UI via GetThumbnailForSongPath; the
+        // platform thumbnail stays null so this stays WPF-free.
+        return new Song(title, artist, null, duration, libSong.FilePath);
     }
 
     private object PlayLibrarySong(JObject msg)
@@ -2486,17 +3463,16 @@ public class YoutubeFormInterop
         if (libSong == null) return new { error = "Song not found in library" };
         if (!System.IO.File.Exists(libSong.FilePath)) return new { error = "File not found on disk" };
 
-        _ytForm.Dispatcher.BeginInvoke(() =>
+        PostToUi(() =>
         {
             try
             {
-                var mp = _ytForm.MusicPlayer;
+                var mp = _ytForm.Music;
                 if (mp == null) { System.Diagnostics.Debug.WriteLine("PlayLibrarySong: MusicPlayer is null"); return; }
-                mp.ClearQueue(true);
+                mp.ClearQueue();
                 var song = CreateSongFromLibrary(libSong);
                 mp.Queue.Add(song);
                 mp.ComputeQueueTimings();
-                mp.AnimateListItem(song);
                 mp.PlaySong(mp.Queue[0]);
                 System.Diagnostics.Debug.WriteLine($"PlayLibrarySong: Playing '{song.Title}' by '{song.Artist}' from {song.songPath}");
             }
@@ -2519,11 +3495,11 @@ public class YoutubeFormInterop
         if (libSong == null) return new { error = "Song not found in library" };
         if (!System.IO.File.Exists(libSong.FilePath)) return new { error = "File not found on disk" };
 
-        _ytForm.Dispatcher.BeginInvoke(() =>
+        PostToUi(() =>
         {
             try
             {
-                var mp = _ytForm.MusicPlayer;
+                var mp = _ytForm.Music;
                 if (mp == null) { System.Diagnostics.Debug.WriteLine("QueueLibrarySong: MusicPlayer is null"); return; }
                 var song = CreateSongFromLibrary(libSong);
                 mp.AddSongExternal(song);
@@ -2548,11 +3524,11 @@ public class YoutubeFormInterop
         if (libSong == null) return new { error = "Song not found in library" };
         if (!System.IO.File.Exists(libSong.FilePath)) return new { error = "File not found on disk" };
 
-        _ytForm.Dispatcher.BeginInvoke(() =>
+        PostToUi(() =>
         {
             try
             {
-                var mp = _ytForm.MusicPlayer;
+                var mp = _ytForm.Music;
                 if (mp == null) { System.Diagnostics.Debug.WriteLine("PlayLibrarySongNext: MusicPlayer is null"); return; }
                 var song = CreateSongFromLibrary(libSong);
                 mp.AddNextSongExternal(song);
@@ -2574,7 +3550,7 @@ public class YoutubeFormInterop
         if (string.IsNullOrEmpty(videoId)) return new { error = "No videoId" };
 
         var videoUrl = $"https://www.youtube.com/watch?v={videoId}";
-        var downloadPath = YoutubeForm.downloadPath;
+        var downloadPath = AppPaths.DownloadPath;
 
         void SendMpEvent(string eventName, object data)
         {
@@ -2773,7 +3749,7 @@ public class YoutubeFormInterop
         if (playlist == null) return new { error = "Playlist not found" };
         var songs = ResolvePlaylistToSongs(playlist);
         if (songs.Count == 0) return new { error = "Playlist is empty" };
-        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.LoadPlaylistToQueue(songs, false));
+        PostToUi(() => _ytForm.Music.LoadPlaylist(songs, false));
         return new { success = true, count = songs.Count };
     }
 
@@ -2785,13 +3761,13 @@ public class YoutubeFormInterop
         if (playlist == null) return new { error = "Playlist not found" };
         var songs = ResolvePlaylistToSongs(playlist);
         if (songs.Count == 0) return new { error = "Playlist is empty" };
-        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.LoadPlaylistToQueue(songs, true));
+        PostToUi(() => _ytForm.Music.LoadPlaylist(songs, true));
         return new { success = true, count = songs.Count };
     }
 
     private object ClearPlaylistQueue(JObject msg)
     {
-        _ytForm.Dispatcher.BeginInvoke(() => _ytForm.MusicPlayer?.ClearPlaylistQueue());
+        PostToUi(() => _ytForm.Music.ClearPlaylistQueue());
         return new { success = true };
     }
 
@@ -2838,6 +3814,17 @@ public class YoutubeFormInterop
             mpSend(json);
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Extracts the base64 payload from a song's platform thumbnail. Thumbnails
+    /// are stored as data-URL strings (e.g. "data:image/jpeg;base64,...").
+    /// </summary>
+    private static string? ThumbnailToBase64(object? thumbnail)
+    {
+        if (thumbnail is not string s || string.IsNullOrEmpty(s)) return null;
+        var idx = s.IndexOf(";base64,", StringComparison.Ordinal);
+        return idx >= 0 ? s.Substring(idx + 8) : s;
     }
 
     private void PresentationSendEvent(string eventName, object? data)
@@ -2923,14 +3910,14 @@ public class YoutubeFormInterop
         // Default: player source
         Song? current = null;
         bool isPlaying = false;
-        _ytForm.Dispatcher.Invoke(() =>
+        RunOnUi(() =>
         {
-            var mp = _ytForm.MusicPlayer;
+            var mp = _ytForm.Music;
             if (mp != null)
             {
                 var q = mp.Queue;
                 if (q != null && q.Count > 0) current = q[0];
-                isPlaying = mp.RemoteIsPlaying;
+                isPlaying = mp.IsPlaying;
             }
         });
 
@@ -3096,7 +4083,7 @@ public class YoutubeFormInterop
         }
     }
 
-    private async void MusicShare_OnNowPlayingTick(object? sender, MusicPlayer.NowPlayingEventArgs e)
+    private async void MusicShare_OnNowPlayingTick(object? sender, NowPlayingEventArgs e)
     {
         if (!_musicShareSharing || _musicShareService == null) return;
         try
@@ -3104,9 +4091,7 @@ public class YoutubeFormInterop
             if (_musicShareLastSong != e.Current)
             {
                 _musicShareLastSong = e.Current;
-                _musicShareCachedThumbnail = null;
-                if (e.Current?.thumbnail?.Source is BitmapSource bitmapSource)
-                    _musicShareCachedThumbnail = MusicShareService.BitmapSourceToBase64(bitmapSource);
+                _musicShareCachedThumbnail = ThumbnailToBase64(e.Current?.thumbnail);
 
                 _musicShareCachedLyrics = null;
                 _musicShareCachedHasSyncedLyrics = false;
@@ -3147,7 +4132,7 @@ public class YoutubeFormInterop
                 ElapsedSeconds = e.CurrentTime.TotalSeconds,
                 TotalSeconds = e.TotalTime.TotalSeconds,
                 ThumbnailData = _musicShareCachedThumbnail,
-                Lyrics = _musicShareCachedLyrics,
+                Lyrics = _musicShareCachedLyrics ?? string.Empty,
                 HasSyncedLyrics = _musicShareCachedHasSyncedLyrics
             };
             await _musicShareService.SendMetadataAsync(metadata);
@@ -3181,7 +4166,7 @@ public class YoutubeFormInterop
         if (_musicShareSharing || _musicShareReceiving)
             return new { error = "Already sharing or receiving" };
 
-        var mp = _ytForm.MusicPlayer;
+        var mp = _ytForm.Music;
         if (mp == null) return new { error = "Music Player not open" };
 
         try
@@ -3225,7 +4210,7 @@ public class YoutubeFormInterop
 
         try
         {
-            var mp = _ytForm.MusicPlayer;
+            var mp = _ytForm.Music;
             if (mp != null)
             {
                 mp.NowPlayingTick -= MusicShare_OnNowPlayingTick;
@@ -3275,6 +4260,14 @@ public class YoutubeFormInterop
             _musicShareService.ErrorOccurred += MusicShare_ServiceErrorOccurred;
             _musicShareService.MetadataReceived += MusicShare_ServiceMetadataReceived;
 
+            // Set up received-audio playback when the receiver requested audio.
+            if (_musicShareService.ReceiveAudio)
+            {
+                _musicShareService.AudioChunkReceived += MusicShare_ServiceAudioChunkReceived;
+                _musicShareAudioPlayer = new MusicShareAudioPlayer { Volume = _musicShareReceiveVolume };
+                _musicShareAudioPlayer.Start();
+            }
+
             _musicShareReceiving = true;
             await _musicShareService.StartReceivingAsync(sessionId);
 
@@ -3290,8 +4283,28 @@ public class YoutubeFormInterop
                 _musicShareService.MetadataReceived -= MusicShare_ServiceMetadataReceived;
                 _musicShareService = null;
             }
+            TeardownMusicShareAudio();
             return new { error = ex.Message };
         }
+    }
+
+    private void TeardownMusicShareAudio()
+    {
+        try { if (_musicShareService != null) _musicShareService.AudioChunkReceived -= MusicShare_ServiceAudioChunkReceived; } catch { }
+        try { _musicShareAudioPlayer?.Dispose(); } catch { }
+        _musicShareAudioPlayer = null;
+    }
+
+    private void MusicShare_ServiceAudioChunkReceived(object? sender, AudioChunk chunk)
+    {
+        _musicShareAudioPlayer?.Feed(chunk.Data, _musicShareService?.GetBufferLevel() ?? 0);
+    }
+
+    private object MusicShareSetVolume(JObject msg)
+    {
+        _musicShareReceiveVolume = (float)Math.Clamp(msg["value"]?.ToObject<double>() ?? 1.0, 0.0, 1.0);
+        if (_musicShareAudioPlayer != null) _musicShareAudioPlayer.Volume = _musicShareReceiveVolume;
+        return new { success = true, volume = _musicShareReceiveVolume };
     }
 
     private async Task<object> MusicShareDisconnect()
@@ -3309,6 +4322,7 @@ public class YoutubeFormInterop
                 _musicShareService = null;
             }
 
+            TeardownMusicShareAudio();
             _musicShareReceiving = false;
 
             MusicShareSendEvent("musicShareStatus", new
@@ -3334,7 +4348,8 @@ public class YoutubeFormInterop
             sessionId = _musicShareService?.SessionId,
             status = _musicShareService?.Status.ToString().ToLowerInvariant() ?? "idle",
             elapsed = elapsed.TotalSeconds,
-            bytesSent = _musicShareBytesSent
+            bytesSent = _musicShareBytesSent,
+            receiveVolume = _musicShareReceiveVolume
         };
     }
 
@@ -3344,9 +4359,7 @@ public class YoutubeFormInterop
         {
             var cfg = ConfigService.Instance.Current;
             var address = cfg?.Address ?? "http://127.0.0.1:5000";
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            if (!string.IsNullOrEmpty(cfg?.BearerToken))
-                client.DefaultRequestHeaders.Add("Authorization", cfg.BearerToken);
+            using var client = BackendHttpClient.Create(cfg, TimeSpan.FromSeconds(10));
 
             var response = await client.GetAsync($"{address}/api/played-songs").ConfigureAwait(false);
             var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -3366,9 +4379,7 @@ public class YoutubeFormInterop
         {
             var cfg = ConfigService.Instance.Current;
             var address = cfg?.Address ?? "http://127.0.0.1:5000";
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            if (!string.IsNullOrEmpty(cfg?.BearerToken))
-                client.DefaultRequestHeaders.Add("Authorization", cfg.BearerToken);
+            using var client = BackendHttpClient.Create(cfg, TimeSpan.FromSeconds(10));
 
             var response = await client.PostAsync($"{address}/api/played-songs/clear", null).ConfigureAwait(false);
             return new { success = response.IsSuccessStatusCode };
@@ -3389,9 +4400,7 @@ public class YoutubeFormInterop
                 if (cfg == null || !cfg.LogPlayback) return;
                 var address = cfg.Address ?? "http://127.0.0.1:5000";
 
-                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                if (!string.IsNullOrEmpty(cfg.BearerToken))
-                    client.DefaultRequestHeaders.Add("Authorization", cfg.BearerToken);
+                using var client = BackendHttpClient.Create(cfg, TimeSpan.FromSeconds(10));
 
                 var payload = JsonConvert.SerializeObject(new { title, artist, platform, timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() });
                 var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");

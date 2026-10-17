@@ -1,0 +1,925 @@
+using System.Collections.ObjectModel;
+using System.Linq;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+
+namespace SongRequestDesktopV2Rewrite;
+
+/// <summary>
+/// WPF-free player engine state.
+///
+/// Owns the play queue and the NAudio playback objects, extracted from the WPF
+/// <c>MusicPlayer</c> window so the player's core can eventually run without WPF.
+///
+/// Playback uses the cross-platform OpenAL Soft output and the FFmpeg decoder;
+/// NAudio.Core supplies only the portable sample graph.
+/// </summary>
+public sealed class MusicEngine
+{
+    public ObservableCollection<Song> Queue { get; } = new();
+
+    // Playlist queue: songs from a playlist, consumed only after the main queue is empty.
+    public ObservableCollection<Song> PlaylistQueue { get; } = new();
+
+    // For overlapping crossfade we use MixingSampleProvider.
+    public IAudioOutput Output { get; set; } = null!;
+    public MixingSampleProvider Mixer { get; set; } = null!;
+    public IAudioSource CurrentReader { get; set; } = null!;
+    public IAudioSource NextReader { get; set; } = null!;
+
+    // VolumeSampleProvider wrappers so volume ramps don't touch the underlying reader.Volume.
+    public VolumeSampleProvider CurrentVolProvider { get; set; } = null!;
+    public VolumeSampleProvider NextVolProvider { get; set; } = null!;
+
+    public float Volume { get; set; } = 0.9f;
+    public float AnnouncementOutputFactor { get; set; } = 1f;
+
+    public bool RepeatEnabled { get; set; }
+
+    /// <summary>Common mixer format (44.1 kHz stereo float).</summary>
+    public WaveFormat Format { get; } = WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
+
+    /// <summary>Target loudness in LUFS used by volume normalization.</summary>
+    public double TargetLoudness { get; set; } = -14.0;
+
+    /// <summary>
+    /// Provides the current configuration. Defaults to the app-wide singleton;
+    /// overridable so tests can supply their own <see cref="Config"/>.
+    /// </summary>
+    public Func<Config?> ConfigAccessor { get; set; } = () => ConfigService.Instance.Current;
+
+    /// <summary>Delay used by announcement fades and crossfades. Overridable so tests run instantly.</summary>
+    public Func<int, System.Threading.Tasks.Task> Delay { get; set; } = ms => System.Threading.Tasks.Task.Delay(ms);
+
+    /// <summary>Mutates and persists the configuration (overridable in tests).</summary>
+    public Action<Action<Config>> ConfigUpdater { get; set; } = updater => ConfigService.Instance.Update(updater);
+
+    /// <summary>Whether audio is currently playing / active, and whether the user may control volume.</summary>
+    public bool IsPlaying => Output?.PlaybackState == PlaybackState.Playing;
+    public bool IsPlaybackActive => Output != null && Output.PlaybackState != PlaybackState.Stopped;
+    public bool CanControlVolume => ConfigAccessor()?.NormalizeVolume != true;
+    public double VolumeValue => System.Math.Clamp((double)Volume, 0.0, 1.0);
+
+    // ──────────────────────────────────────────────────────────────
+    //  Sample provider / loudness helpers (WPF-free)
+    // ──────────────────────────────────────────────────────────────
+
+    private readonly SemaphoreSlim _announcementVolumeGate = new SemaphoreSlim(1, 1);
+
+    public MusicEngine()
+    {
+        Queue.CollectionChanged += (_, _) => QueueChanged?.Invoke(this, EventArgs.Empty);
+        PlaylistQueue.CollectionChanged += (_, _) => PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  Queue mutation helpers (moved from the WPF window)
+    // ──────────────────────────────────────────────────────────────
+
+    public void ToggleRepeat() => RepeatEnabled = !RepeatEnabled;
+
+    public void AddSong(Song s)
+    {
+        if (s == null) return;
+        Queue.Add(s);
+        ComputeQueueTimings();
+        var cfg = ConfigAccessor();
+        if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+            _ = System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(s));
+    }
+
+    public void AddSongExternal(Song? s)
+    {
+        if (s == null) return;
+        try
+        {
+            using var afr = AudioSourceFactory.Open(s.songPath);
+            s.Duration = afr.TotalTime;
+            s.length = string.Format("{0:mm}:{0:ss}", s.Duration);
+        }
+        catch { }
+        AddSong(s);
+    }
+
+    public void AddNextSongExternal(Song? s)
+    {
+        if (s == null) return;
+        try
+        {
+            using var afr = AudioSourceFactory.Open(s.songPath);
+            s.Duration = afr.TotalTime;
+            s.length = string.Format("{0:mm}:{0:ss}", s.Duration);
+        }
+        catch { }
+
+        if (Queue.Count > 1) Queue.Insert(1, s); else Queue.Add(s);
+        ComputeQueueTimings();
+
+        var cfg = ConfigAccessor();
+        if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+            _ = System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(s));
+    }
+
+    /// <summary>Creates a Song from a local file (WPF-free: no platform thumbnail).</summary>
+    public bool TryCreateSongFromFile(string filePath, out Song? song, out string errorMessage)
+    {
+        song = null;
+        errorMessage = string.Empty;
+        try
+        {
+            using var afr = AudioSourceFactory.Open(filePath);
+            var duration = afr.TotalTime;
+
+            string title = System.IO.Path.GetFileNameWithoutExtension(filePath);
+            string artist = "Unknown";
+
+            try
+            {
+                var tfile = global::TagLib.File.Create(filePath);
+                if (!string.IsNullOrWhiteSpace(tfile.Tag.Title)) title = tfile.Tag.Title;
+                if (tfile.Tag.Performers != null && tfile.Tag.Performers.Length > 0)
+                {
+                    artist = string.Join(", ", tfile.Tag.Performers.Where(p => !string.IsNullOrWhiteSpace(p)));
+                    if (string.IsNullOrWhiteSpace(artist)) artist = "Unknown";
+                }
+            }
+            catch { }
+
+            var imageBase64 = TryGetEmbeddedImageBase64(filePath);
+            song = new Song(title, artist, imageBase64, duration, filePath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return false;
+        }
+    }
+
+    private static string? TryGetEmbeddedImageBase64(string filePath)
+    {
+        try
+        {
+            var tfile = global::TagLib.File.Create(filePath);
+            var pic = tfile.Tag.Pictures?.FirstOrDefault();
+            if (pic?.Data?.Data != null && pic.Data.Data.Length > 0)
+                return "data:" + (pic.MimeType ?? "image/jpeg") + ";base64," + Convert.ToBase64String(pic.Data.Data);
+        }
+        catch { }
+        return null;
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  Announcement ducking + remote integration
+    // ──────────────────────────────────────────────────────────────
+
+    public bool RemoteAnnouncementIsActive => RemoteAnnouncementActiveProvider?.Invoke() ?? false;
+
+    public double CrossfadeNormalized => CrossfadeMax <= 0 ? 0 : System.Math.Clamp(CrossfadeSeconds / CrossfadeMax, 0.0, 1.0);
+
+    public void AdjustVolume(double delta)
+    {
+        if (!CanControlVolume) return;
+        Volume = (float)System.Math.Clamp(Volume + delta, 0.0, 1.0);
+        if (CurrentVolProvider != null) CurrentVolProvider.Volume = Volume;
+        RequestVolumeSliderUpdate?.Invoke(Volume);
+    }
+
+    public void SetVolumeFromMidi(double normalizedValue)
+    {
+        if (!CanControlVolume) return;
+        Volume = (float)System.Math.Clamp(normalizedValue, 0.0, 1.0);
+        if (CurrentVolProvider != null) CurrentVolProvider.Volume = Volume;
+        RequestVolumeSliderUpdate?.Invoke(Volume);
+    }
+
+    public void AdjustCrossfade(double delta)
+    {
+        CrossfadeSeconds = System.Math.Clamp(CrossfadeSeconds + delta, 0.0, CrossfadeMax);
+        RequestCrossfadeSliderUpdate?.Invoke(CrossfadeSeconds);
+    }
+
+    public void SetCrossfadeFromMidi(double normalizedValue)
+    {
+        CrossfadeSeconds = System.Math.Clamp(normalizedValue, 0.0, 1.0) * CrossfadeMax;
+        RequestCrossfadeSliderUpdate?.Invoke(CrossfadeSeconds);
+    }
+
+    /// <summary>Sets the crossfade (in seconds) and syncs the host slider.</summary>
+    public void SetCrossfade(double seconds)
+    {
+        CrossfadeSeconds = System.Math.Clamp(seconds, 0.0, CrossfadeMax);
+        RequestCrossfadeSliderUpdate?.Invoke(CrossfadeSeconds);
+    }
+
+    public double RemoteAnnouncementDimNormalized
+    {
+        get
+        {
+            double dimDb = ConfigAccessor()?.AnnouncementDimDb ?? 20.0;
+            return System.Math.Clamp(dimDb / 50.0, 0.0, 1.0);
+        }
+    }
+
+    public bool RemoteAnnouncementPushToTalkEnabled => ConfigAccessor()?.AnnouncementPushToTalk ?? true;
+
+    public async System.Threading.Tasks.Task FadeAnnouncementDuckingAsync(double dimDb, int durationMs)
+    {
+        var targetFactor = (float)System.Math.Clamp(System.Math.Pow(10.0, -System.Math.Abs(dimDb) / 20.0), 0.01, 1.0);
+        await FadeAnnouncementOutputToAsync(targetFactor, durationMs).ConfigureAwait(false);
+    }
+
+    public async System.Threading.Tasks.Task FadeAnnouncementRestoreAsync(int durationMs)
+    {
+        await FadeAnnouncementOutputToAsync(1f, durationMs).ConfigureAwait(false);
+    }
+
+    private async System.Threading.Tasks.Task FadeAnnouncementOutputToAsync(float targetFactor, int durationMs)
+    {
+        await _announcementVolumeGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            float startFactor = AnnouncementOutputFactor;
+            AnnouncementOutputFactor = targetFactor;
+
+            var output = Output;
+            if (output == null) return;
+
+            int steps = System.Math.Max(10, durationMs / 20);
+            int delay = System.Math.Max(10, durationMs / steps);
+            for (int i = 1; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                float eased = 1f - (1f - t) * (1f - t);
+                float current = startFactor + (targetFactor - startFactor) * eased;
+                try { output.Volume = System.Math.Clamp(current, 0f, 1f); } catch { break; }
+                if (i < steps) await Delay(delay).ConfigureAwait(false);
+            }
+
+            try { output.Volume = System.Math.Clamp(targetFactor, 0f, 1f); } catch { }
+        }
+        finally
+        {
+            _announcementVolumeGate.Release();
+        }
+    }
+
+    public async System.Threading.Tasks.Task RemoteAnnouncementActionAsync()
+    {
+        if (RemoteAnnouncementHandler != null) await RemoteAnnouncementHandler().ConfigureAwait(false);
+    }
+
+    public async System.Threading.Tasks.Task RemoteAnnouncementReleaseAsync()
+    {
+        if (RemoteAnnouncementReleaseHandler != null) await RemoteAnnouncementReleaseHandler().ConfigureAwait(false);
+    }
+
+    public void RemoteToggleAnnouncementPlaySound()
+    {
+        bool enabled = !(ConfigAccessor()?.AnnouncementPlaySound ?? true);
+        ConfigUpdater(cfg => cfg.AnnouncementPlaySound = enabled);
+        AnnouncementSettingsChanged?.Invoke();
+    }
+
+    public void RemoteToggleAnnouncementPushToTalk()
+    {
+        bool enabled = !(ConfigAccessor()?.AnnouncementPushToTalk ?? true);
+        ConfigUpdater(cfg => cfg.AnnouncementPushToTalk = enabled);
+        AnnouncementSettingsChanged?.Invoke();
+    }
+
+    public void RemoteAdjustAnnouncementDimDb(double delta)
+    {
+        double current = ConfigAccessor()?.AnnouncementDimDb ?? 20.0;
+        double target = System.Math.Clamp(current + delta, 0.0, 50.0);
+        ConfigUpdater(cfg => cfg.AnnouncementDimDb = target);
+        AnnouncementSettingsChanged?.Invoke();
+    }
+
+    public void RemoteSetAnnouncementDimDbFromMidi(double normalizedValue)
+    {
+        double target = System.Math.Clamp(normalizedValue, 0.0, 1.0) * 50.0;
+        ConfigUpdater(cfg => cfg.AnnouncementDimDb = target);
+        AnnouncementSettingsChanged?.Invoke();
+    }
+
+    public ISampleProvider GetMixerInput(IAudioSource reader)
+    {
+        ISampleProvider sp = reader.ToSampleProvider();
+
+        // Ensure stereo
+        if (sp.WaveFormat.Channels == 1 && Format.Channels == 2)
+            sp = new MonoToStereoSampleProvider(sp);
+
+        // Resample if needed
+        if (sp.WaveFormat.SampleRate != Format.SampleRate)
+            sp = new WdlResamplingSampleProvider(sp, Format.SampleRate);
+
+        return sp;
+    }
+
+    public ISampleProvider GetSampleProviderCompatible(IAudioSource reader) => GetMixerInput(reader);
+
+    public async Task CalculateLoudnessForQueueAsync()
+    {
+        foreach (var song in Queue)
+        {
+            if (song.PerceivedLoudness < 0)
+                await Task.Run(() => CalculateSongLoudness(song)).ConfigureAwait(false);
+        }
+    }
+
+    public void CalculateSongLoudness(Song song)
+    {
+        try
+        {
+            if (!System.IO.File.Exists(song.songPath)) return;
+
+            using var reader = AudioSourceFactory.Open(song.songPath);
+            float[] buffer = new float[reader.WaveFormat.SampleRate * reader.WaveFormat.Channels];
+            double sumSquares = 0;
+            long totalSamples = 0;
+            int samplesRead;
+
+            // Sample throughout the file (every 10 seconds) to avoid reading everything.
+            int sampleInterval = reader.WaveFormat.SampleRate * reader.WaveFormat.Channels * 10;
+
+            while ((samplesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                for (int i = 0; i < samplesRead; i++)
+                    sumSquares += buffer[i] * buffer[i];
+                totalSamples += samplesRead;
+
+                if (reader.Position + sampleInterval < reader.Length)
+                    reader.Position += sampleInterval;
+            }
+
+            if (totalSamples > 0)
+            {
+                double rms = Math.Sqrt(sumSquares / totalSamples);
+                double lufs = 20 * Math.Log10(rms + 0.0000001) - 0.691;
+                song.PerceivedLoudness = lufs;
+                System.Diagnostics.Debug.WriteLine($"Calculated loudness for {song.Title}: {lufs:F1} LUFS");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to calculate loudness for {song.Title}: {ex.Message}");
+            song.PerceivedLoudness = TargetLoudness;
+        }
+    }
+
+    public float CalculateNormalizedVolume(Song song, float baseVolume)
+    {
+        var cfg = ConfigAccessor();
+        if (cfg == null || !cfg.NormalizeVolume || !cfg.NormalizationActive ||
+            cfg.DefaultVolume < 0 || song.PerceivedLoudness < -50)
+        {
+            return baseVolume;
+        }
+
+        double loudnessDiff = TargetLoudness - song.PerceivedLoudness;
+        float gainAdjustment = (float)Math.Pow(10, loudnessDiff / 20.0);
+        float normalizedVolume = cfg.DefaultVolume * gainAdjustment;
+        return Math.Clamp(normalizedVolume, 0.0f, 1.0f);
+    }
+
+    // Audio capture for Music Share / visualization.
+    public CapturingSampleProvider? CapturingProvider { get; set; }
+
+    public int CaptureChannels => CapturingProvider?.WaveFormat.Channels ?? 2;
+    public int CaptureSampleRate => CapturingProvider?.WaveFormat.SampleRate ?? 44100;
+
+    // ──────────────────────────────────────────────────────────────
+    //  Playback pipeline (WPF-free; UI updates via hooks)
+    // ──────────────────────────────────────────────────────────────
+
+    public int OutputDeviceNumber { get; set; } = -1;
+    public double CrossfadeSeconds { get; set; } = 4;
+    public double CrossfadeMax { get; set; } = 10;
+    public bool IsUserSeeking { get; set; }
+    public bool IsUserAdjustingVolume { get; set; }
+    public bool IsCrossfading { get; private set; }
+
+    /// <summary>Marshals work onto the UI thread (set by the WPF host).</summary>
+    public Action<Action>? InvokeOnUi;
+
+    // UI hooks (set by the WPF host).
+    public Action<Song?>? NowPlayingChanged;
+    public Action<bool>? PlayStateChanged;
+    public Action<float>? RequestVolumeSliderUpdate;
+    public Action<double>? RequestCrossfadeSliderUpdate;
+    public Action<double, TimeSpan, TimeSpan>? PositionChanged;
+    public Action? QueueEmptied;
+
+    // Events (subscribed by hosts/services so the engine is not tied to the WPF window).
+    public event EventHandler<NowPlayingEventArgs>? NowPlayingTick;
+    public event EventHandler<float[]>? AudioSamplesCaptured;
+    public event EventHandler? QueueChanged;
+    public event EventHandler? PlaylistQueueChanged;
+
+    // Announcement / share / visualization integration hooks (set by the host).
+    public Func<System.Threading.Tasks.Task>? RemoteAnnouncementHandler { get; set; }
+    public Func<System.Threading.Tasks.Task>? RemoteAnnouncementReleaseHandler { get; set; }
+    public Func<bool>? RemoteAnnouncementActiveProvider { get; set; }
+    public Action? AnnouncementSettingsChanged { get; set; }
+    public Action? OpenMusicShareHandler { get; set; }
+    public Action? OpenVisualizationHandler { get; set; }
+    public Action? AnnouncementOpenHandler { get; set; }
+
+    private DateTime _lastSecondaryTickUtc = DateTime.MinValue;
+
+    public void SetVolume(float volume)
+    {
+        Volume = Math.Clamp(volume, 0f, 1f);
+        if (CurrentVolProvider != null) CurrentVolProvider.Volume = Volume;
+    }
+
+    public void Seek(double normalizedPosition)
+    {
+        if (CurrentReader == null) return;
+        double clamped = Math.Clamp(normalizedPosition, 0.0, 1.0);
+        CurrentReader.CurrentTime = TimeSpan.FromSeconds(clamped * CurrentReader.TotalTime.TotalSeconds);
+        ComputeQueueTimings();
+    }
+
+    public void StartPlayback(IAudioSource reader)
+    {
+        StopPlayback();
+
+        Mixer = new MixingSampleProvider(Format) { ReadFully = true };
+        CurrentReader = reader;
+
+        float targetVolume = Volume;
+        if (Queue.Count > 0)
+        {
+            if (Queue[0].PerceivedLoudness < 0)
+                System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(Queue[0]));
+
+            targetVolume = CalculateNormalizedVolume(Queue[0], Volume);
+            RequestVolumeSliderUpdate?.Invoke(targetVolume);
+        }
+
+        var sp = GetSampleProviderCompatible(reader);
+        CurrentVolProvider = new VolumeSampleProvider(sp) { Volume = targetVolume };
+        Mixer.AddMixerInput(CurrentVolProvider);
+
+        if (CapturingProvider == null)
+        {
+            CapturingProvider = new CapturingSampleProvider(Mixer);
+            CapturingProvider.SamplesCaptured += (_, samples) => AudioSamplesCaptured?.Invoke(this, samples);
+        }
+
+        Output = AudioOutputFactory.Create();
+        if (OutputDeviceNumber >= 0)
+        {
+            try { Output.DeviceNumber = OutputDeviceNumber; } catch { }
+        }
+        Output.Init(CapturingProvider);
+        Output.Volume = System.Math.Clamp(AnnouncementOutputFactor, 0f, 1f);
+        Output.PlaybackStopped += Output_PlaybackStopped;
+        Output.Play();
+
+        ComputeQueueTimings();
+        PlayStateChanged?.Invoke(true);
+        NowPlayingChanged?.Invoke(Queue.Count > 0 ? Queue[0] : null);
+
+        var current = Queue.Count > 0 ? Queue[0] : null;
+        if (current != null && CurrentReader != null)
+            NowPlayingTick?.Invoke(this, new NowPlayingEventArgs { Current = current, CurrentTime = CurrentReader.CurrentTime, TotalTime = CurrentReader.TotalTime });
+    }
+
+    public void PlaySong(Song s)
+    {
+        if (s == null || !System.IO.File.Exists(s.songPath)) return;
+        var reader = AudioSourceFactory.Open(s.songPath);
+        StartPlayback(reader);
+    }
+
+    public void TogglePlayPause()
+    {
+        if (Output == null)
+        {
+            if (Queue.Count > 0) PlaySong(Queue[0]);
+            return;
+        }
+
+        if (Output.PlaybackState == PlaybackState.Playing)
+        {
+            Output.Pause();
+            PlayStateChanged?.Invoke(false);
+        }
+        else
+        {
+            Output.Play();
+            PlayStateChanged?.Invoke(true);
+        }
+    }
+
+    public void Next()
+    {
+        if (Queue.Count <= 1)
+        {
+            if (Queue.Count == 1) Queue.RemoveAt(0);
+            if (AdvanceFromPlaylistQueue()) return;
+            StopPlayback();
+            QueueEmptied?.Invoke();
+            return;
+        }
+
+        var nextSong = Queue[1];
+        _ = BeginCrossfadeToNext(nextSong);
+        QueueChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Previous()
+    {
+        if (CurrentReader != null) CurrentReader.CurrentTime = TimeSpan.Zero;
+        ComputeQueueTimings();
+    }
+
+    public void Stop()
+    {
+        StopPlayback();
+        QueueEmptied?.Invoke();
+    }
+
+    public void StopPlayback()
+    {
+        if (Output != null)
+        {
+            try { Output.PlaybackStopped -= Output_PlaybackStopped; } catch { }
+            try { Output.Stop(); } catch { }
+            try { Output.Dispose(); } catch { }
+            Output = null!;
+        }
+        if (CurrentReader != null)
+        {
+            try { CurrentReader.Dispose(); } catch { }
+            CurrentReader = null!;
+        }
+        if (NextReader != null)
+        {
+            try { NextReader.Dispose(); } catch { }
+            NextReader = null!;
+        }
+
+        CurrentVolProvider = null!;
+        NextVolProvider = null!;
+        Mixer = null!;
+        CapturingProvider = null;
+
+        PlayStateChanged?.Invoke(false);
+        NowPlayingTick?.Invoke(this, new NowPlayingEventArgs());
+    }
+
+    private void Output_PlaybackStopped(object? sender, EventArgs e)
+    {
+        void Handle()
+        {
+            if (RepeatEnabled && Queue.Count > 0)
+            {
+                try
+                {
+                    var reader = AudioSourceFactory.Open(Queue[0].songPath);
+                    StartPlayback(reader);
+                }
+                catch { StopPlayback(); QueueEmptied?.Invoke(); }
+            }
+            else if (!IsCrossfading && Queue.Count > 1)
+            {
+                _ = AdvanceToNextImmediate();
+            }
+            else if (PlaylistQueue.Count > 0)
+            {
+                AdvanceFromPlaylistQueue();
+            }
+            else
+            {
+                // Nothing left to play.
+                StopPlayback();
+                QueueEmptied?.Invoke();
+            }
+        }
+
+        if (InvokeOnUi != null) InvokeOnUi(Handle);
+        else Handle();
+    }
+
+    private void RestartCurrent()
+    {
+        try
+        {
+            var reader = AudioSourceFactory.Open(Queue[0].songPath);
+            StartPlayback(reader);
+        }
+        catch { StopPlayback(); QueueEmptied?.Invoke(); }
+    }
+
+    /// <summary>Called ~10×/s by the host while playback is active. Drives position/tick/crossfade.</summary>
+    public void ProcessTick()
+    {
+        var reader = CurrentReader;
+        if (reader == null || IsUserSeeking) return;
+
+        TimeSpan totalTime;
+        try { totalTime = reader.TotalTime; } catch { return; }
+        if (totalTime.TotalSeconds <= 0) return;
+
+        TimeSpan currentTime;
+        try { currentTime = reader.CurrentTime; } catch { return; }
+        var remainingTime = totalTime - currentTime;
+        if (remainingTime < TimeSpan.Zero) remainingTime = TimeSpan.Zero;
+
+        PositionChanged?.Invoke(System.Math.Clamp(currentTime.TotalSeconds / totalTime.TotalSeconds, 0.0, 1.0), currentTime, remainingTime);
+
+        var nowUtc = DateTime.UtcNow;
+        if ((nowUtc - _lastSecondaryTickUtc) < TimeSpan.FromMilliseconds(250)) return;
+        _lastSecondaryTickUtc = nowUtc;
+
+        double cross = CrossfadeSeconds;
+        if (cross <= 0) cross = 4;
+        var remaining = remainingTime.TotalSeconds;
+
+        if (!IsCrossfading && Queue.Count > 1)
+        {
+            if (remaining <= cross && remaining > 0.15)
+            {
+                if (RepeatEnabled) RestartCurrent();
+                else _ = BeginCrossfadeToNext(Queue[1]);
+            }
+            else if (remaining <= 0.15)
+            {
+                if (RepeatEnabled) RestartCurrent();
+                else _ = AdvanceToNextImmediate();
+            }
+        }
+        else if (Queue.Count == 1 && remaining <= 0.15)
+        {
+            if (RepeatEnabled) { RestartCurrent(); return; }
+            if (PlaylistQueue.Count > 0) { AdvanceFromPlaylistQueue(); return; }
+            StopPlayback();
+            QueueEmptied?.Invoke();
+        }
+
+        var current = Queue.Count > 0 ? Queue[0] : null;
+        if (current != null && CurrentReader != null)
+        {
+            try { NowPlayingTick?.Invoke(this, new NowPlayingEventArgs { Current = current, CurrentTime = CurrentReader.CurrentTime, TotalTime = CurrentReader.TotalTime }); }
+            catch { }
+        }
+    }
+
+    private async System.Threading.Tasks.Task BeginCrossfadeToNext(Song nextSong)
+    {
+        if (IsCrossfading) return;
+        IsCrossfading = true;
+        try
+        {
+            await CrossfadeToNext(nextSong);
+
+            if (Queue.Count > 0) Queue.RemoveAt(0);
+            RefillQueueFromPlaylist();
+
+            if (Queue.Count > 0)
+                NowPlayingChanged?.Invoke(Queue[0]);
+
+            QueueChanged?.Invoke(this, EventArgs.Empty);
+        }
+        catch { }
+        finally
+        {
+            IsCrossfading = false;
+        }
+    }
+
+    private async System.Threading.Tasks.Task CrossfadeToNext(Song nextSong)
+    {
+        if (CurrentReader == null) return;
+        if (!System.IO.File.Exists(nextSong.songPath)) return;
+
+        if (nextSong.PerceivedLoudness < 0)
+            await System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(nextSong));
+
+        float targetNextVolume = CalculateNormalizedVolume(nextSong, Volume);
+
+        NextReader = AudioSourceFactory.Open(nextSong.songPath);
+        var nextSp = GetSampleProviderCompatible(NextReader);
+        NextVolProvider = new VolumeSampleProvider(nextSp) { Volume = 0f };
+
+        if (Mixer == null)
+        {
+            Mixer = new MixingSampleProvider(Format) { ReadFully = true };
+            if (CurrentVolProvider != null) Mixer.AddMixerInput(CurrentVolProvider);
+        }
+        Mixer.AddMixerInput(NextVolProvider);
+
+        double cross = CrossfadeSeconds;
+        if (cross <= 0) cross = 4;
+
+        float currentStartVolume = CurrentVolProvider?.Volume ?? Volume;
+        int steps = 40;
+        int delay = System.Math.Max(10, (int)(cross * 1000 / steps));
+        bool metadataUpdated = false;
+        int halfStep = steps / 2;
+
+        for (int i = 0; i < steps; i++)
+        {
+            float t = (i + 1f) / steps;
+            try { NextVolProvider.Volume = targetNextVolume * t; } catch { }
+            try { if (CurrentVolProvider != null) CurrentVolProvider.Volume = currentStartVolume * (1f - t); } catch { }
+
+            if (!metadataUpdated && i >= halfStep)
+            {
+                metadataUpdated = true;
+                NowPlayingChanged?.Invoke(nextSong);
+            }
+
+            await Delay(delay);
+        }
+
+        RequestVolumeSliderUpdate?.Invoke(targetNextVolume);
+        Volume = targetNextVolume;
+
+        var oldProvider = CurrentVolProvider;
+        var oldReader = CurrentReader;
+
+        CurrentReader = NextReader;
+        CurrentVolProvider = NextVolProvider;
+        NextReader = null!;
+        NextVolProvider = null!;
+
+        if (Mixer != null && oldProvider != null)
+        {
+            try { Mixer.RemoveMixerInput(oldProvider); }
+            catch
+            {
+                var newMixer = new MixingSampleProvider(Format) { ReadFully = true };
+                newMixer.AddMixerInput(CurrentVolProvider);
+                Mixer = newMixer;
+                try { Output?.Stop(); } catch { }
+                try { Output?.Init(Mixer); } catch { }
+                try { Output?.Play(); } catch { }
+            }
+        }
+
+        if (oldReader != null)
+        {
+            try { oldReader.Dispose(); } catch { }
+        }
+
+        PlayStateChanged?.Invoke(true);
+    }
+
+    private async System.Threading.Tasks.Task AdvanceToNextImmediate()
+    {
+        if (Queue.Count <= 1)
+        {
+            StopPlayback();
+            QueueEmptied?.Invoke();
+            return;
+        }
+
+        var nextSong = Queue[1];
+        try
+        {
+            if (nextSong.PerceivedLoudness < 0)
+                await System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(nextSong));
+
+            StopPlayback();
+
+            if (Queue.Count > 0) Queue.RemoveAt(0);
+            RefillQueueFromPlaylist();
+
+            var reader = AudioSourceFactory.Open(nextSong.songPath);
+            StartPlayback(reader);
+
+            if (Queue.Count > 0) NowPlayingChanged?.Invoke(Queue[0]);
+        }
+        catch
+        {
+            StopPlayback();
+        }
+
+        await System.Threading.Tasks.Task.CompletedTask;
+    }
+
+    public bool AdvanceFromPlaylistQueue()
+    {
+        if (PlaylistQueue.Count == 0) return false;
+        var song = PlaylistQueue[0];
+        PlaylistQueue.RemoveAt(0);
+        if (Queue.Count > 0) Queue.RemoveAt(0);
+        Queue.Add(song);
+        if (PlaylistQueue.Count > 0)
+        {
+            var next = PlaylistQueue[0];
+            PlaylistQueue.RemoveAt(0);
+            Queue.Add(next);
+        }
+        ComputeQueueTimings();
+        PlaySong(Queue[0]);
+        PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  Queue management (WPF-free)
+    // ──────────────────────────────────────────────────────────────
+
+    public void ComputeQueueTimings()
+    {
+        TimeSpan initialOffset = TimeSpan.Zero;
+        if (CurrentReader != null)
+        {
+            try { initialOffset = CurrentReader.TotalTime - CurrentReader.CurrentTime; }
+            catch { initialOffset = TimeSpan.Zero; }
+        }
+
+        TimeSpan cumulative = TimeSpan.Zero;
+        if (Queue.Count > 0)
+            Queue[0].EstimatedStartDisplay = "Playing Now";
+
+        for (int i = 1; i < Queue.Count; i++)
+        {
+            var song = Queue[i];
+            if (song.Duration == TimeSpan.Zero && System.IO.File.Exists(song.songPath))
+            {
+                try
+                {
+                    using var afr = AudioSourceFactory.Open(song.songPath);
+                    song.Duration = afr.TotalTime;
+                    song.length = string.Format("{0:mm}:{0:ss}", song.Duration);
+                }
+                catch { }
+            }
+
+            TimeSpan timeUntil = initialOffset + cumulative;
+            song.EstimatedStart = timeUntil;
+            song.EstimatedStartDisplay = "Wait Time: " + (timeUntil <= TimeSpan.FromSeconds(1) ? "Now" : timeUntil.ToString(@"mm\:ss"));
+            cumulative += song.Duration;
+        }
+    }
+
+    public void RemoveQueueItem(int index)
+    {
+        if (index >= 0 && index < Queue.Count) Queue.RemoveAt(index);
+    }
+
+    public void MoveQueueItem(int fromIndex, int toIndex)
+    {
+        if (fromIndex < 0 || fromIndex >= Queue.Count) return;
+        if (toIndex < 0 || toIndex >= Queue.Count) return;
+        if (fromIndex == toIndex) return;
+        if (toIndex == 0) return; // never move into now-playing slot
+        Queue.Move(fromIndex, toIndex);
+    }
+
+    public void ShuffleQueue()
+    {
+        var rnd = new Random();
+        var items = Queue.ToList();
+        var nowPlaying = items.Count > 0 ? items[0] : null;
+        Queue.Clear();
+        var remaining = items.Where(s => s != nowPlaying).OrderBy(x => rnd.Next()).ToList();
+        if (nowPlaying != null) Queue.Add(nowPlaying);
+        foreach (var song in remaining) Queue.Add(song);
+    }
+
+    public void ClearQueue()
+    {
+        Queue.Clear();
+    }
+
+    public void LoadPlaylist(IEnumerable<Song> songs, bool shuffle)
+    {
+        PlaylistQueue.Clear();
+        var ordered = shuffle ? songs.OrderBy(_ => Random.Shared.Next()).ToList() : songs.ToList();
+        foreach (var s in ordered) PlaylistQueue.Add(s);
+    }
+
+    public void ClearPlaylistQueue() => PlaylistQueue.Clear();
+
+    public void RemovePlaylistQueueItem(int index)
+    {
+        if (index >= 0 && index < PlaylistQueue.Count) PlaylistQueue.RemoveAt(index);
+    }
+
+    public void MovePlaylistQueueItem(int fromIndex, int toIndex)
+    {
+        if (fromIndex < 0 || fromIndex >= PlaylistQueue.Count) return;
+        if (toIndex < 0 || toIndex >= PlaylistQueue.Count) return;
+        if (fromIndex == toIndex) return;
+        PlaylistQueue.Move(fromIndex, toIndex);
+    }
+
+    public void RefillQueueFromPlaylist()
+    {
+        if (Queue.Count <= 1 && PlaylistQueue.Count > 0)
+        {
+            var next = PlaylistQueue[0];
+            PlaylistQueue.RemoveAt(0);
+            Queue.Add(next);
+        }
+    }
+}

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows-only WinRT projection. Published only for win-* RIDs and loaded
+         by the main (net10.0) app at runtime via reflection, so the main build
+         stays single-target and cross-platform. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <!-- Allows building this Windows-targeting project on Linux/macOS CI. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>SongRequestDesktopV2Rewrite.Smtc.Windows</AssemblyName>
+    <RootNamespace>SongRequestDesktopV2Rewrite.Smtc</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <!-- Restored for the Windows RIDs the app publishes. -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Private=false: the main app assembly is already loaded in the default
+         load context; don't drag its outputs into this project's publish. -->
+    <ProjectReference Include="..\SongRequestDesktopV2Rewrite\SongRequestDesktopV2Rewrite.csproj" Private="false" />
+  </ItemGroup>
+
+</Project>

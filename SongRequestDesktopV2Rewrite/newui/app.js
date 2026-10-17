@@ -115,6 +115,30 @@
     else if (eventName === 'libraryScanProgress') onLibraryScanProgress(data);
     else if (eventName === 'libraryScanCompleted') onLibraryScanCompleted(data);
     else if (eventName === 'downloadProgress') onDownloadProgress(data);
+    else if (eventName === 'updateProgress') onUpdateProgress(data);
+    else if (eventName === 'midiInput') onMidiInput(data);
+    else if (eventName === 'midiActivity') onMidiActivity(data);
+    else if (eventName === 'toolProgress') onToolProgress(data);
+    else if (eventName === 'toolStatus') onToolStatus(data);
+  }
+
+  function onUpdateProgress(data) {
+    if (!data) return;
+    // About modal
+    const aboutModal = document.getElementById('about-modal');
+    if (aboutModal && aboutModal.style.display !== 'none') {
+      document.getElementById('about-update-progress').style.display = 'block';
+      document.getElementById('about-update-progress-fill').style.width = Math.min(data.progress || 0, 100) + '%';
+      document.getElementById('about-update-progress-text').textContent = data.message || data.stage;
+    }
+    // Startup panel
+    const sPanel = document.getElementById('startup-update-panel');
+    if (sPanel && sPanel.style.display !== 'none') {
+      document.getElementById('startup-update-buttons').style.display = 'none';
+      document.getElementById('startup-update-progress').style.display = 'block';
+      document.getElementById('startup-update-progress-fill').style.width = Math.min(data.progress || 0, 100) + '%';
+      document.getElementById('startup-update-progress-text').textContent = data.message || data.stage;
+    }
   }
 
   // ── Download progress tracking ──────────────────────────────────
@@ -290,9 +314,13 @@
   document.getElementById('top-left').addEventListener('click', showAbout);
   document.getElementById('btn-about-close').addEventListener('click', () => { aboutModal.style.display = 'none'; });
   aboutModal.addEventListener('click', e => { if (e.target === aboutModal) aboutModal.style.display = 'none'; });
+  let _availableUpdate = null;
   document.getElementById('btn-check-updates').addEventListener('click', async function() {
     const statusEl = document.getElementById('about-update-status');
+    const installBtn = document.getElementById('btn-install-update');
     statusEl.textContent = 'Checking...';
+    installBtn.style.display = 'none';
+    _availableUpdate = null;
     try {
       const result = await send('checkForUpdates');
       if (result.error) {
@@ -300,11 +328,30 @@
       } else if (result.updateAvailable) {
         statusEl.textContent = 'Update available: ' + result.latestVersion + ' (current: ' + result.currentVersion + ')';
         toast('Update available: ' + result.latestVersion, 'info');
+        _availableUpdate = result;
+        installBtn.style.display = '';
       } else {
         statusEl.textContent = 'You\'re up to date! (Version ' + result.currentVersion + ')';
       }
     } catch (e) {
       statusEl.textContent = 'Update check failed';
+    }
+  });
+  document.getElementById('btn-install-update').addEventListener('click', async function() {
+    if (!_availableUpdate || !_availableUpdate.downloadUrl) return;
+    const btn = this;
+    btn.disabled = true;
+    document.getElementById('about-update-progress').style.display = 'block';
+    document.getElementById('about-update-progress-text').textContent = 'Starting download...';
+    try {
+      const r = await send('installUpdate', { downloadUrl: _availableUpdate.downloadUrl });
+      if (r && r.error) {
+        document.getElementById('about-update-progress-text').textContent = 'Error: ' + r.error;
+        btn.disabled = false;
+      }
+    } catch (e) {
+      document.getElementById('about-update-progress-text').textContent = 'Error: ' + e.message;
+      btn.disabled = false;
     }
   });
 
@@ -345,13 +392,7 @@
       document.getElementById('s-sendin-allowed').checked = si.sendinAllowed ?? false;
 
       const rc = await send('getRemoteConfig');
-      if (rc && rc.mappings) {
-        renderRemoteMappings('r-music-mappings', rc.mappings, ['playPause','skipNext','previous','stop','volumeUp','volumeDown','crossfadeUp','crossfadeDown']);
-        renderRemoteMappings('r-announce-mappings', rc.mappings, ['announcement','announcementSound','announcementPushToTalk','announcementDimUp','announcementDimDown']);
-        document.getElementById('r-midi-enabled').checked = rc.midiEnabled ?? false;
-        document.getElementById('r-midi-input').value = 'Device ' + (rc.midiInputDevice ?? 0);
-        document.getElementById('r-midi-output').value = 'Device ' + (rc.midiOutputDevice ?? 0);
-      }
+      if (rc && !rc.error) loadRemoteConfig(rc);
       document.getElementById('volume-pill').style.display = cfg.normalizeVolume ? 'inline-flex' : 'none';
 
       // Library settings
@@ -363,6 +404,27 @@
       document.getElementById('s-library-remove-missing').checked = cfg.libraryRemoveMissingOnScan ?? false;
       document.getElementById('s-library-recommendations').checked = cfg.libraryRecommendationsEnabled ?? true;
       document.getElementById('s-log-playback').checked = cfg.logPlayback ?? false;
+      document.getElementById('s-autostart').checked = cfg.autoStart ?? false;
+      document.getElementById('s-start-minimized').checked = cfg.startMinimized ?? false;
+      document.getElementById('s-minimize-tray').checked = cfg.minimizeToTray ?? false;
+      document.getElementById('s-close-tray').checked = cfg.closeToTray ?? false;
+      const trayOk = cfg.traySupported !== false;
+      const autoOk = cfg.autoStartSupported !== false;
+      document.getElementById('s-tray-hint').style.display = trayOk ? 'none' : '';
+      document.getElementById('s-minimize-tray').disabled = !trayOk;
+      document.getElementById('s-close-tray').disabled = !trayOk;
+      document.getElementById('s-autostart-hint').style.display = autoOk ? 'none' : '';
+      document.getElementById('s-autostart').disabled = !autoOk;
+      const hotkeyOk = cfg.globalShortcutsSupported !== false;
+      document.getElementById('s-global-hotkeys').checked = cfg.globalKeyboardShortcuts ?? false;
+      document.getElementById('s-global-hotkeys-hint').style.display = hotkeyOk ? 'none' : '';
+      document.getElementById('s-global-hotkeys').disabled = !hotkeyOk;
+      const mediaOk = cfg.systemMediaSupported === true;
+      document.getElementById('s-system-media').checked = cfg.systemMediaIntegration ?? false;
+      document.getElementById('s-system-media').disabled = !mediaOk;
+      document.getElementById('s-system-media-hint').style.display = mediaOk ? 'none' : '';
+      document.getElementById('s-system-media-status').textContent =
+        mediaOk ? ('Backend: ' + (cfg.systemMediaBackend || 'unknown') + (cfg.systemMediaActive ? ' (active)' : '')) : '';
       statusEl.textContent = 'Loaded.'; loadData();
       loadLibraryStats();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
@@ -386,6 +448,12 @@
         bearerToken: document.getElementById('s-token').value,
         defaultSubmitMethod: document.getElementById('s-default-submit-method').value || 'search',
         logPlayback: document.getElementById('s-log-playback').checked,
+        autoStart: document.getElementById('s-autostart').checked,
+        startMinimized: document.getElementById('s-start-minimized').checked,
+        minimizeToTray: document.getElementById('s-minimize-tray').checked,
+        closeToTray: document.getElementById('s-close-tray').checked,
+        globalKeyboardShortcuts: document.getElementById('s-global-hotkeys').checked,
+        systemMediaIntegration: document.getElementById('s-system-media').checked,
         libraryScanFolders: _libraryScanFolders,
         libraryAllowedExtensions: document.getElementById('s-library-extensions').value.split(',').map(function(e){return e.trim()}).filter(function(e){return e}),
         libraryAutoScanOnStartup: document.getElementById('s-library-auto-scan').checked,
@@ -394,8 +462,23 @@
         libraryRecommendationsEnabled: document.getElementById('s-library-recommendations').checked
       };
       const r = await send('saveSettings', { settings });
-      if (r.success) {       statusEl.textContent = 'Saved successfully.'; toast('Settings saved', 'success'); loadData(); hideSettings(); }
-      else { statusEl.textContent = 'Save failed: ' + (r.error || 'unknown'); }
+      if (!r.success) { statusEl.textContent = 'Save failed: ' + (r.error || 'unknown'); return; }
+
+      // Remote control config (keybinds, MIDI mappings, MIDI devices)
+      const rc = {
+        midiEnabled: document.getElementById('r-midi-enabled').checked,
+        midiInputDevice: parseInt(document.getElementById('r-midi-input').value, 10),
+        midiOutputDevice: parseInt(document.getElementById('r-midi-output').value, 10),
+        keybinds: _remoteKeybinds,
+        midis: _remoteMidis
+      };
+      const rr = await send('saveRemoteConfig', rc);
+      if (!rr.success) { statusEl.textContent = 'Remote config save failed: ' + (rr.error || 'unknown'); return; }
+
+      statusEl.textContent = 'Saved successfully.';
+      toast('Settings saved', 'success');
+      loadData();
+      hideSettings();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
   }
 
@@ -405,20 +488,300 @@
     if (isError) toast(msg, 'error');
   }
 
-  function renderRemoteMappings(containerId, mappings, keys) {
+  // ── Remote control settings (keybinds + MIDI) ─────────────────
+  const REMOTE_MUSIC_ACTIONS = [
+    { id: 'PlayPause', label: 'Play / Pause', midi: 'PlayPause' },
+    { id: 'SkipNext', label: 'Skip Next', midi: 'SkipNext' },
+    { id: 'Previous', label: 'Previous', midi: 'Previous' },
+    { id: 'Stop', label: 'Stop', midi: 'Stop' },
+    { id: 'VolumeUp', label: 'Volume Up', midi: 'Volume' },
+    { id: 'VolumeDown', label: 'Volume Down', midi: null, midiNote: '(shares Volume MIDI row above)' },
+    { id: 'CrossfadeUp', label: 'Crossfade Up', midi: 'Crossfade' },
+    { id: 'CrossfadeDown', label: 'Crossfade Down', midi: null, midiNote: '(shares Crossfade MIDI row above)' }
+  ];
+  const REMOTE_ANNOUNCE_ACTIONS = [
+    { id: 'Announcement', label: 'Announcement (Start/Toggle)', midi: 'Announcement' },
+    { id: 'AnnouncementPlaySoundToggle', label: 'Toggle pre-announcement sound', midi: 'AnnouncementPlaySoundToggle' },
+    { id: 'AnnouncementPushToTalkToggle', label: 'Toggle push-to-talk mode', midi: 'AnnouncementPushToTalkToggle' },
+    { id: 'AnnouncementDimDbUp', label: 'Dim level (dB) up', midi: 'AnnouncementDimDb' },
+    { id: 'AnnouncementDimDbDown', label: 'Dim level (dB) down', midi: null, midiNote: '(shares Dim MIDI row above)' }
+  ];
+
+  let _remoteKeybinds = {};
+  let _remoteMidis = {};
+  let _midiInputs = [];
+  let _midiOutputs = [];
+
+  function loadRemoteConfig(rc) {
+    _remoteKeybinds = rc.keybinds || {};
+    _remoteMidis = rc.midis || {};
+    _midiInputs = rc.inputs || [];
+    _midiOutputs = rc.outputs || [];
+
+    document.getElementById('r-midi-enabled').checked = rc.midiEnabled ?? false;
+    populateMidiSelect('r-midi-input', _midiInputs, rc.midiInputDevice);
+    populateMidiSelect('r-midi-output', _midiOutputs, rc.midiOutputDevice);
+
+    renderRemoteMappings('r-music-mappings', REMOTE_MUSIC_ACTIONS);
+    renderRemoteMappings('r-announce-mappings', REMOTE_ANNOUNCE_ACTIONS);
+    refreshMidiStatus();
+  }
+
+  function populateMidiSelect(id, devices, selected) {
+    const sel = document.getElementById(id);
+    let html = '<option value="-1">None</option>';
+    for (const d of devices) {
+      html += '<option value="' + d.number + '">' + escapeHtml(d.name || ('Device ' + d.number)) + '</option>';
+    }
+    sel.innerHTML = html;
+    sel.value = String(selected ?? -1);
+  }
+
+  function midiMappingLabel(m) {
+    if (!m) return '—';
+    const unit = (m.messageType || '').toLowerCase() === 'controlchange' ? 'CC' : 'Note';
+    return escapeHtml(m.messageType) + ' | Ch ' + m.channel + ' | ' + unit + ' ' + m.note;
+  }
+
+  function renderRemoteMappings(containerId, actions) {
     const container = document.getElementById(containerId);
-    const labels = { playPause:'Play / Pause', skipNext:'Skip Next', previous:'Previous', stop:'Stop', volumeUp:'Volume Up', volumeDown:'Volume Down', crossfadeUp:'Crossfade Up', crossfadeDown:'Crossfade Down', announcement:'Announcement (Start/Toggle)', announcementSound:'Toggle pre-announcement sound', announcementPushToTalk:'Toggle push-to-talk mode', announcementDimUp:'Dim level (dB) up', announcementDimDown:'Dim level (dB) down' };
-    let html = '<div class="rm-header"><span class="rm-col-action">Action</span><span class="rm-col-key">Key Bind</span><span class="rm-col-midi">MIDI Mapping</span></div>';
-    for (const key of keys) {
-      const m = mappings[key] || {};
-      html += '<div class="rm-row"><span class="rm-col-action">' + (labels[key] || key) + '</span><span class="rm-col-key' + (m.keybind ? '' : ' rm-unset') + '">' + (m.keybind || '—') + '</span><span class="rm-col-midi' + (m.midi ? '' : ' rm-unset') + '">' + (m.midi || '—') + '</span></div>';
+    let html = '<div class="rm-header">' +
+      '<span class="rm-col-action">Action</span>' +
+      '<span class="rm-col-key">Key Bind</span>' +
+      '<span class="rm-col-btn"></span><span class="rm-col-btn"></span>' +
+      '<span class="rm-col-midi">MIDI Mapping</span>' +
+      '<span class="rm-col-btn"></span><span class="rm-col-btn"></span>' +
+      '</div>';
+    for (const a of actions) {
+      const kb = _remoteKeybinds[a.id] || {};
+      const hasKb = !!(kb.enabled && kb.gesture);
+      let midiHtml = '';
+      let midiBtnsHtml = '';
+      if (a.midi) {
+        const m = _remoteMidis[a.midi];
+        midiHtml = m ? midiMappingLabel(m) : '—';
+        midiBtnsHtml = '<button class="rm-assign" data-midi-assign="' + a.midi + '">Assign</button>' +
+          '<button class="rm-clear" data-midi-clear="' + a.midi + '">Clear</button>';
+      } else {
+        midiHtml = '<span style="color:#888">' + escapeHtml(a.midiNote || '') + '</span>';
+        midiBtnsHtml = '<span class="rm-col-btn"></span><span class="rm-col-btn"></span>';
+      }
+      html += '<div class="rm-row">' +
+        '<span class="rm-col-action">' + escapeHtml(a.label) + '</span>' +
+        '<span class="rm-col-key' + (hasKb ? '' : ' rm-unset') + '">' + escapeHtml(hasKb ? kb.gesture : '—') + '</span>' +
+        '<button class="rm-assign" data-kb-assign="' + a.id + '">Assign</button>' +
+        '<button class="rm-clear" data-kb-clear="' + a.id + '">Clear</button>' +
+        '<span class="rm-col-midi' + ((a.midi && _remoteMidis[a.midi]) ? '' : ' rm-unset') + '">' + midiHtml + '</span>' +
+        midiBtnsHtml +
+        '</div>';
     }
     container.innerHTML = html;
   }
 
+  function rerenderRemoteMappings() {
+    renderRemoteMappings('r-music-mappings', REMOTE_MUSIC_ACTIONS);
+    renderRemoteMappings('r-announce-mappings', REMOTE_ANNOUNCE_ACTIONS);
+  }
+
+  function currentMidiSettings() {
+    return {
+      enabled: document.getElementById('r-midi-enabled').checked,
+      inputDevice: parseInt(document.getElementById('r-midi-input').value, 10),
+      outputDevice: parseInt(document.getElementById('r-midi-output').value, 10)
+    };
+  }
+
+  function applyMidiPreview() {
+    send('applyMidiDevices', currentMidiSettings()).catch(() => { });
+  }
+
+  function refreshMidiStatus() {
+    const enabled = document.getElementById('r-midi-enabled').checked;
+    const input = parseInt(document.getElementById('r-midi-input').value, 10);
+    const output = parseInt(document.getElementById('r-midi-output').value, 10);
+    let text;
+    if (!enabled) text = 'MIDI remote control is disabled.';
+    else if (input >= 0 && output >= 0) text = 'MIDI input and output connected.';
+    else if (input >= 0) text = 'MIDI input connected (no output feedback device selected).';
+    else if (output >= 0) text = 'MIDI output connected (no input device selected).';
+    else text = 'No MIDI devices selected.';
+    document.getElementById('r-midi-status').textContent = text;
+  }
+
+  document.querySelectorAll('.settings-remote-grid').forEach(grid => {
+    grid.addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      if (btn.dataset.kbAssign) openKeybindCapture(btn.dataset.kbAssign);
+      else if (btn.dataset.kbClear) {
+        _remoteKeybinds[btn.dataset.kbClear] = { enabled: false, gesture: '' };
+        rerenderRemoteMappings();
+      } else if (btn.dataset.midiAssign) openMidiAssign(btn.dataset.midiAssign);
+      else if (btn.dataset.midiClear) {
+        _remoteMidis[btn.dataset.midiClear] = null;
+        rerenderRemoteMappings();
+      }
+    });
+  });
+
+  ['r-midi-enabled', 'r-midi-input', 'r-midi-output'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+      applyMidiPreview();
+      refreshMidiStatus();
+    });
+  });
+
+  document.getElementById('r-test-midi').addEventListener('click', async () => {
+    const r = await send('testMidiFeedback').catch(e => ({ error: e.message }));
+    if (r && r.success) toast('Test pattern sent - LEDs should flash briefly', 'info');
+    else toast(r && r.error ? r.error : 'MIDI test failed', 'error');
+  });
+
+  // ── Keybind capture ────────────────────────────────────────────
+  function jsKeyToGesture(e) {
+    return window.SRKeys ? window.SRKeys.gestureFromEvent(e) : null;
+  }
+
+  let _captureTarget = null;
+  let _captureGesture = '';
+
+  function openKeybindCapture(action) {
+    _captureTarget = action;
+    const existing = _remoteKeybinds[action] || {};
+    _captureGesture = (existing.enabled && existing.gesture) ? existing.gesture : '';
+    document.getElementById('keybind-detected').textContent = _captureGesture || 'No shortcut detected';
+    document.getElementById('keybind-capture-modal').style.display = 'flex';
+    document.addEventListener('keydown', onCaptureKeyDown, true);
+  }
+
+  function closeKeybindCapture() {
+    document.getElementById('keybind-capture-modal').style.display = 'none';
+    document.removeEventListener('keydown', onCaptureKeyDown, true);
+    _captureTarget = null;
+  }
+
+  function onCaptureKeyDown(e) {
+    const gesture = jsKeyToGesture(e);
+    if (!gesture) return;
+    e.preventDefault();
+    e.stopPropagation();
+    _captureGesture = gesture;
+    document.getElementById('keybind-detected').textContent = gesture;
+  }
+
+  document.getElementById('btn-keybind-apply').addEventListener('click', () => {
+    if (!_captureTarget || !_captureGesture) { toast('Press a key combination first.', 'error'); return; }
+    _remoteKeybinds[_captureTarget] = { enabled: true, gesture: _captureGesture };
+    rerenderRemoteMappings();
+    closeKeybindCapture();
+  });
+  document.getElementById('btn-keybind-cancel').addEventListener('click', closeKeybindCapture);
+  document.getElementById('btn-keybind-cancel-x').addEventListener('click', closeKeybindCapture);
+
+  // ── MIDI assignment capture ────────────────────────────────────
+  let _midiAssignTarget = null;
+  let _midiDetected = null;
+  let _midiAssignTimeout = null;
+
+  async function openMidiAssign(midiKey) {
+    const input = parseInt(document.getElementById('r-midi-input').value, 10);
+    if (input < 0) { toast('Select a MIDI input device first.', 'error'); return; }
+
+    _midiAssignTarget = midiKey;
+    _midiDetected = null;
+    const existing = _remoteMidis[midiKey];
+    document.getElementById('midi-vel-pressed').value = existing ? existing.velocityPressed : 127;
+    document.getElementById('midi-vel-unpressed').value = existing ? existing.velocityUnpressed : 0;
+    document.getElementById('midi-vel-pressed-label').textContent = document.getElementById('midi-vel-pressed').value;
+    document.getElementById('midi-vel-unpressed-label').textContent = document.getElementById('midi-vel-unpressed').value;
+
+    const okBtn = document.getElementById('btn-midi-assign-ok');
+    okBtn.disabled = true;
+    const status = document.getElementById('midi-assign-status');
+    status.style.color = '#ccc';
+    status.textContent = existing
+      ? ('Current: Channel ' + existing.channel + ', ' + existing.messageType + ' ' + existing.note + '\n\nPress a button on your MIDI controller...')
+      : 'Waiting for MIDI input...\n\nPress a button on your MIDI controller.';
+    document.getElementById('midi-assign-modal').style.display = 'flex';
+
+    // Temporarily enable + connect the selected input so capture works.
+    try {
+      await send('applyMidiDevices', {
+        enabled: true,
+        inputDevice: input,
+        outputDevice: parseInt(document.getElementById('r-midi-output').value, 10)
+      });
+    } catch (e) { }
+    try { await send('startMidiCapture'); } catch (e) { }
+
+    _midiAssignTimeout = setTimeout(() => {
+      if (!_midiDetected) {
+        status.textContent = 'Timeout - No MIDI input detected';
+        status.style.color = '#e53935';
+      }
+    }, 15000);
+  }
+
+  async function closeMidiAssign() {
+    document.getElementById('midi-assign-modal').style.display = 'none';
+    if (_midiAssignTimeout) { clearTimeout(_midiAssignTimeout); _midiAssignTimeout = null; }
+    try { await send('stopMidiCapture'); } catch (e) { }
+    try { await send('applyMidiDevices', currentMidiSettings()); } catch (e) { }
+    _midiAssignTarget = null;
+    _midiDetected = null;
+  }
+
+  function onMidiInput(data) {
+    if (!data || !_midiAssignTarget) return;
+    if (document.getElementById('midi-assign-modal').style.display === 'none') return;
+    _midiDetected = data;
+    if (_midiAssignTimeout) { clearTimeout(_midiAssignTimeout); _midiAssignTimeout = null; }
+    const unit = (data.messageType === 'ControlChange') ? 'CC' : 'Value1';
+    const status = document.getElementById('midi-assign-status');
+    status.style.color = '#4caf50';
+    status.textContent = '✓ Detected MIDI ' + data.messageType +
+      '\n\nChannel: ' + data.channel +
+      '\n' + unit + ': ' + data.value1 +
+      '\nValue2: ' + data.value2 +
+      '\n\nAdjust feedback values below and click OK to confirm.';
+    document.getElementById('btn-midi-assign-ok').disabled = false;
+  }
+
+  function onMidiActivity(data) {
+    const el = document.getElementById('r-midi-last');
+    if (el && data && data.message) el.textContent = data.message;
+  }
+
+  document.getElementById('btn-midi-assign-ok').addEventListener('click', () => {
+    if (!_midiAssignTarget || !_midiDetected) return;
+    _remoteMidis[_midiAssignTarget] = {
+      channel: _midiDetected.channel,
+      note: _midiDetected.value1,
+      messageType: _midiDetected.messageType,
+      velocityPressed: parseInt(document.getElementById('midi-vel-pressed').value, 10),
+      velocityUnpressed: parseInt(document.getElementById('midi-vel-unpressed').value, 10)
+    };
+    rerenderRemoteMappings();
+    closeMidiAssign();
+  });
+  document.getElementById('btn-midi-assign-cancel').addEventListener('click', closeMidiAssign);
+  document.getElementById('btn-midi-assign-cancel-x').addEventListener('click', closeMidiAssign);
+  document.getElementById('midi-assign-modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('midi-assign-modal')) closeMidiAssign();
+  });
+  document.getElementById('midi-vel-pressed').addEventListener('input', function () {
+    document.getElementById('midi-vel-pressed-label').textContent = this.value;
+  });
+  document.getElementById('midi-vel-unpressed').addEventListener('input', function () {
+    document.getElementById('midi-vel-unpressed-label').textContent = this.value;
+  });
+
   document.getElementById('btn-settings-close').onclick = hideSettings;
   document.getElementById('btn-settings-save').onclick = saveSettings;
-  document.getElementById('btn-settings-reload').onclick = loadSettings;
+  document.getElementById('btn-settings-reload').onclick = async () => {
+    try { await send('reloadConfig'); } catch (e) { }
+    loadSettings();
+  };
 
   document.querySelectorAll('.settings-tab').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -481,7 +844,182 @@
   };
 
   document.getElementById('s-auth-btn').onclick = () => { send('openAuthUrl'); };
-  document.getElementById('r-open-legacy').onclick = () => { send('showSettings'); };
+
+  // YouTube authentication (Security tab)
+  const ytStatusEl = document.getElementById('s-yt-status');
+  (async () => {
+    try {
+      const r = await send('getAuthBrowsers');
+      const sel = document.getElementById('s-yt-browser');
+      sel.innerHTML = (r.browsers || [])
+        .map(b => '<option value="' + b + '">' + b.charAt(0).toUpperCase() + b.slice(1) + '</option>')
+        .join('');
+    } catch { /* leave the select empty */ }
+  })();
+  document.getElementById('s-yt-grab').onclick = async () => {
+    const browser = document.getElementById('s-yt-browser').value;
+    if (!browser) { ytStatusEl.textContent = 'No browser available.'; return; }
+    ytStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + browser + '...</span>';
+    try {
+      const r = await send('grabCookies', { browser });
+      ytStatusEl.textContent = r.success
+        ? 'Saved ' + r.cookieCount + ' cookies from ' + browser + '.'
+        : 'Failed: ' + (r.error || 'no cookies found');
+    } catch (e) { ytStatusEl.textContent = 'Error: ' + e.message; }
+  };
+  document.getElementById('s-yt-save').onclick = async () => {
+    const text = document.getElementById('s-yt-cookies').value;
+    if (!text.trim()) { ytStatusEl.textContent = 'Paste some cookies first.'; return; }
+    try {
+      const r = await send('submitCookies', { text });
+      ytStatusEl.textContent = r.success
+        ? 'Saved ' + r.cookieCount + ' cookies.'
+        : 'Failed: ' + (r.error || 'invalid cookies');
+      if (r.success) document.getElementById('s-yt-cookies').value = '';
+    } catch (e) { ytStatusEl.textContent = 'Error: ' + e.message; }
+  };
+  document.getElementById('s-yt-clear').onclick = async () => {
+    try {
+      const r = await send('clearAuthCookies');
+      ytStatusEl.textContent = r.success ? 'Saved cookies cleared.' : 'Failed: ' + (r.error || 'unknown error');
+    } catch (e) { ytStatusEl.textContent = 'Error: ' + e.message; }
+  };
+
+  // ── External tools (FFmpeg / yt-dlp) ────────────────────────────────
+  let _toolProgressEl = null;
+  let _toolPromptSelection = null;
+
+  function applyToolStatus(status) {
+    const set = (id, entry) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const found = entry && entry.found;
+      el.textContent = found ? (entry.path || 'Found') : 'Not found';
+      el.style.color = found ? '#7ad07a' : '#e08080';
+      el.title = (entry && entry.path) || '';
+    };
+    set('tool-ffmpeg-status', status.ffmpeg);
+    set('tool-ffprobe-status', status.ffprobe);
+    set('tool-ytdlp-status', status.ytDlp);
+    const dir = document.getElementById('tool-tools-dir');
+    if (dir) dir.textContent = status.toolsDirectory ? ('Download folder: ' + status.toolsDirectory) : '';
+    const dlF = document.getElementById('tool-dl-ffmpeg');
+    const dlY = document.getElementById('tool-dl-ytdlp');
+    if (dlF && !dlF.dataset.touched) dlF.checked = !(status.audioReady);
+    if (dlY && !dlY.dataset.touched) dlY.checked = !(status.ytDlp && status.ytDlp.found);
+  }
+
+  async function refreshToolStatus() {
+    try { applyToolStatus(await send('getToolStatus')); } catch (e) { /* ignore */ }
+  }
+
+  async function downloadTools(ffmpeg, ytDlp, progressEl) {
+    _toolProgressEl = progressEl || null;
+    if (progressEl) progressEl.textContent = 'Starting…';
+    try {
+      const r = await send('downloadTools', { ffmpeg: ffmpeg, ytDlp: ytDlp });
+      return !!r.success;
+    } catch (e) {
+      if (progressEl) progressEl.textContent = 'Error: ' + e.message;
+      return false;
+    }
+  }
+
+  function onToolProgress(data) {
+    if (!data) return;
+    const text = (data.message || data.stage || '') + (data.percent ? ' ' + Math.round(data.percent) + '%' : '');
+    const target = _toolProgressEl || document.getElementById('tool-progress');
+    if (target) target.textContent = text;
+    const prompt = document.getElementById('tool-prompt-progress');
+    if (prompt) prompt.textContent = text;
+    if (data.stage === 'done' || data.stage === 'error') refreshToolStatus();
+  }
+
+  function onToolStatus(data) {
+    if (!data || !data.ffmpeg) return;
+    applyToolStatus(data);
+
+    const sel = _toolPromptSelection;
+    const prompt = document.getElementById('tool-prompt-modal');
+    if (sel && prompt && prompt.style.display !== 'none') {
+      const okFf = !sel.ff || data.audioReady;
+      const okYt = !sel.yt || (data.ytDlp && data.ytDlp.found);
+      if (okFf && okYt) { prompt.style.display = 'none'; _toolPromptSelection = null; }
+    }
+  }
+
+  document.getElementById('tool-refresh').onclick = refreshToolStatus;
+  document.getElementById('tool-download').onclick = async () => {
+    const f = document.getElementById('tool-dl-ffmpeg').checked;
+    const y = document.getElementById('tool-dl-ytdlp').checked;
+    const progress = document.getElementById('tool-progress');
+    if (!f && !y) { progress.textContent = 'Select at least one tool.'; return; }
+    progress.textContent = 'Starting…';
+    await downloadTools(f, y, progress);
+  };
+  ['tool-dl-ffmpeg', 'tool-dl-ytdlp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => { el.dataset.touched = '1'; });
+  });
+  refreshToolStatus();
+
+  // Startup prompt (only when something is missing and it was not dismissed).
+  async function maybePromptTools() {
+    try {
+      const cfg = await send('getSettings');
+      if (cfg.toolPromptDismissed) return;
+
+      const status = await send('getToolStatus');
+      const needFf = !status.audioReady;
+      const needYt = !(status.ytDlp && status.ytDlp.found);
+      if (!needFf && !needYt) return;
+
+      applyToolStatus(status);
+      const ff = document.getElementById('tool-prompt-ffmpeg');
+      const yt = document.getElementById('tool-prompt-ytdlp');
+      ff.checked = needFf; ff.disabled = !needFf;
+      yt.checked = needYt; yt.disabled = !needYt;
+      document.getElementById('tool-prompt-modal').style.display = 'flex';
+    } catch (e) { /* ignore */ }
+  }
+
+  document.getElementById('tool-prompt-skip').onclick = async () => {
+    document.getElementById('tool-prompt-modal').style.display = 'none';
+    _toolPromptSelection = null;
+    try { await send('dismissToolPrompt'); } catch (e) { /* ignore */ }
+  };
+
+  document.getElementById('tool-prompt-download').onclick = async () => {
+    const ff = document.getElementById('tool-prompt-ffmpeg').checked;
+    const yt = document.getElementById('tool-prompt-ytdlp').checked;
+    if (!ff && !yt) return;
+    _toolPromptSelection = { ff: ff, yt: yt };
+    const btn = document.getElementById('tool-prompt-download');
+    btn.disabled = true;
+    await downloadTools(ff, yt, document.getElementById('tool-prompt-progress'));
+  };
+
+  setTimeout(maybePromptTools, 1500);
+
+  // Console tools (Console tab)
+  function consoleColorClass() {
+    return document.getElementById('c-color').value;
+  }
+  document.getElementById('c-append').addEventListener('click', () => {
+    const text = document.getElementById('c-append-text').value;
+    if (!text) return;
+    log(text, consoleColorClass());
+    setSettingsStatus('Appended to console.');
+  });
+  document.getElementById('c-clear').addEventListener('click', () => {
+    document.getElementById('console-output').innerHTML = '';
+    setSettingsStatus('Console cleared.');
+  });
+  document.getElementById('c-apply-color').addEventListener('click', () => {
+    const cls = consoleColorClass();
+    document.getElementById('console-output').querySelectorAll('div').forEach(d => { d.className = cls; });
+    setSettingsStatus('Console color applied.');
+  });
 
   // Auth / server error overlay buttons
   document.getElementById('btn-auth-settings').addEventListener('click', () => {
@@ -1272,8 +1810,19 @@
         document.getElementById('startup-update-now').onclick = async () => {
           document.getElementById('startup-update-buttons').style.display = 'none';
           document.getElementById('startup-update-progress').style.display = 'block';
-          try { await send('installUpdate', { downloadUrl: updateInfo.downloadUrl }); } catch (e) {}
-          resolve();
+          document.getElementById('startup-update-progress-text').textContent = 'Starting download...';
+          try {
+            const r = await send('installUpdate', { downloadUrl: updateInfo.downloadUrl });
+            if (r && r.error) {
+              document.getElementById('startup-update-progress-text').textContent = 'Error: ' + r.error;
+              document.getElementById('startup-update-buttons').style.display = 'flex';
+            }
+            // On success the update runs in the background; the app restarts itself,
+            // so we intentionally stay on this panel and keep the sequence paused.
+          } catch (e) {
+            document.getElementById('startup-update-progress-text').textContent = 'Error: ' + e.message;
+            document.getElementById('startup-update-buttons').style.display = 'flex';
+          }
         };
       });
     }
@@ -1379,41 +1928,48 @@
       await send('saveLaunchOptions', { rememberSelection: remember, lastSelectedMode: selectedMode });
     }
 
-    // Auth phase — mandatory if SongRequests (auto-opens), optional otherwise
+    // Auth phase — import YouTube cookies from a browser (optional for most modes)
     showPanel(authPanel);
     const authStatusEl = document.getElementById('startup-auth-status');
 
-    if (selectedMode === 'SongRequests') {
-      authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Opening browser for Google sign-in...</span>';
-      try {
-        const r = await send('triggerAuth');
-        if (r.success) {
-          authStatusEl.textContent = 'Authentication successful (' + r.cookieCount + ' cookies)';
-        } else {
-          authStatusEl.textContent = 'Authentication was cancelled. Continuing without auth.';
-        }
-      } catch (e) {
-        authStatusEl.textContent = 'Authentication error: ' + e.message;
-      }
-    } else {
-      authStatusEl.innerHTML = 'Sign in with Google to enable song requests later.<br><br>' +
-        '<button id="startup-auth-yes" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px"><i class="fas fa-id-card"></i> Sign in now</button> ' +
-        '<button id="startup-auth-no" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
+    let authBrowsers = ['chrome', 'edge', 'firefox', 'brave', 'chromium', 'opera', 'vivaldi', 'safari'];
+    try {
+      const b = await send('getAuthBrowsers');
+      if (b && b.browsers && b.browsers.length) authBrowsers = b.browsers;
+    } catch { /* use defaults */ }
 
-      await new Promise(resolve => {
-        document.getElementById('startup-auth-yes').onclick = async () => {
-          authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Opening browser for Google sign-in...</span>';
-          try {
-            const r = await send('triggerAuth');
-            authStatusEl.textContent = r.success ? 'Authentication successful (' + r.cookieCount + ' cookies)' : 'Authentication was cancelled.';
-          } catch (e) {
-            authStatusEl.textContent = 'Error: ' + e.message;
+    const browserOptions = authBrowsers
+      .map(b => '<option value="' + b + '">' + b.charAt(0).toUpperCase() + b.slice(1) + '</option>')
+      .join('');
+
+    authStatusEl.innerHTML =
+      'Sign in to YouTube in one of these browsers, then import its cookies.<br><br>' +
+      '<select id="startup-auth-browser" class="settings-input" style="max-width:220px;margin:0 auto 10px;display:block">' + browserOptions + '</select>' +
+      '<button id="startup-auth-yes" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px"><i class="fas fa-cookie-bite"></i> Import cookies</button> ' +
+      '<button id="startup-auth-no" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
+
+    await new Promise(resolve => {
+      document.getElementById('startup-auth-no').onclick = () => resolve();
+      document.getElementById('startup-auth-yes').onclick = async () => {
+        const browser = document.getElementById('startup-auth-browser').value;
+        authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + browser + '...</span>';
+        try {
+          const r = await send('grabCookies', { browser });
+          if (r.success) {
+            authStatusEl.textContent = 'Authentication successful (' + r.cookieCount + ' cookies)';
+            resolve();
+          } else {
+            authStatusEl.innerHTML = 'Import failed: ' + (r.error || 'no cookies found') +
+              '<br><br><button id="startup-auth-retry" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px">Retry</button> ' +
+              '<button id="startup-auth-skip" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
+            document.getElementById('startup-auth-retry').onclick = () => document.getElementById('startup-auth-yes').click();
+            document.getElementById('startup-auth-skip').onclick = () => resolve();
           }
-          resolve();
-        };
-        document.getElementById('startup-auth-no').onclick = resolve;
-      });
-    }
+        } catch (e) {
+          authStatusEl.textContent = 'Authentication error: ' + e.message;
+        }
+      };
+    });
     await delay(600);
 
     // Complete setup

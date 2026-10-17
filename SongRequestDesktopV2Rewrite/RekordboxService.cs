@@ -90,7 +90,8 @@ namespace SongRequestDesktopV2Rewrite
                     CreateNoWindow = true
                 };
 
-                using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(startInfo))
+                using var process = System.Diagnostics.Process.Start(startInfo);
+                if (process != null)
                 {
                     using (StreamReader reader = process.StandardOutput)
                     {

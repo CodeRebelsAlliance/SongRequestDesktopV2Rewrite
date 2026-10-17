@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Windows;
 using YoutubeExplode;
 using YoutubeExplode.Common;
 using YoutubeExplode.Videos.ClosedCaptions;
@@ -18,9 +17,18 @@ namespace SongRequestDesktopV2Rewrite
 {
     public class YoutubeService
     {
-        private readonly YoutubeClient _youtubeClient;
+        private YoutubeClient _youtubeClient = null!;
         private readonly HttpClient _httpClient;
+        private IReadOnlyList<System.Net.Cookie> _cookies = Array.Empty<System.Net.Cookie>();
         public YoutubeService(IReadOnlyList<System.Net.Cookie> cookies)
+        {
+            SetCookies(cookies);
+            _httpClient = new HttpClient();
+            _httpClient.BaseAddress = new Uri("https://api.lyrics.ovh/v1");
+        }
+
+        /// <summary>Replaces the auth cookies and rebuilds the underlying YouTube client.</summary>
+        public void SetCookies(IReadOnlyList<System.Net.Cookie>? cookies)
         {
             var cookieContainer = new System.Net.CookieContainer();
             if (cookies != null)
@@ -32,11 +40,11 @@ namespace SongRequestDesktopV2Rewrite
                 }
             }
             var handler = new HttpClientHandler { CookieContainer = cookieContainer, UseCookies = true };
-            var httpClient = new HttpClient(handler);
-            _youtubeClient = new YoutubeClient(httpClient);
-            _httpClient = new HttpClient();
-            _httpClient.BaseAddress = new Uri("https://api.lyrics.ovh/v1");
+            _youtubeClient = new YoutubeClient(new HttpClient(handler));
+            _cookies = cookies ?? Array.Empty<System.Net.Cookie>();
         }
+
+        public IReadOnlyList<System.Net.Cookie> Cookies => _cookies;
 
         public static string ExtractVideoId(string url)
         {
@@ -94,7 +102,7 @@ namespace SongRequestDesktopV2Rewrite
         {
             var uri = new Uri(url);
             var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-            return query["v"];
+            return query["v"] ?? string.Empty;
         }
 
         public async Task<string> DownloadVideoAsync(string videoUrl, string downloadPath)
@@ -113,8 +121,8 @@ namespace SongRequestDesktopV2Rewrite
             }
 
             var originalStreams = audioStreams
-                .Where(a => a.AudioLanguage != null &&
-                            a.AudioLanguage.ToString().IndexOf("Original", StringComparison.OrdinalIgnoreCase) >= 0);
+                .Where(a => a.AudioLanguage?.ToString() is { } language &&
+                            language.IndexOf("Original", StringComparison.OrdinalIgnoreCase) >= 0);
 
             var selectedStream = audioStreams.GetWithHighestBitrate();
 
@@ -159,8 +167,8 @@ namespace SongRequestDesktopV2Rewrite
             }
 
             var originalStreams = audioStreams
-                .Where(a => a.AudioLanguage != null &&
-                            a.AudioLanguage.ToString().IndexOf("Original", StringComparison.OrdinalIgnoreCase) >= 0);
+                .Where(a => a.AudioLanguage?.ToString() is { } language &&
+                            language.IndexOf("Original", StringComparison.OrdinalIgnoreCase) >= 0);
 
             var selectedStream = originalStreams.Any()
                 ? originalStreams.OrderByDescending(a => a.Bitrate).FirstOrDefault()
@@ -205,7 +213,7 @@ namespace SongRequestDesktopV2Rewrite
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error downloading and converting video: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error downloading and converting video: {ex.Message}");
                 throw;
             }
         }
@@ -226,14 +234,12 @@ namespace SongRequestDesktopV2Rewrite
                     CreateNoWindow = true
                 };
 
-                using (Process process = Process.Start(startInfo))
-                {
-                    await process.WaitForExitAsync();
-                }
+                using var process = Process.Start(startInfo);
+                if (process != null) await process.WaitForExitAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error converting MP4 to MP3: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error converting MP4 to MP3: {ex.Message}");
                 throw;
             }
         }
@@ -257,7 +263,7 @@ namespace SongRequestDesktopV2Rewrite
                 var captionsManifest = await _youtubeClient.Videos.ClosedCaptions.GetManifestAsync(videoId);
                 string[] preferredLanguages = { "de", "en", "fr" };
 
-                ClosedCaptionTrackInfo subtitleTrack = null;
+                ClosedCaptionTrackInfo? subtitleTrack = null;
 
                 foreach (var lang in preferredLanguages)
                 {
@@ -357,14 +363,14 @@ namespace SongRequestDesktopV2Rewrite
                 string responseBody = await response.Content.ReadAsStringAsync();
 
                 // Parse JSON response to get lyrics
-                dynamic jsonResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(responseBody);
-                string lyrics = jsonResponse.lyrics;
+                dynamic? jsonResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(responseBody);
+                string lyrics = (string?)jsonResponse?.lyrics ?? string.Empty;
 
                 string completelyrics = "Lyrics: Lyrics.OVH API\n" + lyrics;
 
                 return completelyrics;
             }
-            catch (HttpRequestException ex)
+            catch (HttpRequestException)
             {
                 try
                 {
@@ -372,14 +378,14 @@ namespace SongRequestDesktopV2Rewrite
 
                     return "No Lyrics (YouTube Description)\n" + desc + "\n\nIf there aren't any lyrics in the description, please look them up by clicking the link below!";
                 }
-                catch (Exception exx)
+                catch (Exception)
                 {
                     return "No Lyrics found, not even a description. Please look up your own lyrics using the button below!";
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
                 throw;
             }
         }
@@ -425,9 +431,9 @@ namespace SongRequestDesktopV2Rewrite
 
     public class SearchResult
     {
-        public string VideoId { get; set; }
-        public string Title { get; set; }
-        public string Author { get; set; }
+        public string VideoId { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public string Author { get; set; } = string.Empty;
         public TimeSpan? Duration { get; set; }
     }
 }

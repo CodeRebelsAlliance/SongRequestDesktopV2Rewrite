@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
-using System.Windows;
 
 namespace SongRequestDesktopV2Rewrite
 {
@@ -14,19 +13,21 @@ namespace SongRequestDesktopV2Rewrite
         private readonly string _secretKey;
 
         public FetchingService(string secretKey)
+            : this(secretKey, new HttpClient())
         {
-            _httpClient = new HttpClient();
-            // Set a clear User-Agent so the requests web server can identify the app/version
-            try
-            {
-                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"SongRequest Desktop v{About.version}");
-            }
-            catch { }
+        }
+
+        /// <summary>Creates the service with an explicit HTTP client (used by tests).</summary>
+        internal FetchingService(string secretKey, HttpClient httpClient)
+        {
+            _httpClient = httpClient;
+            // Identify the app/version to the requests web server.
+            BackendHttpClient.ApplyUserAgent(_httpClient);
             _secretKey = secretKey;
             _baseUrl = (ConfigService.Instance.Current?.Address ?? "http://127.0.0.1:5000") + "/fetch?method=";
         }
 
-        public async Task<string> SendRequest(string action, string ytid2 = null, string SecondArg = null)
+        public async Task<string> SendRequest(string action, string? ytid2 = null, string? SecondArg = null)
         {
             try
             {
@@ -52,7 +53,7 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     if (ytid2 != null)
                     {
-                        string artist = SecondArg.Replace(" - Topic", "");
+                        string artist = (SecondArg ?? string.Empty).Replace(" - Topic", "");
                         content.Add(new StringContent(ytid2), "now-playing-title");
                         content.Add(new StringContent(artist), "now-playing-artist");
                     }
@@ -91,7 +92,7 @@ namespace SongRequestDesktopV2Rewrite
                 body.Add("ytid", ytid2);
             }
 
-            MessageBox.Show(body.ToString());
+            System.Diagnostics.Debug.WriteLine(body.ToString());
 
             return body;
         }

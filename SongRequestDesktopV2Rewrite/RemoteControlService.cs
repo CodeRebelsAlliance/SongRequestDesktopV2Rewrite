@@ -1,10 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Windows;
-using System.Windows.Input;
-using System.Windows.Threading;
-using NAudio.Midi;
 
 namespace SongRequestDesktopV2Rewrite
 {
@@ -13,11 +9,11 @@ namespace SongRequestDesktopV2Rewrite
         private static readonly Lazy<RemoteControlService> _instance = new(() => new RemoteControlService());
         public static RemoteControlService Instance => _instance.Value;
 
-        private readonly MidiService _midiService = new MidiService();
-        private readonly DispatcherTimer _feedbackTimer;
-        private MusicPlayer? _musicPlayer;
+        private readonly IMidiService _midiService;
+        private readonly GlobalHotkeyService _hotkeys;
+        private readonly System.Timers.Timer _feedbackTimer;
+        private MusicEngine? _musicEngine;
         private bool _initialized;
-        private bool _suppressKeyboard;
         private bool _sendingFeedback;
         private readonly object _midiDeviceSwitchLock = new object();
         private int? _lastPlayPauseFeedback;
@@ -26,16 +22,36 @@ namespace SongRequestDesktopV2Rewrite
         private int? _lastAnnouncementFeedback;
         private int? _lastAnnouncementDimFeedback;
 
-        public MidiService MidiService => _midiService;
+        public IMidiService MidiService => _midiService;
         public event EventHandler<string>? MidiActivity;
 
+        /// <summary>Whether this platform supports system-wide hotkeys.</summary>
+        public bool GlobalShortcutsSupported => _hotkeys.IsSupported;
+
+        /// <summary>Number of global hotkeys currently registered.</summary>
+        public int RegisteredGlobalShortcuts { get; private set; }
+
+        /// <summary>Provides the current configuration (overridable in tests).</summary>
+        public Func<Config?> ConfigAccessor { get; set; } = () => ConfigService.Instance.Current;
+
         private RemoteControlService()
+            : this(MidiServiceFactory.Create())
         {
-            _feedbackTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(150)
-            };
-            _feedbackTimer.Tick += (_, _) => PushFeedbackSnapshot();
+        }
+
+        internal RemoteControlService(IMidiService midiService)
+            : this(midiService, null)
+        {
+        }
+
+        /// <summary>Creates an isolated instance (used by tests).</summary>
+        internal RemoteControlService(IMidiService midiService, IGlobalHotkeyBackend? hotkeyBackend)
+        {
+            _midiService = midiService;
+            _hotkeys = new GlobalHotkeyService(hotkeyBackend ?? GlobalHotkeyBackendFactory.Create());
+            _hotkeys.ActionTriggered += OnGlobalHotkeyTriggered;
+            _feedbackTimer = new System.Timers.Timer(150) { AutoReset = true };
+            _feedbackTimer.Elapsed += (_, _) => PushFeedbackSnapshot();
             _midiService.MidiMessageReceived += MidiService_MidiMessageReceived;
             _midiService.ErrorOccurred += (_, message) => MidiActivity?.Invoke(this, $"MIDI error: {message}");
         }
@@ -44,25 +60,58 @@ namespace SongRequestDesktopV2Rewrite
         {
             if (_initialized) return;
             _initialized = true;
-            InputManager.Current.PreProcessInput += InputManager_PreProcessInput;
             ApplyConfig();
             _feedbackTimer.Start();
         }
 
-        public void RegisterMusicPlayer(MusicPlayer musicPlayer)
+        public void RegisterMusicEngine(MusicEngine engine)
         {
-            _musicPlayer = musicPlayer;
+            _musicEngine = engine;
         }
 
         public void ApplyConfig()
         {
-            var cfg = RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl);
+            var cfg = RemoteControlConfiguration.Ensure(ConfigAccessor()?.RemoteControl);
             ApplyMidiDevices(cfg.MidiInputDevice, cfg.MidiOutputDevice, cfg.MidiEnabled);
+            ApplyGlobalShortcuts(cfg);
             _lastPlayPauseFeedback = null;
             _lastVolumeFeedback = null;
             _lastCrossfadeFeedback = null;
             _lastAnnouncementFeedback = null;
             _lastAnnouncementDimFeedback = null;
+        }
+
+        /// <summary>
+        /// (Re)registers the remote-control keybinds as system-wide hotkeys when the
+        /// setting is enabled and the platform supports it. Returns the count registered.
+        /// </summary>
+        internal int ApplyGlobalShortcuts(RemoteControlConfiguration remote)
+        {
+            try
+            {
+                var enabled = ConfigAccessor()?.GlobalKeyboardShortcuts == true;
+                if (!enabled || !_hotkeys.IsSupported)
+                {
+                    _hotkeys.Clear();
+                    RegisteredGlobalShortcuts = 0;
+                    return 0;
+                }
+
+                RegisteredGlobalShortcuts = _hotkeys.RegisterAll(HotkeyActionMap.EnabledGestures(remote));
+                return RegisteredGlobalShortcuts;
+            }
+            catch
+            {
+                RegisteredGlobalShortcuts = 0;
+                return 0;
+            }
+        }
+
+        private void OnGlobalHotkeyTriggered(object? sender, string actionId)
+        {
+            var action = HotkeyActionMap.ToRemoteAction(actionId);
+            if (action is { } remoteAction)
+                ExecuteAction(remoteAction, 0);
         }
 
         public void ApplyMidiDevices(int inputDevice, int outputDevice, bool enabled)
@@ -98,126 +147,62 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
-        private void InputManager_PreProcessInput(object sender, PreProcessInputEventArgs e)
+        private void MidiService_MidiMessageReceived(object? sender, MidiMessage m)
         {
-            if (_suppressKeyboard) return;
-            if (e.StagingItem.Input is not KeyEventArgs keyEvent) return;
-            bool isKeyDown = keyEvent.RoutedEvent == Keyboard.KeyDownEvent;
-            bool isKeyUp = keyEvent.RoutedEvent == Keyboard.KeyUpEvent;
-            if (!isKeyDown && !isKeyUp) return;
-            if (isKeyDown && keyEvent.IsRepeat) return;
-
-            var activeWindow = Application.Current?.Windows.Count > 0 ? Application.Current.Windows.OfType<Window>() : null;
-            foreach (var window in activeWindow ?? Array.Empty<Window>())
-            {
-                if (window.IsActive && window is KeybindCaptureDialog)
-                {
-                    return;
-                }
-            }
-
-            var remote = RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl);
-
-            try
-            {
-                _suppressKeyboard = true;
-                if (isKeyDown)
-                {
-                    if (TryMatchAndExecute(remote.PlayPauseKeybind, keyEvent, RemoteAction.PlayPause)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.SkipNextKeybind, keyEvent, RemoteAction.SkipNext)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.PreviousKeybind, keyEvent, RemoteAction.Previous)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.StopKeybind, keyEvent, RemoteAction.Stop)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.VolumeUpKeybind, keyEvent, RemoteAction.VolumeUp)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.VolumeDownKeybind, keyEvent, RemoteAction.VolumeDown)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.CrossfadeUpKeybind, keyEvent, RemoteAction.CrossfadeUp)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.CrossfadeDownKeybind, keyEvent, RemoteAction.CrossfadeDown)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.AnnouncementKeybind, keyEvent, RemoteAction.Announcement)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.AnnouncementPlaySoundToggleKeybind, keyEvent, RemoteAction.AnnouncementPlaySoundToggle)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.AnnouncementPushToTalkToggleKeybind, keyEvent, RemoteAction.AnnouncementPushToTalkToggle)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.AnnouncementDimDbUpKeybind, keyEvent, RemoteAction.AnnouncementDimDbUp)) { keyEvent.Handled = true; return; }
-                    if (TryMatchAndExecute(remote.AnnouncementDimDbDownKeybind, keyEvent, RemoteAction.AnnouncementDimDbDown)) { keyEvent.Handled = true; return; }
-                }
-
-                if (isKeyUp && (ConfigService.Instance.Current?.AnnouncementPushToTalk ?? true))
-                {
-                    if (KeyboardShortcutHelper.IsShortcutMatch(remote.AnnouncementKeybind, keyEvent))
-                    {
-                        ExecuteAction(RemoteAction.AnnouncementRelease, 0);
-                        keyEvent.Handled = true;
-                        return;
-                    }
-                }
-            }
-            finally
-            {
-                _suppressKeyboard = false;
-            }
-        }
-
-        private bool TryMatchAndExecute(KeyboardShortcutConfig shortcut, KeyEventArgs keyEvent, RemoteAction action)
-        {
-            if (!KeyboardShortcutHelper.IsShortcutMatch(shortcut, keyEvent)) return false;
-            ExecuteAction(action, 0);
-            return true;
-        }
-
-        private void MidiService_MidiMessageReceived(object? sender, MidiInMessageEventArgs e)
-        {
-            var remote = RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl);
+            var remote = RemoteControlConfiguration.Ensure(ConfigAccessor()?.RemoteControl);
             if (!remote.MidiEnabled) return;
 
             int dataValue = 0;
             bool processed = false;
 
-            if (e.MidiEvent is NoteOnEvent noteOn && noteOn.Velocity > 0)
+            if (m.Type == MidiMessageType.NoteOn && m.Data2 > 0)
             {
-                dataValue = noteOn.Velocity;
-                processed = MatchMidiMapping(remote.PlayPauseMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.PlayPause) || processed;
-                processed = MatchMidiMapping(remote.SkipNextMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.SkipNext) || processed;
-                processed = MatchMidiMapping(remote.PreviousMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.Previous) || processed;
-                processed = MatchMidiMapping(remote.StopMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.Stop) || processed;
-                processed = MatchMidiMapping(remote.VolumeMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.VolumeAbsolute) || processed;
-                processed = MatchMidiMapping(remote.CrossfadeMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.CrossfadeAbsolute) || processed;
-                processed = MatchMidiMapping(remote.AnnouncementMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.Announcement) || processed;
-                processed = MatchMidiMapping(remote.AnnouncementPlaySoundToggleMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.AnnouncementPlaySoundToggle) || processed;
-                processed = MatchMidiMapping(remote.AnnouncementPushToTalkToggleMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.AnnouncementPushToTalkToggle) || processed;
-                processed = MatchMidiMapping(remote.AnnouncementDimDbMidi, "NoteOn", noteOn.Channel, noteOn.NoteNumber, dataValue, RemoteAction.AnnouncementDimDbAbsolute) || processed;
+                dataValue = m.Data2;
+                processed = MatchMidiMapping(remote.PlayPauseMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.PlayPause) || processed;
+                processed = MatchMidiMapping(remote.SkipNextMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.SkipNext) || processed;
+                processed = MatchMidiMapping(remote.PreviousMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.Previous) || processed;
+                processed = MatchMidiMapping(remote.StopMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.Stop) || processed;
+                processed = MatchMidiMapping(remote.VolumeMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.VolumeAbsolute) || processed;
+                processed = MatchMidiMapping(remote.CrossfadeMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.CrossfadeAbsolute) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.Announcement) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementPlaySoundToggleMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.AnnouncementPlaySoundToggle) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementPushToTalkToggleMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.AnnouncementPushToTalkToggle) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementDimDbMidi, "NoteOn", m.Channel, m.Data1, dataValue, RemoteAction.AnnouncementDimDbAbsolute) || processed;
             }
-            else if (e.MidiEvent is NoteOnEvent noteOnZero &&
-                     noteOnZero.Velocity == 0 &&
-                     (ConfigService.Instance.Current?.AnnouncementPushToTalk ?? true))
+            else if (m.Type == MidiMessageType.NoteOn &&
+                     m.Data2 == 0 &&
+                     (ConfigAccessor()?.AnnouncementPushToTalk ?? true))
             {
-                processed = MatchMidiMapping(remote.AnnouncementMidi, "NoteOn", noteOnZero.Channel, noteOnZero.NoteNumber, 0, RemoteAction.AnnouncementRelease) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementMidi, "NoteOn", m.Channel, m.Data1, 0, RemoteAction.AnnouncementRelease) || processed;
             }
-            else if (e.MidiEvent is ControlChangeEvent cc)
+            else if (m.Type == MidiMessageType.ControlChange)
             {
-                dataValue = cc.ControllerValue;
-                int controller = (int)cc.Controller;
-                processed = MatchMidiMapping(remote.PlayPauseMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.PlayPause) || processed;
-                processed = MatchMidiMapping(remote.SkipNextMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.SkipNext) || processed;
-                processed = MatchMidiMapping(remote.PreviousMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.Previous) || processed;
-                processed = MatchMidiMapping(remote.StopMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.Stop) || processed;
-                processed = MatchMidiMapping(remote.VolumeMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.VolumeAbsolute) || processed;
-                processed = MatchMidiMapping(remote.CrossfadeMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.CrossfadeAbsolute) || processed;
-                processed = MatchMidiMapping(remote.AnnouncementMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.Announcement) || processed;
-                processed = MatchMidiMapping(remote.AnnouncementPlaySoundToggleMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.AnnouncementPlaySoundToggle) || processed;
-                processed = MatchMidiMapping(remote.AnnouncementPushToTalkToggleMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.AnnouncementPushToTalkToggle) || processed;
-                processed = MatchMidiMapping(remote.AnnouncementDimDbMidi, "ControlChange", cc.Channel, controller, dataValue, RemoteAction.AnnouncementDimDbAbsolute) || processed;
+                dataValue = m.Data2;
+                int controller = m.Data1;
+                processed = MatchMidiMapping(remote.PlayPauseMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.PlayPause) || processed;
+                processed = MatchMidiMapping(remote.SkipNextMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.SkipNext) || processed;
+                processed = MatchMidiMapping(remote.PreviousMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.Previous) || processed;
+                processed = MatchMidiMapping(remote.StopMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.Stop) || processed;
+                processed = MatchMidiMapping(remote.VolumeMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.VolumeAbsolute) || processed;
+                processed = MatchMidiMapping(remote.CrossfadeMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.CrossfadeAbsolute) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.Announcement) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementPlaySoundToggleMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.AnnouncementPlaySoundToggle) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementPushToTalkToggleMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.AnnouncementPushToTalkToggle) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementDimDbMidi, "ControlChange", m.Channel, controller, dataValue, RemoteAction.AnnouncementDimDbAbsolute) || processed;
             }
-            else if (e.MidiEvent is NoteEvent noteEvent &&
-                     noteEvent.CommandCode == MidiCommandCode.NoteOff &&
-                     (ConfigService.Instance.Current?.AnnouncementPushToTalk ?? true))
+            else if (m.Type == MidiMessageType.NoteOff &&
+                     (ConfigAccessor()?.AnnouncementPushToTalk ?? true))
             {
-                processed = MatchMidiMapping(remote.AnnouncementMidi, "NoteOn", noteEvent.Channel, noteEvent.NoteNumber, 0, RemoteAction.AnnouncementRelease) || processed;
+                processed = MatchMidiMapping(remote.AnnouncementMidi, "NoteOn", m.Channel, m.Data1, 0, RemoteAction.AnnouncementRelease) || processed;
             }
 
             if (processed)
             {
-                MidiActivity?.Invoke(this, $"MIDI input: {e.MidiEvent}");
+                MidiActivity?.Invoke(this, $"MIDI input: {m.RawType} ch{m.Channel} {m.Data1}/{m.Data2}");
             }
         }
 
-        private bool MatchMidiMapping(MidiMapping? mapping, string type, int channel, int noteOrController, int value, RemoteAction action)
+        internal bool MatchMidiMapping(MidiMapping? mapping, string type, int channel, int noteOrController, int value, RemoteAction action)
         {
             if (mapping == null || !mapping.IsConfigured) return false;
             if (!string.Equals(mapping.MessageType, type, StringComparison.OrdinalIgnoreCase)) return false;
@@ -229,71 +214,76 @@ namespace SongRequestDesktopV2Rewrite
 
         private void ExecuteAction(RemoteAction action, int dataValue)
         {
-            var player = _musicPlayer;
-            if (player == null) return;
+            var engine = _musicEngine;
+            if (engine == null) return;
 
-            Application.Current?.Dispatcher?.Invoke(() =>
+            void Run()
             {
                 switch (action)
                 {
                     case RemoteAction.PlayPause:
-                        player.RemoteTogglePlayPause();
+                        engine.TogglePlayPause();
                         break;
                     case RemoteAction.SkipNext:
-                        player.RemoteSkipNext();
-                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl).SkipNextMidi);
+                        engine.Next();
+                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigAccessor()?.RemoteControl).SkipNextMidi);
                         break;
                     case RemoteAction.Previous:
-                        player.RemotePrevious();
-                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl).PreviousMidi);
+                        engine.Previous();
+                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigAccessor()?.RemoteControl).PreviousMidi);
                         break;
                     case RemoteAction.Stop:
-                        player.RemoteStop();
-                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl).StopMidi);
+                        engine.Stop();
+                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigAccessor()?.RemoteControl).StopMidi);
                         break;
                     case RemoteAction.VolumeUp:
-                        player.RemoteAdjustVolume(0.03);
+                        engine.AdjustVolume(0.03);
                         break;
                     case RemoteAction.VolumeDown:
-                        player.RemoteAdjustVolume(-0.03);
+                        engine.AdjustVolume(-0.03);
                         break;
                     case RemoteAction.CrossfadeUp:
-                        player.RemoteAdjustCrossfade(0.25);
+                        engine.AdjustCrossfade(0.25);
                         break;
                     case RemoteAction.CrossfadeDown:
-                        player.RemoteAdjustCrossfade(-0.25);
+                        engine.AdjustCrossfade(-0.25);
                         break;
                     case RemoteAction.VolumeAbsolute:
-                        player.RemoteSetVolumeFromMidi(dataValue / 127.0);
+                        engine.SetVolumeFromMidi(dataValue / 127.0);
                         break;
                     case RemoteAction.CrossfadeAbsolute:
-                        player.RemoteSetCrossfadeFromMidi(dataValue / 127.0);
+                        engine.SetCrossfadeFromMidi(dataValue / 127.0);
                         break;
                     case RemoteAction.Announcement:
-                        _ = player.RemoteAnnouncementActionAsync();
+                        _ = engine.RemoteAnnouncementActionAsync();
                         break;
                     case RemoteAction.AnnouncementRelease:
-                        _ = player.RemoteAnnouncementReleaseAsync();
+                        _ = engine.RemoteAnnouncementReleaseAsync();
                         break;
                     case RemoteAction.AnnouncementPlaySoundToggle:
-                        player.RemoteToggleAnnouncementPlaySound();
-                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl).AnnouncementPlaySoundToggleMidi);
+                        engine.RemoteToggleAnnouncementPlaySound();
+                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigAccessor()?.RemoteControl).AnnouncementPlaySoundToggleMidi);
                         break;
                     case RemoteAction.AnnouncementPushToTalkToggle:
-                        player.RemoteToggleAnnouncementPushToTalk();
-                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl).AnnouncementPushToTalkToggleMidi);
+                        engine.RemoteToggleAnnouncementPushToTalk();
+                        FlashButtonFeedback(RemoteControlConfiguration.Ensure(ConfigAccessor()?.RemoteControl).AnnouncementPushToTalkToggleMidi);
                         break;
                     case RemoteAction.AnnouncementDimDbUp:
-                        player.RemoteAdjustAnnouncementDimDb(1.0);
+                        engine.RemoteAdjustAnnouncementDimDb(1.0);
                         break;
                     case RemoteAction.AnnouncementDimDbDown:
-                        player.RemoteAdjustAnnouncementDimDb(-1.0);
+                        engine.RemoteAdjustAnnouncementDimDb(-1.0);
                         break;
                     case RemoteAction.AnnouncementDimDbAbsolute:
-                        player.RemoteSetAnnouncementDimDbFromMidi(dataValue / 127.0);
+                        engine.RemoteSetAnnouncementDimDbFromMidi(dataValue / 127.0);
                         break;
                 }
-            });
+            }
+
+            // Marshal onto the UI thread (the engine provides the hook when the WPF host is up).
+            var invoke = engine.InvokeOnUi;
+            if (invoke != null) invoke(Run);
+            else Run();
         }
 
         private void FlashButtonFeedback(MidiMapping? mapping)
@@ -301,37 +291,38 @@ namespace SongRequestDesktopV2Rewrite
             if (mapping == null || !mapping.IsConfigured) return;
             SendButtonFeedback(mapping, mapping.VelocityPressed);
 
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-            timer.Tick += (_, _) =>
+            var timer = new System.Timers.Timer(150) { AutoReset = false };
+            timer.Elapsed += (_, _) =>
             {
                 timer.Stop();
+                timer.Dispose();
                 SendButtonFeedback(mapping, mapping.VelocityUnpressed);
             };
             timer.Start();
         }
 
-        private void PushFeedbackSnapshot()
+        internal void PushFeedbackSnapshot()
         {
             if (_sendingFeedback) return;
             if (!_midiService.IsEnabled || _midiService.OutputDeviceNumber == null) return;
 
-            var remote = RemoteControlConfiguration.Ensure(ConfigService.Instance.Current?.RemoteControl);
-            var player = _musicPlayer;
-            if (player == null) return;
+            var remote = RemoteControlConfiguration.Ensure(ConfigAccessor()?.RemoteControl);
+            var engine = _musicEngine;
+            if (engine == null) return;
 
             _sendingFeedback = true;
             try
             {
-                int playValue = player.RemoteIsPlaying ? (remote.PlayPauseMidi?.VelocityPressed ?? 127) : (remote.PlayPauseMidi?.VelocityUnpressed ?? 0);
+                int playValue = engine.IsPlaying ? (remote.PlayPauseMidi?.VelocityPressed ?? 127) : (remote.PlayPauseMidi?.VelocityUnpressed ?? 0);
                 if (_lastPlayPauseFeedback != playValue)
                 {
                     SendButtonFeedback(remote.PlayPauseMidi, playValue);
                     _lastPlayPauseFeedback = playValue;
                 }
 
-                if (remote.VolumeMidi != null && remote.VolumeMidi.IsConfigured && player.RemoteCanControlVolume)
+                if (remote.VolumeMidi != null && remote.VolumeMidi.IsConfigured && engine.CanControlVolume)
                 {
-                    int volumeValue = (int)Math.Round(Math.Clamp(player.RemoteVolumeValue, 0.0, 1.0) * 127.0);
+                    int volumeValue = (int)Math.Round(Math.Clamp(engine.VolumeValue, 0.0, 1.0) * 127.0);
                     if (_lastVolumeFeedback != volumeValue)
                     {
                         SendSliderFeedback(remote.VolumeMidi, volumeValue);
@@ -341,7 +332,7 @@ namespace SongRequestDesktopV2Rewrite
 
                 if (remote.CrossfadeMidi != null && remote.CrossfadeMidi.IsConfigured)
                 {
-                    int crossfadeValue = (int)Math.Round(player.RemoteCrossfadeNormalized * 127.0);
+                    int crossfadeValue = (int)Math.Round(engine.CrossfadeNormalized * 127.0);
                     if (_lastCrossfadeFeedback != crossfadeValue)
                     {
                         SendSliderFeedback(remote.CrossfadeMidi, crossfadeValue);
@@ -351,7 +342,7 @@ namespace SongRequestDesktopV2Rewrite
 
                 if (remote.AnnouncementMidi != null && remote.AnnouncementMidi.IsConfigured)
                 {
-                    int announcementValue = player.RemoteAnnouncementIsActive
+                    int announcementValue = engine.RemoteAnnouncementIsActive
                         ? (remote.AnnouncementMidi.VelocityPressed)
                         : (remote.AnnouncementMidi.VelocityUnpressed);
                     if (_lastAnnouncementFeedback != announcementValue)
@@ -363,7 +354,7 @@ namespace SongRequestDesktopV2Rewrite
 
                 if (remote.AnnouncementDimDbMidi != null && remote.AnnouncementDimDbMidi.IsConfigured)
                 {
-                    int dimValue = (int)Math.Round(player.RemoteAnnouncementDimNormalized * 127.0);
+                    int dimValue = (int)Math.Round(engine.RemoteAnnouncementDimNormalized * 127.0);
                     if (_lastAnnouncementDimFeedback != dimValue)
                     {
                         SendSliderFeedback(remote.AnnouncementDimDbMidi, dimValue);
@@ -411,14 +402,12 @@ namespace SongRequestDesktopV2Rewrite
         public void Dispose()
         {
             _feedbackTimer.Stop();
-            if (_initialized)
-            {
-                InputManager.Current.PreProcessInput -= InputManager_PreProcessInput;
-            }
+            _feedbackTimer.Dispose();
+            try { _hotkeys.Dispose(); } catch { }
             _midiService.Dispose();
         }
 
-        private enum RemoteAction
+        internal enum RemoteAction
         {
             PlayPause,
             SkipNext,

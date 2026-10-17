@@ -2,111 +2,296 @@ name: Build and Release
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ master, main ]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
-
+  # ---------------------------------------------------------------------------
+  # Build a self-contained app for every supported platform/architecture.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64,     os: windows-latest }
+          - { rid: win-arm64,   os: windows-latest }
+          - { rid: linux-x64,   os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-latest }
+          - { rid: osx-x64,     os: macos-latest }
+          - { rid: osx-arm64,   os: macos-latest }
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # needed for changelog
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      - name: Restore dependencies
-        run: dotnet restore
+      - name: Restore
+        run: dotnet restore SongRequestDesktopV2Rewrite.slnx
 
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build SongRequestDesktopV2Rewrite.slnx --configuration Release --no-restore
 
-      - name: Publish (self-contained Windows)
+      # Unit tests run in the dedicated `test` job.
+
+      - name: Publish (self-contained, ${{ matrix.rid }})
         run: >
-          dotnet publish
-          -c Release
-          -r win-x64
+          dotnet publish SongRequestDesktopV2Rewrite/SongRequestDesktopV2Rewrite.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
           --self-contained true
-          /p:PublishSingleFile=false
-          -o publish
+          -p:PublishSingleFile=false
+          --output publish
 
-      - name: Copy build-defaults into publish folder
+      # FFmpeg/FFprobe and yt-dlp are external tools the app expects next to the
+      # executable (see SongRequestDesktopV2Rewrite/tools/README.md). They are
+      # fetched on a best-effort basis so a changed download URL never fails the
+      # whole build.
+      - name: Bundle helper binaries (best effort)
+        continue-on-error: true
+        shell: bash
         run: |
-          if (Test-Path "build-defaults") {
-            Copy-Item -Path "build-defaults\*" -Destination "publish" -Recurse -Force
-          }
+          set -u
+          mkdir -p publish/tools
+          rid="${{ matrix.rid }}"
 
-      - name: Create ZIP (songrequest.zip)
+          # yt-dlp — used to import YouTube cookies from a browser.
+          if [[ "$rid" == win-* ]]; then
+            curl -fsSL -o publish/tools/yt-dlp.exe \
+              https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe
+          else
+            curl -fsSL -o publish/tools/yt-dlp \
+              https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
+            chmod +x publish/tools/yt-dlp
+          fi
+
+          # ffmpeg + ffprobe — required for audio playback and metadata.
+          if [[ "$rid" == linux-* ]]; then
+            if [[ "$rid" == linux-arm64 ]]; then arch=arm64; else arch=amd64; fi
+            curl -fsSL -o /tmp/ff.tar.xz \
+              "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-${arch}-static.tar.xz"
+            mkdir -p /tmp/ff && tar -xf /tmp/ff.tar.xz -C /tmp/ff --strip-components=1
+            cp /tmp/ff/ffmpeg /tmp/ff/ffprobe publish/tools/
+          elif [[ "$rid" == win-* ]]; then
+            curl -fsSL -o /tmp/ff.zip \
+              "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+            unzip -q -o /tmp/ff.zip -d /tmp/ff
+            cp /tmp/ff/ffmpeg-*/bin/ffmpeg.exe /tmp/ff/ffmpeg-*/bin/ffprobe.exe publish/tools/
+          else
+            curl -fsSL -o /tmp/ffmpeg.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
+            curl -fsSL -o /tmp/ffprobe.zip "https://evermeet.cx/ffprobe/getrelease/zip"
+            mkdir -p /tmp/ff
+            unzip -q -o /tmp/ffmpeg.zip -d /tmp/ff
+            unzip -q -o /tmp/ffprobe.zip -d /tmp/ff
+            cp /tmp/ff/ffmpeg /tmp/ff/ffprobe publish/tools/
+            chmod +x publish/tools/ffmpeg publish/tools/ffprobe
+          fi
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path publish/* -DestinationPath "SongRequest-${{ matrix.rid }}.zip" -Force
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tar -czf "SongRequest-${{ matrix.rid }}.tar.gz" -C publish .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SongRequest-${{ matrix.rid }}
+          path: SongRequest-${{ matrix.rid }}.*
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # All tests (unit + integration + JS) with coverage floors. Every suite runs
+  # even if an earlier one fails, a detailed summary is written to the job
+  # summary, and the job fails at the end if anything failed.
+  #
+  # This job is named "Tests" so it can be selected as a required branch
+  # protection check (see tests/README.md).
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install FFmpeg (integration tests)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Restore
+        run: dotnet restore SongRequestDesktopV2Rewrite.slnx
+
+      - name: Unit tests
+        id: unit
+        continue-on-error: true
+        run: >
+          dotnet test tests/SongRequestDesktopV2Rewrite.UnitTests/UnitTests.csproj
+          --configuration Release
+          --settings tests/coverage.runsettings
+          --logger "trx;LogFileName=unit.trx"
+          --logger "console;verbosity=normal"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults/unit
+
+      - name: Integration tests
+        id: integration
+        continue-on-error: true
+        run: >
+          dotnet test tests/SongRequestDesktopV2Rewrite.IntegrationTests/IntegrationTests.csproj
+          --configuration Release
+          --settings tests/coverage.runsettings
+          --logger "trx;LogFileName=integration.trx"
+          --logger "console;verbosity=normal"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults/integration
+
+      - name: JavaScript tests
+        id: js
+        continue-on-error: true
+        shell: bash
         run: |
-          powershell Compress-Archive -Path publish\* -DestinationPath songrequest.zip
+          set -o pipefail
+          mkdir -p TestResults
+          node --test tests/js 2>&1 | tee TestResults/js.txt
 
-      # -------------------------
-      # VERSION CALCULATION
-      # -------------------------
-      - name: Get latest release version
+      - name: Coverage floors
+        id: coverage
+        continue-on-error: true
+        run: |
+          python3 tests/check-coverage.py TestResults/unit 0.36
+          python3 tests/check-coverage.py TestResults/integration 0.18
+
+      - name: Test summary
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p TestResults
+          python3 tests/test-summary.py TestResults/unit TestResults/integration
+          {
+            echo ""
+            echo "### JavaScript tests"
+            echo '```'
+            tail -n 25 TestResults/js.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if any suite failed
+        if: |
+          steps.unit.outcome == 'failure' ||
+          steps.integration.outcome == 'failure' ||
+          steps.js.outcome == 'failure' ||
+          steps.coverage.outcome == 'failure'
+        run: |
+          echo "::error title=Tests failed::One or more test suites or coverage floors failed. See the job summary above for the failing tests."
+          exit 1
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/**
+
+  # ---------------------------------------------------------------------------
+  # Create a release with every platform archive (manual runs only).
+  # ---------------------------------------------------------------------------
+  release:
+    name: Release
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Determine version
         id: version
         shell: pwsh
         run: |
-          $releases = Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" } `
-            -Uri "https://api.github.com/repos/${{ github.repository }}/releases"
+          # The app version (<Version> in the project) is the single source of truth:
+          # it is shown in the UI, compared against the release tag by the in-app
+          # updater, and used verbatim as the release tag here.
+          [xml]$proj = Get-Content SongRequestDesktopV2Rewrite/SongRequestDesktopV2Rewrite.csproj
+          $nodes = $proj.SelectNodes('//Version')
+          if ($nodes.Count -eq 0) { throw "Could not read <Version> from SongRequestDesktopV2Rewrite.csproj." }
+          $version = $nodes[0].InnerText.Trim()
+          if ($version -notmatch '^\d+(\.\d+)*$') { throw "Unexpected <Version> value '$version'." }
 
-          if ($releases.Count -eq 0) {
-            $newVersion = "v1.0"
-            $previousTag = ""
-          } else {
-            $latest = $releases | Sort-Object {[version]($_.tag_name.TrimStart('v'))} -Descending | Select-Object -First 1
-            $tag = $latest.tag_name
+          $tag = "v$version"
+          Write-Host "Project version: $version -> tag $tag"
 
-            Write-Host "Latest tag: $tag"
-
-            if ($tag -match "v(\d+)\.(\d+)") {
-              $major = [int]$Matches[1]
-              $minor = [int]$Matches[2] + 1
-              $newVersion = "v$major.$minor"
-              $previousTag = $tag
-            } else {
-              throw "Invalid version format: $tag"
-            }
+          git fetch --tags --quiet
+          if (git tag -l $tag) {
+            throw "Tag $tag already exists. Bump <Version> in SongRequestDesktopV2Rewrite.csproj before releasing."
           }
 
-          echo "new_version=$newVersion" >> $env:GITHUB_OUTPUT
-          echo "previous_tag=$previousTag" >> $env:GITHUB_OUTPUT
+          $previousTag = (git describe --tags --abbrev=0 2>$null | Select-Object -First 1)
+          if (-not $previousTag) { $previousTag = "" }
 
-      # -------------------------
-      # CHANGELOG GENERATION
-      # -------------------------
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "previous_tag=$previousTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Generate changelog
         id: changelog
         shell: pwsh
         run: |
-          if ("${{ steps.version.outputs.previous_tag }}" -eq "") {
-            $log = git log --pretty=format:"- %s"
+          $prev = "${{ steps.version.outputs.previous_tag }}"
+          if ($prev) {
+            $log = git log "$prev..HEAD" --pretty=format:"- %s"
           } else {
-            $log = git log ${{ steps.version.outputs.previous_tag }}..HEAD --pretty=format:"- %s"
+            $log = git log --pretty=format:"- %s"
           }
+          if (-not $log) { $log = "- No changes" }
 
-          if (-not $log) {
-            $log = "- No changes"
-          }
+          "changelog<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "## Changes`n$log" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-          $content = "## Changes`n$log"
-
-          echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
-          echo "$content" >> $env:GITHUB_OUTPUT
-          echo "EOF" >> $env:GITHUB_OUTPUT
-
-      # -------------------------
-      # CREATE RELEASE
-      # -------------------------
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.new_version }}
-          name: Release ${{ steps.version.outputs.new_version }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
           body: ${{ steps.changelog.outputs.changelog }}
-          files: songrequest.zip
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

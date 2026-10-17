@@ -39,6 +39,13 @@ namespace SongRequestDesktopV2Rewrite
         private float _lyricsFontScale = 1.0f;
         private bool _lyricsHidden = false;
         private string _presentationSource = "player";
+        private bool _autoStart = false;
+        private bool _startMinimized = false;
+        private bool _minimizeToTray = false;
+        private bool _closeToTray = false;
+        private bool _globalKeyboardShortcuts = false;
+        private bool _toolPromptDismissed = false;
+        private bool _systemMediaIntegration = true;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -216,6 +223,59 @@ namespace SongRequestDesktopV2Rewrite
             set => SetField(ref _presentationSource, value);
         }
 
+        /// <summary>Start the app automatically at login (see <see cref="AutoStart"/>).</summary>
+        public bool AutoStart
+        {
+            get => _autoStart;
+            set => SetField(ref _autoStart, value);
+        }
+
+        /// <summary>Start minimised (or hidden in the tray) — also settable with <c>--minimized</c>.</summary>
+        public bool StartMinimized
+        {
+            get => _startMinimized;
+            set => SetField(ref _startMinimized, value);
+        }
+
+        /// <summary>Hide to the tray instead of minimising (requires a tray icon).</summary>
+        public bool MinimizeToTray
+        {
+            get => _minimizeToTray;
+            set => SetField(ref _minimizeToTray, value);
+        }
+
+        /// <summary>Hide to the tray instead of closing (requires a tray icon).</summary>
+        public bool CloseToTray
+        {
+            get => _closeToTray;
+            set => SetField(ref _closeToTray, value);
+        }
+
+        /// <summary>Register the remote-control keybinds as system-wide global hotkeys.</summary>
+        public bool GlobalKeyboardShortcuts
+        {
+            get => _globalKeyboardShortcuts;
+            set => SetField(ref _globalKeyboardShortcuts, value);
+        }
+
+        /// <summary>Set once the user declines the "download FFmpeg / yt-dlp?" prompt.</summary>
+        public bool ToolPromptDismissed
+        {
+            get => _toolPromptDismissed;
+            set => SetField(ref _toolPromptDismissed, value);
+        }
+
+        /// <summary>
+        /// Expose playback to the OS media controls (MPRIS on Linux, SMTC on
+        /// Windows, MPNowPlaying on macOS) so the system shows the title, artwork
+        /// and transport controls.
+        /// </summary>
+        public bool SystemMediaIntegration
+        {
+            get => _systemMediaIntegration;
+            set => SetField(ref _systemMediaIntegration, value);
+        }
+
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
         {
             if (EqualityComparer<T>.Default.Equals(field, value)) return false;
@@ -236,8 +296,14 @@ namespace SongRequestDesktopV2Rewrite
         public static ConfigService Instance { get; } = new ConfigService();
 
         private ConfigService()
+            : this(GetDefaultConfigPath())
         {
-            _configFilePath = GetDefaultConfigPath();
+        }
+
+        /// <summary>Creates a config service bound to an explicit file (used by tests).</summary>
+        internal ConfigService(string configFilePath)
+        {
+            _configFilePath = configFilePath;
             Current = LoadOrCreateConfig();
             SubscribeToAutoSave(Current);
         }
@@ -259,12 +325,7 @@ namespace SongRequestDesktopV2Rewrite
         }
 
         private static string GetDefaultConfigPath()
-        {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var appFolder = Path.Combine(appData, "SongRequestDesktopV2Rewrite");
-            if (!Directory.Exists(appFolder)) Directory.CreateDirectory(appFolder);
-            return Path.Combine(appFolder, "config.json");
-        }
+            => Path.Combine(AppPaths.AppDataDir, "config.json");
 
         private Config LoadOrCreateConfig()
         {

@@ -163,9 +163,14 @@
       <div style="background:#0e0e0e;border-radius:8px;padding:14px;margin-bottom:12px">
         <div style="color:#fff;font-weight:600;font-size:14px;margin-bottom:8px">About this application</div>
         <div style="color:#bfbfbf;font-size:13px;line-height:1.4">Copyright &copy; 2026 &mdash; CodeRebelsAlliance. All rights reserved. This application is provided as-is. See the GitHub repository for source, issues and releases.</div>
-        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap">
           <button id="btn-check-updates" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-sync-alt"></i> Check for updates</button>
+          <button id="btn-install-update" class="action-btn" style="display:none;width:auto;padding:8px 18px"><i class="fas fa-download"></i> Install update</button>
           <span id="about-update-status" style="font-size:12px;color:#aaa"></span>
+        </div>
+        <div id="about-update-progress" style="display:none;margin-top:10px">
+          <div style="height:6px;background:#1a1a1a;border-radius:3px;overflow:hidden"><div id="about-update-progress-fill" style="height:100%;width:0%;background:#5b8def;transition:width .2s ease"></div></div>
+          <div id="about-update-progress-text" style="font-size:12px;color:#888;margin-top:4px">Downloading...</div>
         </div>
       </div>
       <div id="about-badges" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
@@ -246,22 +251,23 @@
     <div id="startup-auth-box">
       <div id="startup-auth-icon"><i class="fas fa-id-card" style="font-size:32px;color:#5b8def"></i></div>
       <div id="startup-auth-title">YouTube Authentication</div>
-      <div id="startup-auth-desc">Sign in with your Google account to enable song requests.</div>
+      <div id="startup-auth-desc">Import cookies from a browser where you are signed into YouTube to enable song requests.</div>
       <div id="startup-auth-status"></div>
     </div>
   </div>
 </div>
 <div id="settings-modal" class="modal-overlay" style="display:none">
-  <div class="modal" style="width:700px;max-height:90vh;display:flex;flex-direction:column">
+  <div class="modal" style="width:900px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column">
     <div class="modal-header">
       <span><i class="fas fa-cog"></i> Settings</span>
       <button class="modal-close" id="btn-settings-close"><i class="fas fa-times"></i></button>
     </div>
     <div class="modal-body" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0">
-<div id="settings-tabs" style="display:flex;gap:4px;margin-bottom:12px;flex-shrink:0">
+<div id="settings-tabs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;flex-shrink:0">
         <button class="settings-tab active" data-tab="general">General</button>
         <button class="settings-tab" data-tab="security">Security & Server</button>
         <button class="settings-tab" data-tab="remote">Remote Control</button>
+        <button class="settings-tab" data-tab="console">Console</button>
         <button class="settings-tab" data-tab="library">Library</button>
         <button class="settings-tab" data-tab="logging">Logging</button>
       </div>
@@ -306,6 +312,23 @@
               <div class="settings-hint">Which tab is selected by default when the Submit Song modal opens.</div>
             </div>
           </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Startup &amp; Window</div>
+            <div class="settings-hint">How SongRequest starts and what the window does on minimise or close.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-autostart" /> Start SongRequest when you log in</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-start-minimized" /> Start minimised</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-minimize-tray" /> Minimise to tray</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-close-tray" /> Close to tray (keep running)</label>
+            <div class="settings-hint" id="s-tray-hint" style="display:none">Tray options need a supported platform (currently Windows); here the window minimises/closes normally.</div>
+            <div class="settings-hint" id="s-autostart-hint" style="display:none">Autostart is not available on this platform.</div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">System Integration</div>
+            <div class="settings-hint">Show the current track (title, artist, artwork) and transport controls in the operating system's media controls.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-system-media" /> Integrate with system media controls</label>
+            <div class="settings-hint" id="s-system-media-hint" style="display:none">System media integration is not available on this platform.</div>
+            <div class="settings-hint" id="s-system-media-status"></div>
+          </div>
         </div>
         <div id="settings-security" class="settings-panel">
           <div class="settings-card">
@@ -342,8 +365,52 @@
             </div>
             <button id="s-auth-btn"><img src="sapp.png"/><span>Login with SchülerApp</span></button>
           </div>
+          <div class="settings-card">
+            <div class="settings-card-title">YouTube Authentication</div>
+            <div class="settings-hint">Cookies from a signed-in browser allow the app to access age-restricted or limited videos. Import them from an installed browser or paste them manually.</div>
+            <div class="settings-field">
+              <label>Browser</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <select id="s-yt-browser" class="settings-input" style="flex:1"></select>
+                <button id="s-yt-grab" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-cookie-bite"></i> Grab cookies</button>
+              </div>
+              <div class="settings-hint">Requires yt-dlp. Sign in to YouTube in the selected browser first.</div>
+            </div>
+            <div class="settings-field">
+              <label>Or paste cookies (cookies.txt or a Cookie header)</label>
+              <textarea id="s-yt-cookies" class="settings-input" rows="3" placeholder="name=value; name2=value2; ..."></textarea>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+              <button id="s-yt-save" class="top-btn" style="font-size:12px"><i class="fas fa-save"></i> Save pasted cookies</button>
+              <button id="s-yt-clear" class="top-btn" style="font-size:12px">Clear saved</button>
+            </div>
+            <div id="s-yt-status" class="settings-hint" style="color:#d0d0d0"></div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">External Tools</div>
+            <div class="settings-hint">FFmpeg is required for audio playback; yt-dlp is optional (used to import YouTube cookies). They can be downloaded automatically into the app's tools folder.</div>
+            <div style="padding:2px 0">
+              <div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0"><span>FFmpeg</span><span id="tool-ffmpeg-status" style="color:#9a9a9a">Checking…</span></div>
+              <div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0"><span>FFprobe</span><span id="tool-ffprobe-status" style="color:#9a9a9a">Checking…</span></div>
+              <div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0"><span>yt-dlp</span><span id="tool-ytdlp-status" style="color:#9a9a9a">Checking…</span></div>
+            </div>
+            <div id="tool-tools-dir" class="settings-hint" style="margin-top:2px"></div>
+            <div style="display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap">
+              <label class="settings-checkbox" style="margin:0"><input type="checkbox" id="tool-dl-ffmpeg" /> FFmpeg</label>
+              <label class="settings-checkbox" style="margin:0"><input type="checkbox" id="tool-dl-ytdlp" /> yt-dlp</label>
+              <button id="tool-download" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-download"></i> Download selected</button>
+              <button id="tool-refresh" class="top-btn" style="font-size:12px">Refresh</button>
+            </div>
+            <div id="tool-progress" class="settings-hint" style="color:#d0d0d0"></div>
+          </div>
         </div>
         <div id="settings-remote" class="settings-panel">
+          <div class="settings-card">
+            <div class="settings-card-title">System-wide Hotkeys</div>
+            <div class="settings-hint">Register the keyboard shortcuts below as <strong>global</strong> hotkeys that work even when SongRequest is not focused.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-global-hotkeys" /> Enable system-wide keyboard shortcuts</label>
+            <div class="settings-hint" id="s-global-hotkeys-hint" style="display:none">Global hotkeys are not available on this platform (Linux Wayland is not supported).</div>
+          </div>
           <div class="settings-card">
             <div class="settings-card-title">Music Player Mappings</div>
             <div class="settings-hint">These mappings work globally across app windows. Use multi-key combinations for keyboard shortcuts.</div>
@@ -357,21 +424,43 @@
           <div class="settings-card">
             <div class="settings-card-title">MIDI Devices &amp; Live Feedback</div>
             <div class="settings-hint">Select MIDI input/output devices for remote control. Feedback LEDs update live for play state and slider positions.</div>
-            <div class="settings-field">
-              <label class="settings-checkbox"><input type="checkbox" id="r-midi-enabled" disabled /> Enable MIDI remote control</label>
-            </div>
+            <label class="settings-checkbox"><input type="checkbox" id="r-midi-enabled" /> Enable MIDI remote control</label>
             <div class="settings-field">
               <label>MIDI Input Device</label>
-              <input type="text" id="r-midi-input" class="settings-input" readonly value="N/A" />
+              <select id="r-midi-input" class="settings-input"></select>
             </div>
             <div class="settings-field">
               <label>MIDI Output Device</label>
-              <input type="text" id="r-midi-output" class="settings-input" readonly value="N/A" />
+              <select id="r-midi-output" class="settings-input"></select>
             </div>
+            <div id="r-midi-status" class="settings-hint" style="color:#d0d0d0">MIDI status unknown</div>
+            <div id="r-midi-last" class="settings-hint" style="color:#9a9a9a">No MIDI activity yet.</div>
+            <button id="r-test-midi" class="top-btn" style="font-size:12px;margin-top:6px"><i class="fas fa-lightbulb"></i> Test Feedback LEDs</button>
           </div>
-          <div class="settings-card" style="text-align:center">
-            <p style="color:#888;font-size:12px;margin-bottom:8px">Assign and clear keybindings and MIDI mappings are managed in the legacy settings window.</p>
-            <button class="top-btn" id="r-open-legacy" style="font-size:12px"><i class="fas fa-external-link-alt"></i> Open Legacy Settings</button>
+        </div>
+        <div id="settings-console" class="settings-panel">
+          <div class="settings-card">
+            <div class="settings-card-title">Console Controls</div>
+            <div class="settings-hint">Manage the main window console for debugging and moderation workflows.</div>
+            <div class="settings-field">
+              <label>Message to append</label>
+              <textarea id="c-append-text" class="settings-input" rows="3" style="resize:vertical;font-family:inherit">Test message from Settings</textarea>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button id="c-append" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-plus"></i> Append to Console</button>
+              <button id="c-clear" class="action-btn danger" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-trash"></i> Clear Console</button>
+            </div>
+            <div class="settings-field" style="margin-top:12px">
+              <label>Console text color</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select id="c-color" class="settings-input" style="flex:1">
+                  <option value="success">Green</option>
+                  <option value="error">Red</option>
+                  <option value="">White</option>
+                </select>
+                <button id="c-apply-color" class="top-btn" style="font-size:12px;white-space:nowrap"><i class="fas fa-fill-drip"></i> Apply Color</button>
+              </div>
+            </div>
           </div>
         </div>
         <div id="settings-library" class="settings-panel">
@@ -450,7 +539,64 @@
     </div>
   </div>
 </div>
+<div id="keybind-capture-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:420px">
+    <div class="modal-header">
+      <span><i class="fas fa-keyboard"></i> Assign Key Bind</span>
+      <button class="modal-close" id="btn-keybind-cancel-x"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-hint">Press the key combination you want to assign.</div>
+      <div id="keybind-detected" class="keybind-detected">No shortcut detected</div>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:10px 0 0 0;border-top:none">
+        <button id="btn-keybind-cancel" class="top-btn" style="font-size:13px">Cancel</button>
+        <button id="btn-keybind-apply" class="action-btn" style="width:auto;padding:8px 18px;font-size:13px"><i class="fas fa-check"></i> Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="midi-assign-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:460px">
+    <div class="modal-header">
+      <span><i class="fas fa-sliders-h"></i> Assign MIDI Mapping</span>
+      <button class="modal-close" id="btn-midi-assign-cancel-x"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="midi-assign-status" class="settings-hint" style="color:#ccc;white-space:pre-line">Waiting for MIDI input...</div>
+      <div class="settings-field">
+        <label>Velocity Pressed (LED feedback) &mdash; <span id="midi-vel-pressed-label">127</span></label>
+        <input type="range" id="midi-vel-pressed" min="0" max="127" value="127" style="width:100%" />
+      </div>
+      <div class="settings-field">
+        <label>Velocity Unpressed (LED feedback) &mdash; <span id="midi-vel-unpressed-label">0</span></label>
+        <input type="range" id="midi-vel-unpressed" min="0" max="127" value="0" style="width:100%" />
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:10px 0 0 0;border-top:none">
+        <button id="btn-midi-assign-cancel" class="top-btn" style="font-size:13px">Cancel</button>
+        <button id="btn-midi-assign-ok" class="action-btn" style="width:auto;padding:8px 18px;font-size:13px" disabled><i class="fas fa-check"></i> OK</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="toast-container"></div>
+<div id="tool-prompt-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:540px;max-width:92vw;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <span><i class="fas fa-tools"></i> Optional setup</span>
+    </div>
+    <div class="modal-body">
+      <p id="tool-prompt-text" style="margin-top:0">SongRequest needs <strong>FFmpeg</strong> for audio playback and can use <strong>yt-dlp</strong> to import YouTube cookies. Download them into the app now?</p>
+      <label class="settings-checkbox"><input type="checkbox" id="tool-prompt-ffmpeg" checked /> FFmpeg + FFprobe (required for audio playback)</label>
+      <label class="settings-checkbox"><input type="checkbox" id="tool-prompt-ytdlp" checked /> yt-dlp (optional, for cookie import)</label>
+      <div id="tool-prompt-progress" class="settings-hint" style="color:#d0d0d0"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px">
+      <button id="tool-prompt-skip" class="top-btn">Not now</button>
+      <button id="tool-prompt-download" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-download"></i> Download</button>
+    </div>
+  </div>
+</div>
+<script src="keys.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

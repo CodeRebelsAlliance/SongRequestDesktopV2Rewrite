@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visualization - SongRequest V2</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="visualization.css">
+</head>
+<body>
+<div id="viz-root">
+  <div id="viz-toolbar">
+    <span id="viz-title"><i class="fas fa-wave-square"></i> Visualization</span>
+    <div id="viz-modes">
+      <button class="viz-mode active" data-mode="Spectrum"><i class="fas fa-chart-bar"></i> Spectrum</button>
+      <button class="viz-mode" data-mode="Waveform"><i class="fas fa-wave-square"></i> Waveform</button>
+      <button class="viz-mode" data-mode="Circular"><i class="fas fa-circle-notch"></i> Circular</button>
+      <button class="viz-mode" data-mode="VUMeter"><i class="fas fa-volume-up"></i> VU Meter</button>
+      <button class="viz-mode" data-mode="Particles"><i class="fas fa-star"></i> Particles</button>
+    </div>
+    <button id="viz-fullscreen" class="top-btn"><i class="fas fa-expand"></i></button>
+  </div>
+  <div id="viz-stage">
+    <canvas id="viz-canvas"></canvas>
+    <div id="viz-idle">♪ No audio playing ♪</div>
+  </div>
+</div>
+<script src="visualization.js"></script>
+</body>
+</html>

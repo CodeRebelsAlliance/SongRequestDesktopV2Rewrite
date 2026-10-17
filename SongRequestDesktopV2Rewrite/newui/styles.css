@@ -276,13 +276,22 @@ body { background: #121212; color: #e0e0e0; }
 
 /* Remote control mappings grid */
 .settings-remote-grid { font-size: 12px; }
-.rm-header { display: flex; font-weight: 600; color: #aaa; padding: 6px 0; border-bottom: 1px solid #333; }
-.rm-row { display: flex; padding: 6px 0; border-bottom: 1px solid #2a2a2a; }
+.rm-header { display: flex; align-items: center; font-weight: 600; color: #aaa; padding: 6px 0; border-bottom: 1px solid #333; }
+.rm-row { display: flex; align-items: center; padding: 6px 0; border-bottom: 1px solid #2a2a2a; }
 .rm-row:last-child { border-bottom: none; }
-.rm-col-action { flex: 0 0 180px; color: #ddd; }
-.rm-col-key { flex: 0 0 180px; color: #5b8def; }
-.rm-col-midi { flex: 1; color: #b885e8; }
+.rm-col-action { flex: 0 0 170px; color: #ddd; }
+.rm-col-key { flex: 0 0 120px; color: #5b8def; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm-col-midi { flex: 1; min-width: 0; color: #b885e8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm-col-btn { flex: 0 0 62px; }
 .rm-unset { color: #666; font-style: italic; }
+.rm-assign, .rm-clear { flex: 0 0 auto; margin-left: 6px; padding: 4px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 11px; transition: all 0.15s ease; }
+.rm-assign { background: #3a3a3a; color: #ddd; }
+.rm-assign:hover { background: #4a4a4a; transform: translateY(-1px); }
+.rm-clear { background: #5a2a2a; color: #f88; }
+.rm-clear:hover { background: #7a3a3a; transform: translateY(-1px); }
+
+/* Keybind capture */
+.keybind-detected { background: #111; border: 1px solid #444; border-radius: 8px; padding: 16px; text-align: center; font-family: 'Consolas', monospace; font-size: 18px; color: #5b8def; margin: 10px 0 4px 0; min-height: 24px; }
 
 /* Startup overlay */
 #startup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f0f10; z-index: 99999; display: flex; align-items: center; justify-content: center; transition: opacity 0.4s ease; }

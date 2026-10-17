@@ -6,4 +6,7 @@
   <Project Path="SongRequestDesktopV2Rewrite/SongRequestDesktopV2Rewrite.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
+  <Project Path="SongRequestDesktopV2Rewrite.Smtc.Windows/SongRequestDesktopV2Rewrite.Smtc.Windows.csproj" />
+  <Project Path="tests/SongRequestDesktopV2Rewrite.UnitTests/UnitTests.csproj" />
+  <Project Path="tests/SongRequestDesktopV2Rewrite.IntegrationTests/IntegrationTests.csproj" />
 </Solution>

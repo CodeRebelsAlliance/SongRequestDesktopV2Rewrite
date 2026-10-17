@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coverage configuration for coverlet ("XPlat Code Coverage").
+
+  Native platform shells that cannot run on CI are excluded from the coverage
+  numbers (they are compile-checked and covered by their pure, tested pieces):
+    - Win32TrayIcon / LinuxTrayIcon: tray P/Invoke (Windows; Linux needs a GTK
+      display + tray host; the AppIndicator binding is symbol-tested).
+    - WindowsGlobalHotkeyBackend / X11GlobalHotkeyBackend: global-hotkey P/Invoke
+      (need a desktop session); the gesture/key-table/service logic is tested.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+          <ExcludeByFile>**/Platform/Win32TrayIcon.cs,**/Platform/LinuxTrayIcon.cs,**/Platform/Hotkeys/WindowsGlobalHotkeyBackend.cs,**/Platform/Hotkeys/X11GlobalHotkeyBackend.cs</ExcludeByFile>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

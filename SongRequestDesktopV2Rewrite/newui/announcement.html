@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Announcement - SongRequest V2</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="announcement.css">
+</head>
+<body>
+<div id="ann-root">
+  <div id="ann-header">
+    <span id="ann-title"><i class="fas fa-microphone"></i> Announcement</span>
+    <button id="ann-close" class="top-btn danger"><i class="fas fa-times"></i> Close</button>
+  </div>
+
+  <div id="ann-body">
+    <button id="ann-mic" data-state="idle" class="ann-mic">
+      <i class="fas fa-microphone"></i>
+    </button>
+    <div id="ann-state-text">Ready</div>
+
+    <div class="ann-section">
+      <label>Dim level &mdash; <span id="ann-dim-value">20 dB</span></label>
+      <input type="range" id="ann-dim" min="0" max="50" step="1" value="20" style="width:100%"/>
+      <div class="ann-hint">How much the music is lowered while announcing.</div>
+    </div>
+
+    <div class="ann-section">
+      <label class="settings-checkbox"><input type="checkbox" id="ann-play-sound" checked/> Play pre-announcement sound</label>
+      <label class="settings-checkbox"><input type="checkbox" id="ann-push-to-talk" checked/> Push-to-talk (hold to speak)</label>
+      <div class="ann-hint" id="ann-hint-text">Hold the microphone button while you speak.</div>
+    </div>
+  </div>
+</div>
+<script src="announcement.js"></script>
+</body>
+</html>

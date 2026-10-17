@@ -169,7 +169,7 @@ namespace SongRequestDesktopV2Rewrite
                         ["songId"] = song.Id,
                         ["title"] = song.Title,
                         ["artist"] = song.Artist,
-                        ["thumbnailPath"] = song.ThumbnailPath,
+                        ["thumbnailPath"] = song.ThumbnailPath ?? string.Empty,
                         ["filePath"] = song.FilePath,
                         ["duration"] = song.Duration.TotalSeconds,
                         ["durationDisplay"] = song.DurationDisplay,
@@ -480,7 +480,6 @@ namespace SongRequestDesktopV2Rewrite
 
                     bool added = false;
                     bool updated = false;
-                    bool hashDup = false;
 
                     lock (_lock)
                     {
@@ -488,7 +487,6 @@ namespace SongRequestDesktopV2Rewrite
                         if (hashIndex.ContainsKey(hash))
                         {
                             // Same hash = same file content. Keep the existing entry.
-                            hashDup = true;
                             song.IsHashDuplicate = true;
                             result.SongsAdded++; // count as a "find" not an error
                             continue; // don't add
@@ -773,7 +771,7 @@ namespace SongRequestDesktopV2Rewrite
                 song.Duration = tagFile.Properties.Duration;
                 try
                 {
-                    using var reader = new NAudio.Wave.AudioFileReader(filePath);
+                    using var reader = AudioSourceFactory.Open(filePath);
                     if (reader.TotalTime > TimeSpan.Zero)
                     {
                         song.Duration = reader.TotalTime;

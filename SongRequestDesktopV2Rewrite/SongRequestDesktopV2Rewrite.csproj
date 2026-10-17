@@ -2,63 +2,53 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <UseWPF>true</UseWPF>
     <ApplicationIcon>SRshortLogo.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
     <AssemblyName>SongRequest V2</AssemblyName>
+    <StartupObject>SongRequestDesktopV2Rewrite.Program</StartupObject>
+
+    <!--
+      Single source of truth for the app version. It is shown in the UI, compared
+      against the release tag by the updater, used as the release tag by CI and
+      written into the Windows "Apps & features" entry.
+    -->
+    <Version>4.0</Version>
+
+    <!-- Product metadata (Windows file properties, Apps & features entry). -->
+    <AssemblyTitle>SongRequest Desktop</AssemblyTitle>
+    <Product>SongRequest Desktop</Product>
+    <Company>CodeRebelsAlliance UG</Company>
+    <Copyright>Copyright © CodeRebelsAlliance UG</Copyright>
+    <Description>Song request queue, soundboard and playback for live events.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Artboard1%403x.png" />
-    <None Remove="SRLoader.gif" />
-    <None Remove="SRshortLogo.png" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Resource Include="Artboard1@3x.png" />
-    <Resource Include="LargeSR.png" />
-    <Resource Include="newui\LargeSR.png" />
-    <Resource Include="newui\SRshortLogo.png" />
-    <Resource Include="SRshortLogo.ico" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.5.2" />
-    <PackageReference Include="CefSharp.Wpf.NETCore" Version="150.0.110" />
-    <PackageReference Include="NAudio" Version="2.3.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Photino.Native" Version="4.0.22" />
+    <PackageReference Include="NAudio.Core" Version="2.3.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />    <PackageReference Include="Photino.Native" Version="4.0.22" />
     <PackageReference Include="Photino.NET" Version="4.0.16" />
     <PackageReference Include="Photino.NET.Server" Version="4.0.12" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="RtMidi.Core" Version="1.0.53" GeneratePathProperty="true" />
+    <PackageReference Include="Silk.NET.OpenAL" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.OpenAL.Soft.Native" Version="1.23.1" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="Tmds.DBus" Version="0.95.1" />
     <PackageReference Include="YoutubeExplode" Version="6.6.0" />
     <PackageReference Include="YoutubeExplode.Converter" Version="6.6.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="System.Windows.Forms" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Resource Include="SRLoader.gif" />
-    <Resource Include="SRshortLogo.png" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="..\..\..\..\Documents\GitHub\schuelerapp\app\static\icons\icon-48.png" Link="newui\icon-48.png">
-	  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <Content Include="SRshortLogo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-	<Content Include="LargeSR.png">
-	  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	</Content>
+    <Content Include="LargeSR.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="announcement.mp3">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -75,16 +65,38 @@
     <Content Remove="newui\SRshortLogo.png" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Update="chromiumembeddedframework.runtime.win-arm64" Version="150.0.11" />
+  <!-- RtMidi.Core's bundled targets omit the Linux native library; copy it so MIDI works. -->
+  <ItemGroup Condition="Exists('$(PkgRtMidi_Core)/build/librtmidi.so')">
+    <None Include="$(PkgRtMidi_Core)/build/librtmidi.so">
+      <Link>librtmidi.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="chromiumembeddedframework.runtime.win-x64" Version="150.0.11" />
+    <InternalsVisibleTo Include="SongRequestDesktopV2Rewrite.UnitTests" />
+    <InternalsVisibleTo Include="SongRequestDesktopV2Rewrite.IntegrationTests" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Update="chromiumembeddedframework.runtime.win-x86" Version="150.0.11" />
-  </ItemGroup>
+  <!--
+    Windows SMTC backend: the WinRT/CsWinRT implementation lives in a Windows-only
+    companion assembly (net10.0-windows10.0.19041.0) that is loaded at runtime by
+    Platform/Media/WindowsSmtcLoader.cs. Publishing it next to the app for win-*
+    RIDs keeps the main app a single cross-platform net10.0 assembly.
+    See docs/SYSTEM-MEDIA-INTEGRATION.md.
+  -->
+  <Target Name="PublishWindowsSmtcCompanion"
+          AfterTargets="Publish"
+          Condition="'$(RuntimeIdentifier)' != '' And $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">
+    <PropertyGroup>
+      <_SmtcCompanionProject>$(MSBuildProjectDirectory)/../SongRequestDesktopV2Rewrite.Smtc.Windows/SongRequestDesktopV2Rewrite.Smtc.Windows.csproj</_SmtcCompanionProject>
+      <_SmtcCompanionPublishDir Condition="$([System.IO.Path]::IsPathRooted('$(PublishDir)'))">$(PublishDir)</_SmtcCompanionPublishDir>
+      <_SmtcCompanionPublishDir Condition="'$(_SmtcCompanionPublishDir)' == ''">$(MSBuildProjectDirectory)/$(PublishDir)</_SmtcCompanionPublishDir>
+    </PropertyGroup>
+
+    <MSBuild Projects="$(_SmtcCompanionProject)"
+             Targets="Restore;Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishSingleFile=false;PublishDir=$(_SmtcCompanionPublishDir)" />
+  </Target>
 
 </Project>

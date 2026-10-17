@@ -255,8 +255,8 @@ namespace SongRequestDesktopV2Rewrite
                 // parse success JSON
                 var obj = JObject.Parse(content);
                 result.Found = true;
-                result.TrackName = (string?)obj["trackName"] ?? (string?)obj["track_name"] ?? trackName;
-                result.ArtistName = (string?)obj["artistName"] ?? (string?)obj["artist_name"] ?? artistName;
+                result.TrackName = ((string?)obj["trackName"] ?? (string?)obj["track_name"] ?? trackName)!;
+                result.ArtistName = ((string?)obj["artistName"] ?? (string?)obj["artist_name"] ?? artistName)!;
                 result.AlbumName = (string?)obj["albumName"] ?? (string?)obj["album_name"] ?? albumName ?? string.Empty;
                 result.DurationSeconds = (int?)obj["duration"] ?? (int)Math.Round(duration.TotalSeconds);
                 result.Instrumental = (bool?)obj["instrumental"] ?? false;

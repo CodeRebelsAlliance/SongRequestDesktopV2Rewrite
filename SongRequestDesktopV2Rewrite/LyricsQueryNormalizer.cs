@@ -99,7 +99,7 @@ namespace SongRequestDesktopV2Rewrite
             try
             {
                 var fullSongPath = Path.GetFullPath(songPath);
-                var fullDownloadPath = Path.GetFullPath(YoutubeForm.downloadPath);
+                var fullDownloadPath = Path.GetFullPath(AppPaths.DownloadPath);
                 return fullSongPath.StartsWith(fullDownloadPath, StringComparison.OrdinalIgnoreCase);
             }
             catch
