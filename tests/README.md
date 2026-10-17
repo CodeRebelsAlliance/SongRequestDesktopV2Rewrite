@@ -42,8 +42,18 @@ python3 tests/check-coverage.py TestResults/unit 0.27
 - **FFmpeg** on the `PATH` for integration tests (they **skip** cleanly when it
   is missing, so unit-only machines still pass).
 - **Node 18+** for the JS tests.
-- OpenAL is provided by the `Silk.NET.OpenAL.Soft.Native` package; integration
-  tests force the headless `null` driver (`ALSOFT_DRIVERS=null`).
+- OpenAL is provided by the `Silk.NET.OpenAL.Soft.Native` package. Every test run
+  uses the headless `null` driver (`ALSOFT_DRIVERS=null`), applied in three places
+  so it cannot be missed:
+  1. `tests/coverage.runsettings` (`<RunConfiguration><EnvironmentVariables>`) —
+     the test host applies it **before** loading the test assembly, which is the
+     only ordering that is guaranteed to beat an already-loaded native library;
+  2. the `Tests` job environment in the workflow;
+  3. a `[ModuleInitializer]` in each test project (also makes a bare
+     `dotnet test` work without the settings file).
+
+  If a machine still cannot open an OpenAL device at all, the audio tests
+  **skip** instead of failing (`Fixtures.OpenAlAvailable`).
 
 ## Conventions
 

@@ -330,8 +330,11 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 
 ## 5. Mocking / determinism strategy
 
-- **No real audio device in CI**: run OpenAL tests with `ALSOFT_DRIVERS=null`
-  (headless), exactly as the throwaway harnesses did. Real-device behaviour is
+- **No real audio device in CI**: OpenAL runs with the headless `null` driver.
+  `ALSOFT_DRIVERS=null` is applied by `tests/coverage.runsettings` (before the test
+  assembly loads), by the workflow's `Tests` job env and by a `[ModuleInitializer]`
+  in both test projects; if a runner still cannot open a device, the OpenAL tests
+  **skip** rather than fail. Real-device behaviour is
   manual.
 - **FFmpeg**: CI runners have `ffmpeg`; generate fixtures **at test time** with
   `ffmpeg -f lavfi …` (sine/silence, silence+tone) and assert RMS/seek, not
@@ -376,6 +379,15 @@ cobertura report; raise the floors as coverage grows.
 
 Integration tests run on Linux (FFmpeg + OpenAL-null available) and skip
 themselves when FFmpeg is missing; the cross-platform `build` jobs only compile.
+
+**Diagnosing a failure in CI.** The `Tests` job steps use `continue-on-error: true`
+so every suite still runs; that makes the *step icons* report success. Read the
+job summary instead — `tests/test-summary.py` prints each suite's raw step outcome,
+and it reports an `aborted` count separately from `failed`: a non-zero count means
+the test host died part-way through, which also means no coverage was written
+(0.0%) and the totals are partial. Both `dotnet test` invocations run with
+`--blame`, so a `Sequence_*.xml` in the uploaded `test-results` artifact names the
+test that was running when the host crashed.
 
 ## 7. Priorities / roadmap
 

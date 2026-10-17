@@ -19,12 +19,15 @@ NS = "{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}"
 def parse_trx(path):
     root = ET.parse(path).getroot()
     counters = root.find(f"{NS}ResultSummary/{NS}Counters")
-    total = int(counters.get("total", "0")) if counters is not None else 0
-    passed = int(counters.get("passed", "0")) if counters is not None else 0
-    failed = int(counters.get("failed", "0")) if counters is not None else 0
-    skipped = 0
-    if counters is not None:
-        skipped = int(counters.get("notExecuted", "0")) + int(counters.get("inconclusive", "0"))
+    attrs = counters.attrib if counters is not None else {}
+    total = int(attrs.get("total", "0"))
+    passed = int(attrs.get("passed", "0"))
+    failed = int(attrs.get("failed", "0"))
+    skipped = int(attrs.get("notExecuted", "0")) + int(attrs.get("inconclusive", "0"))
+    # Anything left over is aborted/error/timeout/inProgress/passedButRunAborted:
+    # vstest writes these when the test host dies part-way through a run (which
+    # also means no coverage is produced), so surface them instead of hiding them.
+    aborted = max(0, total - passed - failed - skipped)
 
     failures = []
     for result in root.iter(f"{NS}UnitTestResult"):
@@ -35,7 +38,7 @@ def parse_trx(path):
         stack = result.findtext(f"{NS}Output/{NS}ErrorInfo/{NS}StackTrace", default="") or ""
         failures.append((name, message.strip(), stack.strip()))
 
-    return total, passed, failed, skipped, failures
+    return total, passed, failed, skipped, aborted, failures
 
 
 def coverage_rate(directory):
@@ -52,7 +55,7 @@ def main() -> int:
     directories = sys.argv[1:] or ["TestResults"]
     out = []
 
-    totals = {"total": 0, "passed": 0, "failed": 0, "skipped": 0}
+    totals = {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "aborted": 0}
     all_failures = []
 
     for directory in directories:
@@ -60,22 +63,52 @@ def main() -> int:
         if not trx_files:
             continue
         for trx in trx_files:
-            total, passed, failed, skipped, failures = parse_trx(trx)
+            total, passed, failed, skipped, aborted, failures = parse_trx(trx)
             totals["total"] += total
             totals["passed"] += passed
             totals["failed"] += failed
             totals["skipped"] += skipped
+            totals["aborted"] += aborted
             all_failures.extend(failures)
 
         rate = coverage_rate(directory)
         cov = f" · coverage **{rate * 100:.1f}%**" if rate is not None else ""
-        out.append(f"- `{directory}`: **{passed}/{total}** passed, {failed} failed, {skipped} skipped{cov}")
+        aborted_note = f" · ⚠ **{aborted} aborted**" if aborted else ""
+        out.append(
+            f"- `{directory}`: **{passed}/{total}** passed, {failed} failed, "
+            f"{skipped} skipped{aborted_note}{cov}"
+        )
 
-    status = "❌ FAILED" if totals["failed"] else "✅ PASSED"
+    status = "❌ FAILED" if (totals["failed"] or totals["aborted"]) else "✅ PASSED"
     out.insert(0, f"## Test summary — {status}")
+
+    if totals["aborted"]:
+        out.append(
+            "\n> ⚠ Some tests were aborted, which means the test host died before finishing "
+            "(no coverage is produced in that case). Look for `Sequence_*.xml` in the "
+            "results (produced by `dotnet test --blame`) to see which test was running."
+        )
+
+    suite_outcomes = []
+    for label, variable in (
+        ("unit", "SUITE_OUTCOME_UNIT"),
+        ("integration", "SUITE_OUTCOME_INTEGRATION"),
+        ("javascript", "SUITE_OUTCOME_JS"),
+        ("coverage", "SUITE_OUTCOME_COVERAGE"),
+    ):
+        value = os.environ.get(variable)
+        if value:
+            suite_outcomes.append(f"{label}={value}")
+    if suite_outcomes:
+        out.append(
+            "\n- Suite steps: " + ", ".join(suite_outcomes)
+            + " *(these steps use `continue-on-error`, so read these outcomes rather than the step icons)*"
+        )
+
     out.append(
         f"\n**Totals:** {totals['passed']}/{totals['total']} passed · "
         f"{totals['failed']} failed · {totals['skipped']} skipped"
+        + (f" · {totals['aborted']} aborted" if totals["aborted"] else "")
     )
 
     if all_failures:

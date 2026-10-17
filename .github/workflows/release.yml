@@ -131,6 +131,11 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    env:
+      # Headless audio: OpenAL Soft uses its null backend so the audio tests run
+      # without a sound card (also set in tests/coverage.runsettings, which the
+      # test host applies before loading the test assembly).
+      ALSOFT_DRIVERS: "null"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -160,6 +165,7 @@ jobs:
           --settings tests/coverage.runsettings
           --logger "trx;LogFileName=unit.trx"
           --logger "console;verbosity=normal"
+          --blame
           --collect:"XPlat Code Coverage"
           --results-directory TestResults/unit
 
@@ -172,6 +178,7 @@ jobs:
           --settings tests/coverage.runsettings
           --logger "trx;LogFileName=integration.trx"
           --logger "console;verbosity=normal"
+          --blame
           --collect:"XPlat Code Coverage"
           --results-directory TestResults/integration
 
@@ -194,6 +201,11 @@ jobs:
       - name: Test summary
         if: always()
         shell: bash
+        env:
+          SUITE_OUTCOME_UNIT: ${{ steps.unit.outcome }}
+          SUITE_OUTCOME_INTEGRATION: ${{ steps.integration.outcome }}
+          SUITE_OUTCOME_JS: ${{ steps.js.outcome }}
+          SUITE_OUTCOME_COVERAGE: ${{ steps.coverage.outcome }}
         run: |
           mkdir -p TestResults
           python3 tests/test-summary.py TestResults/unit TestResults/integration

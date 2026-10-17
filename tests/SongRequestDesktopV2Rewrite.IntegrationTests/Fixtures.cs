@@ -13,7 +13,9 @@ internal static class Fixtures
     [ModuleInitializer]
     internal static void Init()
     {
-        // Run OpenAL Soft with no real output device.
+        // Run OpenAL Soft with no real output device (belt-and-braces: the same
+        // setting is also applied by tests/coverage.runsettings, which the test
+        // host applies before this assembly is even loaded).
         Environment.SetEnvironmentVariable("ALSOFT_DRIVERS", "null");
 
         // Keep per-user config/cookies off the real machine during tests.
@@ -23,6 +25,32 @@ internal static class Fixtures
     public static string FfmpegExe { get; } = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
 
     public static bool FfmpegAvailable { get; } = DetectFfmpeg();
+
+    private static readonly Lazy<bool> _openAlAvailable = new(DetectOpenAl);
+
+    /// <summary>
+    /// Whether OpenAL can actually open a device. With the null driver configured
+    /// this is true even without a sound card, but on a runner where OpenAL cannot
+    /// initialise at all the audio integration tests skip instead of failing.
+    /// </summary>
+    public static bool OpenAlAvailable => _openAlAvailable.Value;
+
+    private static unsafe bool DetectOpenAl()
+    {
+        try
+        {
+            var alc = Silk.NET.OpenAL.ALContext.GetApi();
+            var device = alc.OpenDevice(null);
+            if (device == null) return false;
+
+            try { return true; }
+            finally { try { alc.CloseDevice(device); } catch { } }
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static readonly Lazy<AudioFixtures> _fixtures = new(Create);
 

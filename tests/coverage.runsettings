@@ -1,15 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Coverage configuration for coverlet ("XPlat Code Coverage").
+  Test-run settings shared by local runs (tests/run-tests.sh) and CI.
 
-  Native platform shells that cannot run on CI are excluded from the coverage
-  numbers (they are compile-checked and covered by their pure, tested pieces):
-    - Win32TrayIcon / LinuxTrayIcon: tray P/Invoke (Windows; Linux needs a GTK
-      display + tray host; the AppIndicator binding is symbol-tested).
-    - WindowsGlobalHotkeyBackend / X11GlobalHotkeyBackend: global-hotkey P/Invoke
-      (need a desktop session); the gesture/key-table/service logic is tested.
+  Environment:
+    ALSOFT_DRIVERS=null — makes OpenAL Soft use its null output backend, so the
+    audio integration tests run on headless machines/CI runners that have no sound
+    card. This is applied by the test host *before* the test assembly is loaded,
+    which is the only place that is guaranteed to win over an already-loaded native
+    library (a [ModuleInitializer] cannot guarantee that on every runner).
+
+  Coverage:
+    Native platform shells that cannot run on CI are excluded from the coverage
+    numbers (they are compile-checked and covered by their pure, tested pieces):
+      - Win32TrayIcon / LinuxTrayIcon: tray P/Invoke (Windows; Linux needs a GTK
+        display + tray host; the AppIndicator binding is symbol-tested).
+      - WindowsGlobalHotkeyBackend / X11GlobalHotkeyBackend: global-hotkey P/Invoke
+        (need a desktop session); the gesture/key-table/service logic is tested.
+      - The Windows SMTC companion and the Windows "Apps & features" registration
+        are Windows-only; their pure parts are unit-tested.
 -->
 <RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <ALSOFT_DRIVERS>null</ALSOFT_DRIVERS>
+    </EnvironmentVariables>
+  </RunConfiguration>
   <DataCollectionRunSettings>
     <DataCollectors>
       <DataCollector friendlyName="XPlat code coverage">

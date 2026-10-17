@@ -13,6 +13,12 @@ internal static class TestSupport
     [ModuleInitializer]
     internal static void Bootstrap()
     {
+        // Run OpenAL headless: the unit suite reaches audio-device enumeration
+        // through the soundboard interop commands, which would otherwise touch a
+        // real (absent) sound card on CI. The same value is applied by
+        // tests/coverage.runsettings for every run that uses it.
+        Environment.SetEnvironmentVariable("ALSOFT_DRIVERS", "null");
+
         AppPaths.AppDataDir = NewTempDir("appdata");
         AppPaths.LocalAppDataDir = NewTempDir("localappdata");
     }
