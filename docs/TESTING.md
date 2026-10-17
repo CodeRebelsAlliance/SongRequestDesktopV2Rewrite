@@ -61,13 +61,16 @@ Run everything locally:
 | Photino host bridge (JavaScript) | `hostbridge.js` registers the host→page handler by *calling* `window.external.receiveMessage(callback)` (assigning to it replaces Photino's shim and silently breaks every response), falls back to `chrome.webview`, and reports when no channel exists |
 | Cookie import (unit) | `BuildYtDlpArguments` keeps the export to a single simulated/flat entry (pointing yt-dlp at the bare homepage walks the logged-in "recommended" feed and never finishes), YouTube-only domain filtering, and an import timeout below the UI's request timeout |
 | Cookie import (integration) | real yt-dlp plumbing: a hung import is killed and reported before the UI gives up, and an unknown browser fails fast with a clear error |
+| MIDI backend guard (unit) | `MidiServiceFactory` support matrix — RtMidi's ALSA backend *aborts the process* without `/dev/snd/seq`, so MIDI is reported unsupported there; override seam keeps the unit suite hermetic; `NullMidiService` no-op behaviour; soundboard state builds with no MIDI backend |
+| Linux desktop integration (unit) | generated `.desktop` entry (name/`Exec` quoting/`Icon`/`StartupWMClass`/categories), XDG data-home path, and that the app-id/icon calls are safe no-ops when unavailable |
+| Cookie browser preference (unit) | `saveCookieBrowser` persists the chosen browser and both `getStartupData` and `getSettings` report it, so the startup prompt and the settings picker default to it |
 | System media (integration) | Linux **MPRIS**: service registration, per-interface `GetAll`/`Get`, metadata/state/position/artUrl round-trip, every transport command, `PropertiesChanged` signal |
 | Library | playlist CRUD, play history, persistence across instances |
 | Interop bus | request/response dispatch; read-only + safe-stateful command tables; **event envelope** (`SendEvent`) |
 | Library (integration) | scan finds/indexes audio files, import + duplicate-by-hash rejection, persistence, missing-file marking + remove-on-scan, missing-folder error |
 | Interop events (integration) | real `scanLibrary` emits `libraryScanCompleted` on the event bus |
 | Library (integration) | scan finds/indexes audio files, import + duplicate-by-hash rejection, persistence |
-| MIDI (integration) | device enumeration, bad-index rejection, no-op sends, **Midi Through loopback** (skips when unavailable) |
+| MIDI (integration) | device enumeration, bad-index rejection, no-op sends, **Midi Through loopback** (skips when unavailable, and skips entirely when the ALSA sequencer is missing) |
 | FFmpeg decode (integration) | wav/mp3/m4a/flac + **Opus-in-WebM labelled `.mp3`**, seek forward/backward, byte positions |
 | OpenAL output (integration) | null-driver play/pause/stop, `PlaybackStopped` at EOF **and** on Stop, device enumeration + selection, buffered feed, 4 concurrent outputs |
 | Clip cache (integration) | short → in-memory, long → streaming, independent cursors, preload |

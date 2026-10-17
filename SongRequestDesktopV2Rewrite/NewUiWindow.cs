@@ -29,6 +29,52 @@ public class NewUiWindow
         catch { }
     }
 
+    /// <summary>
+    /// Re-applies a window's size once it exists.
+    ///
+    /// GTK — and Wayland compositors in particular — ignore a size requested before
+    /// the window is realised, so a window created with <c>SetSize</c> alone comes up
+    /// at Photino's 200x200 default and the user has to resize it by hand.
+    /// </summary>
+    private static void ApplyInitialGeometry(PhotinoWindow window, int width, int height)
+    {
+        try
+        {
+            window.SetSize(width, height);
+            window.Center();
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Applies the application icon. Windows uses the window icon; on Linux the GTK
+    /// default icon is set and a user-level <c>.desktop</c> entry is installed, which
+    /// is the only thing Wayland compositors use to resolve a window's icon.
+    /// </summary>
+    private static void ApplyWindowIcon(PhotinoWindow window)
+    {
+        try
+        {
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            if (OperatingSystem.IsWindows())
+            {
+                var ico = Path.Combine(baseDir, "logo.ico");
+                if (File.Exists(ico)) window.IconFile = ico;
+            }
+            else if (OperatingSystem.IsLinux())
+            {
+                var png = Path.Combine(baseDir, LinuxDesktopIntegration.IconFileName);
+                LinuxDesktopIntegration.ApplyWindowIcon(png);
+                LinuxDesktopIntegration.EnsureApplicationEntry(AutoStart.LauncherPath(), png);
+            }
+        }
+        catch
+        {
+            // Icons are cosmetic; never let them break startup.
+        }
+    }
+
     private PhotinoWindow? _window;
     private PhotinoWindow? _musicPlayerWindow;
     private PhotinoWindow? _presentationWindow;
@@ -80,7 +126,15 @@ public class NewUiWindow
 
             var w = new PhotinoWindow();
 
-            w.WindowCreated += (_, _) => BringToFront(w);
+            w.WindowCreated += (_, _) =>
+            {
+                // GTK (Wayland in particular) drops a size requested before the window
+                // is realised — it comes up at Photino's 200x200 default — so the
+                // geometry is applied again now that the window exists.
+                ApplyInitialGeometry(w, 1280, 761);
+                ApplyWindowIcon(w);
+                BringToFront(w);
+            };
 
             w.WindowClosing += (_, _) =>
             {
@@ -315,7 +369,7 @@ public class NewUiWindow
                 .Center()
                 .Load(htmlPath);
 
-            mp.WindowCreated += (_, _) => BringToFront(mp);
+            mp.WindowCreated += (_, _) => { ApplyInitialGeometry(mp, 1280, 761); BringToFront(mp); };
 
             mp.RegisterWebMessageReceivedHandler((sender, message) =>
             {
@@ -402,7 +456,7 @@ public class NewUiWindow
                 .Center()
                 .Load(htmlPath);
 
-            pw.WindowCreated += (_, _) => BringToFront(pw);
+            pw.WindowCreated += (_, _) => { ApplyInitialGeometry(pw, 1280, 761); BringToFront(pw); };
 
             pw.RegisterWebMessageReceivedHandler((sender, message) =>
             {
@@ -499,7 +553,7 @@ public class NewUiWindow
                 .Center()
                 .Load(htmlPath);
 
-            sb.WindowCreated += (_, _) => BringToFront(sb);
+            sb.WindowCreated += (_, _) => { ApplyInitialGeometry(sb, 1100, 761); BringToFront(sb); };
 
             sb.RegisterWebMessageReceivedHandler((sender, message) =>
             {
@@ -580,7 +634,7 @@ public class NewUiWindow
                 .Center()
                 .Load(htmlPath);
 
-            vw.WindowCreated += (_, _) => BringToFront(vw);
+            vw.WindowCreated += (_, _) => { ApplyInitialGeometry(vw, 1000, 720); BringToFront(vw); };
 
             vw.RegisterWebMessageReceivedHandler((sender, message) =>
             {
@@ -661,7 +715,7 @@ public class NewUiWindow
                 .Center()
                 .Load(htmlPath);
 
-            aw.WindowCreated += (_, _) => BringToFront(aw);
+            aw.WindowCreated += (_, _) => { ApplyInitialGeometry(aw, 460, 560); BringToFront(aw); };
 
             aw.RegisterWebMessageReceivedHandler((sender, message) =>
             {

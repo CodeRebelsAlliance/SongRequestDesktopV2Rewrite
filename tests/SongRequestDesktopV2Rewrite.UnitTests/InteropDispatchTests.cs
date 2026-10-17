@@ -203,4 +203,32 @@ public class InteropDispatchTests
 
         Assert.Contains("Nothing", response["result"]?["error"]?.ToString());
     }
+
+    [Fact]
+    public async Task CookieBrowser_IsRememberedAndReportedToTheUI()
+    {
+        var (_, interop, responses) = Create();
+        var previous = ConfigService.Instance.Current.CookieBrowser;
+        try
+        {
+            // The startup prompt's choice is persisted...
+            var save = new JObject { ["type"] = "request", ["id"] = "cb1", ["method"] = "saveCookieBrowser", ["browser"] = "firefox" };
+            interop.HandleMessage(save.ToString(Formatting.None));
+            Assert.Equal("firefox", ConfigService.Instance.Current.CookieBrowser);
+
+            // ...and comes back to both the startup prompt and the settings UI, so the
+            // picker defaults to it instead of the first browser in the list.
+            var startup = await Request(interop, responses, "getStartupData", "cb2");
+            Assert.Equal("firefox", startup["result"]?["cookieBrowser"]?.ToString());
+
+            var settings = await Request(interop, responses, "getSettings", "cb3");
+            Assert.Equal("firefox", settings["result"]?["cookieBrowser"]?.ToString());
+        }
+        finally
+        {
+            ConfigService.Instance.Update(cfg => cfg.CookieBrowser = previous);
+
+            while (responses.TryDequeue(out _)) { }
+        }
+    }
 }

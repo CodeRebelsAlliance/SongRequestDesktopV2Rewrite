@@ -6,9 +6,16 @@ namespace SongRequestDesktopV2Rewrite.IntegrationTests;
 
 public class MidiServiceTests
 {
+    // RtMidi's ALSA backend aborts the whole process when the ALSA sequencer is
+    // missing, so this must be checked *before* any RtMidi object is created.
+    private static void RequireMidiBackend()
+        => Skip.IfNot(MidiServiceFactory.IsSupported, "no usable MIDI backend here (RtMidi/ALSA would abort the process)");
+
     [SkippableFact]
     public void EnumerateDevices_DoesNotThrow_AndRejectsBadIndexes()
     {
+        RequireMidiBackend();
+
         using var svc = new RtMidiService();
 
         var inputs = svc.GetInputDevices();
@@ -24,6 +31,8 @@ public class MidiServiceTests
     [SkippableFact]
     public void SendWithNoDevice_IsSafeNoOp()
     {
+        RequireMidiBackend();
+
         var svc = new RtMidiService { IsEnabled = true };
         svc.SendNoteOn(1, 1, 100);
         svc.SendNoteOff(1, 1);
@@ -34,6 +43,8 @@ public class MidiServiceTests
     [SkippableFact]
     public void Loopback_ViaMidiThrough_WhenAvailable()
     {
+        RequireMidiBackend();
+
         using var svc = new RtMidiService { IsEnabled = true };
 
         var inputs = svc.GetInputDevices();

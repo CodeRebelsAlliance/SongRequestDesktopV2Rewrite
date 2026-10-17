@@ -56,8 +56,28 @@ public class SoundboardTests
     }
 
     [Fact]
-    public void AddPage_IncreasesPageCount()
+    public void BuildState_WithNoMidiBackend_WorksWithoutTouchingNativeMidi()
     {
+        TestSupport.ResetSoundboardConfig();
+        var saved = MidiServiceFactory.Override;
+        MidiServiceFactory.Override = () => new NullMidiService();
+        try
+        {
+            using var engine = new SoundboardEngine();
+
+            // Regression: on a machine without the ALSA sequencer this used to abort
+            // the process instead of returning an (empty) device list.
+            var state = engine.BuildState();
+            Assert.NotNull(state);
+        }
+        finally
+        {
+            MidiServiceFactory.Override = saved;
+        }
+    }
+
+    [Fact]
+    public void AddPage_IncreasesPageCount()    {
         TestSupport.ResetSoundboardConfig();
         using var engine = new SoundboardEngine();
         var before = engine.Config.Pages.Count;

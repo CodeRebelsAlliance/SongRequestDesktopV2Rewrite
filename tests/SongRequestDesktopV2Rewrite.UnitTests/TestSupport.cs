@@ -21,6 +21,11 @@ internal static class TestSupport
 
         AppPaths.AppDataDir = NewTempDir("appdata");
         AppPaths.LocalAppDataDir = NewTempDir("localappdata");
+
+        // Keep the unit suite hermetic: native MIDI (RtMidi/ALSA) can abort the whole
+        // test host on machines without an ALSA sequencer, and unit tests never need
+        // real devices. The integration suite covers the real backend.
+        MidiServiceFactory.Override = () => new FakeMidiService();
     }
 
     public static string NewTempDir(string prefix = "tmp")

@@ -552,6 +552,9 @@ public class YoutubeFormInterop
                 case "grabCookies":
                     result = await GrabCookiesAsync(msg);
                     break;
+                case "saveCookieBrowser":
+                    result = SaveCookieBrowser(msg);
+                    break;
                 case "submitCookies":
                     result = SubmitCookies(msg);
                     break;
@@ -2033,6 +2036,7 @@ public class YoutubeFormInterop
             globalShortcutsSupported = RemoteControlService.Instance.GlobalShortcutsSupported,
             registeredGlobalShortcuts = RemoteControlService.Instance.RegisteredGlobalShortcuts,
             toolPromptDismissed = cfg.ToolPromptDismissed,
+            cookieBrowser = cfg.CookieBrowser ?? string.Empty,
             systemMediaIntegration = cfg.SystemMediaIntegration,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
@@ -2535,12 +2539,31 @@ public class YoutubeFormInterop
         return new
         {
             version = AppInfo.version,
+            cookieBrowser = ConfigService.Instance.Current?.CookieBrowser ?? string.Empty,
             launchOptions = new
             {
                 rememberSelection = state.RememberSelection,
                 lastSelectedMode = state.LastSelectedMode.ToString()
             }
         };
+    }
+
+    /// <summary>Remembers which browser the user imports YouTube cookies from.</summary>
+    private object SaveCookieBrowser(JObject msg)
+    {
+        try
+        {
+            var browser = msg["browser"]?.ToString() ?? string.Empty;
+            ConfigService.Instance.Update(cfg => cfg.CookieBrowser = browser);
+
+            // Keep the settings picker in sync with the startup prompt.
+            SendEvent("cookieBrowserChanged", new { browser });
+            return new { success = true, browser };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
     }
 
     private object SaveLaunchOptions(JObject msg)

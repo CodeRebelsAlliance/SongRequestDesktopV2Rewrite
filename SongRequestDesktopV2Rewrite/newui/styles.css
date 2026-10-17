@@ -253,6 +253,31 @@ body { background: #121212; color: #e0e0e0; }
 .settings-field label { display: block; color: #bbb; font-size: 12px; margin-bottom: 4px; font-weight: 500; }
 .settings-input { width: 100%; background: #222; border: 1px solid #444; color: #ddd; padding: 8px 12px; border-radius: 6px; font-size: 13px; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .settings-input:focus { outline: none; border-color: #5b8def; box-shadow: 0 0 0 2px rgba(91,141,239,0.2); }
+
+/* Native form controls (dropdown popups, scrollbars) follow the page's colour
+   scheme; without this WebKitGTK renders the dropdown list light/white on a dark UI. */
+:root { color-scheme: dark; }
+
+/* Every dropdown, including ones built in JS that only get a class. Without a
+   rule like this a plain <select> keeps the browser default (white). */
+select {
+  background-color: #222;
+  color: #ddd;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 8px 30px 8px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23bbbbbb'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+select option { background-color: #222; color: #ddd; }
+select:focus { outline: none; border-color: #5b8def; box-shadow: 0 0 0 2px rgba(91,141,239,0.2); }
+select:disabled { opacity: 0.55; cursor: default; }
 .settings-checkbox { display: flex; align-items: center; gap: 8px; color: #ccc; font-size: 13px; margin-bottom: 6px; cursor: pointer; }
 .settings-checkbox input { width: 16px; height: 16px; accent-color: #2a5a2a; cursor: pointer; }
 .settings-checkbox input:disabled { accent-color: #555; cursor: default; }

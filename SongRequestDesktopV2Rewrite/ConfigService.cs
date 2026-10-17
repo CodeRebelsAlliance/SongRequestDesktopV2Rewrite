@@ -45,6 +45,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _closeToTray = false;
         private bool _globalKeyboardShortcuts = false;
         private bool _toolPromptDismissed = false;
+        private string _cookieBrowser = string.Empty;
         private bool _systemMediaIntegration = true;
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -263,6 +264,16 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _toolPromptDismissed;
             set => SetField(ref _toolPromptDismissed, value);
+        }
+
+        /// <summary>
+        /// Browser the user last imported YouTube cookies from. Used to pre-select the
+        /// browser in the startup prompt and in Settings; empty means "not chosen yet".
+        /// </summary>
+        public string CookieBrowser
+        {
+            get => _cookieBrowser;
+            set => SetField(ref _cookieBrowser, value ?? string.Empty);
         }
 
         /// <summary>

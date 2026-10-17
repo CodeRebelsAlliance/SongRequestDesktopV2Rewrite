@@ -10,6 +10,7 @@
   let _fetchStartTime = 0;
   const thumbCache = {};
   let _authOverlayVisible = false;
+  let _authBrowsers = [];
 
   function postMessageToHost(msg) {
     try {
@@ -118,6 +119,7 @@
     else if (eventName === 'midiActivity') onMidiActivity(data);
     else if (eventName === 'toolProgress') onToolProgress(data);
     else if (eventName === 'toolStatus') onToolStatus(data);
+    else if (eventName === 'cookieBrowserChanged') selectAuthBrowser(data && data.browser);
   }
 
   function onUpdateProgress(data) {
@@ -423,6 +425,11 @@
       document.getElementById('s-system-media-hint').style.display = mediaOk ? 'none' : '';
       document.getElementById('s-system-media-status').textContent =
         mediaOk ? ('Backend: ' + (cfg.systemMediaBackend || 'unknown') + (cfg.systemMediaActive ? ' (active)' : '')) : '';
+
+      // Pre-select the browser remembered from a previous cookie import.
+      await ensureAuthBrowsers();
+      selectAuthBrowser(cfg.cookieBrowser || '');
+
       statusEl.textContent = 'Loaded.'; loadData();
       loadLibraryStats();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
@@ -845,15 +852,34 @@
 
   // YouTube authentication (Security tab)
   const ytStatusEl = document.getElementById('s-yt-status');
-  (async () => {
+
+  async function ensureAuthBrowsers() {
+    if (_authBrowsers.length) return _authBrowsers;
     try {
       const r = await send('getAuthBrowsers');
-      const sel = document.getElementById('s-yt-browser');
-      sel.innerHTML = (r.browsers || [])
+      _authBrowsers = r.browsers || [];
+    } catch { _authBrowsers = []; }
+
+    const select = document.getElementById('s-yt-browser');
+    if (select) {
+      select.innerHTML = _authBrowsers
         .map(b => '<option value="' + b + '">' + b.charAt(0).toUpperCase() + b.slice(1) + '</option>')
         .join('');
-    } catch { /* leave the select empty */ }
-  })();
+    }
+    return _authBrowsers;
+  }
+
+  // Pre-select the browser the user last imported cookies from (if still available).
+  function selectAuthBrowser(browser) {
+    if (!browser || _authBrowsers.indexOf(browser) === -1) return;
+    const select = document.getElementById('s-yt-browser');
+    if (select) select.value = browser;
+  }
+
+  ensureAuthBrowsers();
+  document.getElementById('s-yt-browser').addEventListener('change', function () {
+    send('saveCookieBrowser', { browser: this.value }).catch(() => { });
+  });
   document.getElementById('s-yt-grab').onclick = async () => {
     const browser = document.getElementById('s-yt-browser').value;
     if (!browser) { ytStatusEl.textContent = 'No browser available.'; return; }
@@ -863,6 +889,7 @@
       ytStatusEl.textContent = r.success
         ? 'Saved ' + r.cookieCount + ' cookies from ' + browser + '.'
         : 'Failed: ' + (r.error || 'no cookies found');
+      if (r.success) await send('saveCookieBrowser', { browser }).catch(() => { });
     } catch (e) { ytStatusEl.textContent = 'Error: ' + e.message; }
   };
   document.getElementById('s-yt-save').onclick = async () => {
@@ -1937,7 +1964,7 @@
     } catch { /* use defaults */ }
 
     const browserOptions = authBrowsers
-      .map(b => '<option value="' + b + '">' + b.charAt(0).toUpperCase() + b.slice(1) + '</option>')
+      .map(b => '<option value="' + b + '"' + (b === ((data && data.cookieBrowser) || '') ? ' selected' : '') + '>' + b.charAt(0).toUpperCase() + b.slice(1) + '</option>')
       .join('');
 
     authStatusEl.innerHTML =
@@ -1955,6 +1982,7 @@
           const r = await send('grabCookies', { browser });
           if (r.success) {
             authStatusEl.textContent = 'Authentication successful (' + r.cookieCount + ' cookies)';
+            await send('saveCookieBrowser', { browser }).catch(() => { });
             resolve();
           } else {
             authStatusEl.innerHTML = 'Import failed: ' + (r.error || 'no cookies found') +

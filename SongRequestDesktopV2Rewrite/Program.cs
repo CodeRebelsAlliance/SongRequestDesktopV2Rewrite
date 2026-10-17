@@ -17,6 +17,10 @@ public static class Program
         var webViewEnvironment = LinuxWebViewEnvironment.Apply();
         Print(webViewEnvironment.Describe());
 
+        // Wayland derives the window's app id from the GLib program name, which must
+        // be set before GTK starts (it is how the compositor finds the .desktop icon).
+        LinuxDesktopIntegration.EnsureApplicationId();
+
         // A native webview failure cannot be caught, so record the attempt and only
         // clear it once the webview has actually rendered (NewUiWindow).
         StartupGuard.Begin();

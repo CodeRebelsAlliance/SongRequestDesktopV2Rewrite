@@ -91,6 +91,15 @@ browser. See
   Anything you export yourself always wins — the app never overrides a variable
   that is already set.
 
+- **Linux: the window has no icon in the dock/task bar**
+
+  Wayland has no per-window icon protocol: the compositor resolves the icon from a
+  `.desktop` file whose id matches the window's app id. The app therefore sets its
+  app id to `songrequest` and installs
+  `~/.local/share/applications/songrequest.desktop` (with `Icon=` pointing at the
+  bundled `SRappIcon.png`) on every start; on X11 the GTK window icon is set too.
+  Delete that file if you don't want the app menu entry.
+
 ## Libraries and Dependencies
 
 - .NET Runtime is **not** required separately — the self-contained release includes it
