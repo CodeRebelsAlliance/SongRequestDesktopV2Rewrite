@@ -22,9 +22,10 @@ public class InteropDispatchTests
         return (host, interop, responses);
     }
 
-    private static async Task<JObject> Request(YoutubeFormInterop interop, ConcurrentQueue<string> responses, string method, string id = "t1")
+    private static async Task<JObject> Request(YoutubeFormInterop interop, ConcurrentQueue<string> responses, string method, string id = "t1", Action<JObject>? customize = null)
     {
         var msg = new JObject { ["type"] = "request", ["id"] = id, ["method"] = method };
+        customize?.Invoke(msg);
         interop.HandleMessage(msg.ToString(Formatting.None));
 
         for (int i = 0; i < 200; i++)
@@ -202,6 +203,101 @@ public class InteropDispatchTests
         var response = await Request(interop, responses, "downloadTools");
 
         Assert.Contains("Nothing", response["result"]?["error"]?.ToString());
+    }
+
+    [Fact]
+    public async Task Quit_Command_InvokesTheHostQuitHandler()
+    {
+        var (_, interop, responses) = Create();
+        var quitCalls = 0;
+        interop.QuitRequested = () => quitCalls++;
+
+        try
+        {
+            var response = await Request(interop, responses, "quit", "q1");
+
+            Assert.True(response["result"]?["success"]?.ToObject<bool>() == true);
+            Assert.Equal(1, quitCalls);
+        }
+        finally
+        {
+            interop.QuitRequested = null;
+            while (responses.TryDequeue(out _)) { }
+        }
+    }
+
+    [Fact]
+    public async Task SaveRemoteConfig_ToleratesNullValuesFromTheWebUi()
+    {
+        var (_, interop, responses) = Create();
+        var previous = ConfigService.Instance.Current.RemoteControl.MidiInputDevice;
+        try
+        {
+            // The web UI cannot express "no value" for a number: parseInt('') is NaN and
+            // JSON.stringify(NaN) is null. This used to fail the whole save with
+            // "Can not convert Null to Int32." when no MIDI device was selected.
+            var response = await Request(interop, responses, "saveRemoteConfig", "null1", msg =>
+            {
+                msg["midiEnabled"] = false;
+                msg["midiInputDevice"] = JValue.CreateNull();
+                msg["midiOutputDevice"] = JValue.CreateNull();
+            });
+
+            Assert.True(response["result"]?["success"]?.ToObject<bool>() == true, response["result"]?.ToString());
+            Assert.Equal(previous, ConfigService.Instance.Current.RemoteControl.MidiInputDevice);
+        }
+        finally
+        {
+            while (responses.TryDequeue(out _)) { }
+        }
+    }
+
+    [Fact]
+    public async Task SaveSettings_ToleratesNullValuesFromTheWebUi()
+    {
+        var (_, interop, responses) = Create();
+        var previous = ConfigService.Instance.Current.Threads;
+        try
+        {
+            var response = await Request(interop, responses, "saveSettings", "null2", msg =>
+            {
+                msg["settings"] = new JObject
+                {
+                    ["fetchingTimer"] = JValue.CreateNull(),
+                    ["threads"] = JValue.CreateNull(),
+                    ["normalizeVolume"] = JValue.CreateNull(),
+                    ["libraryScanFolders"] = JValue.CreateNull(),
+                };
+            });
+
+            Assert.True(response["result"]?["success"]?.ToObject<bool>() == true, response["result"]?.ToString());
+            Assert.Equal(previous, ConfigService.Instance.Current.Threads);
+        }
+        finally
+        {
+            while (responses.TryDequeue(out _)) { }
+        }
+    }
+
+    [Fact]
+    public async Task CompleteSetup_MarksTheHostReadyForDownloads()
+    {
+        var (host, interop, responses) = Create();
+        try
+        {
+            Assert.False(host.SetupComplete);
+
+            var response = await Request(interop, responses, "completeSetup", "cs1",
+                msg => msg["startupMode"] = "SongRequests");
+
+            Assert.True(response["result"]?["success"]?.ToObject<bool>() == true);
+            Assert.True(host.SetupComplete);
+        }
+        finally
+        {
+            host.SetupComplete = false;
+            while (responses.TryDequeue(out _)) { }
+        }
     }
 
     [Fact]

@@ -17,9 +17,9 @@ public class CookieImportTests
     public async Task HungImport_IsStoppedByTheTimeout()
     {
         Skip.If(OperatingSystem.IsWindows(), "uses a POSIX shell stub");
-        Skip.IfNot(YoutubeCookieService.TryFindYtDlp() != null, "yt-dlp not installed");
 
-        // A fake yt-dlp that never finishes.
+        // Deliberately does not require a real yt-dlp: this covers the process/timeout
+        // plumbing (the stub stands in for a hung yt-dlp).
         var stub = Path.Combine(Fixtures.NewTempDir(), "slow-yt-dlp.sh");
         File.WriteAllText(stub, "#!/bin/sh\nsleep 120\n");
         if (!OperatingSystem.IsWindows())

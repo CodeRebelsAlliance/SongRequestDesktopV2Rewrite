@@ -27,6 +27,13 @@ public interface ISongRequestHost
     Action? OnDataRefreshed { get; set; }
 
     bool InitialLoadComplete { get; set; }
+
+    /// <summary>
+    /// Set once the user finished the startup steps (including the YouTube cookie
+    /// decision). Automatic downloads must not start before that.
+    /// </summary>
+    bool SetupComplete { get; set; }
+
     HashSet<string> fetchedYtids { get; set; }
     ConcurrentDictionary<string, byte> ProcessingVideos { get; }
     SemaphoreSlim DownloadSemaphore { get; }

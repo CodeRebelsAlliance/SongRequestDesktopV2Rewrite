@@ -10,12 +10,16 @@
     library (a [ModuleInitializer] cannot guarantee that on every runner).
 
   Coverage:
-    Native platform shells that cannot run on CI are excluded from the coverage
-    numbers (they are compile-checked and covered by their pure, tested pieces):
+    Native platform shells and the GUI shell that cannot run headless are excluded
+    from the coverage numbers (they are compile-checked; their pure pieces are
+    unit-tested separately):
       - Win32TrayIcon / LinuxTrayIcon: tray P/Invoke (Windows; Linux needs a GTK
         display + tray host; the AppIndicator binding is symbol-tested).
       - WindowsGlobalHotkeyBackend / X11GlobalHotkeyBackend: global-hotkey P/Invoke
         (need a desktop session); the gesture/key-table/service logic is tested.
+      - NewUiWindow: creates Photino windows (needs a display + a webview), so it
+        cannot run headless; `TrayMenu` and the window geometry/icon decisions it
+        uses are unit-tested.
       - The Windows SMTC companion and the Windows "Apps & features" registration
         are Windows-only; their pure parts are unit-tested.
 -->
@@ -31,7 +35,7 @@
         <Configuration>
           <Format>cobertura</Format>
           <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
-          <ExcludeByFile>**/Platform/Win32TrayIcon.cs,**/Platform/LinuxTrayIcon.cs,**/Platform/Hotkeys/WindowsGlobalHotkeyBackend.cs,**/Platform/Hotkeys/X11GlobalHotkeyBackend.cs</ExcludeByFile>
+          <ExcludeByFile>**/Platform/Win32TrayIcon.cs,**/Platform/LinuxTrayIcon.cs,**/Platform/Hotkeys/WindowsGlobalHotkeyBackend.cs,**/Platform/Hotkeys/X11GlobalHotkeyBackend.cs,**/NewUiWindow.cs</ExcludeByFile>
           <SkipAutoProps>true</SkipAutoProps>
         </Configuration>
       </DataCollector>

@@ -64,6 +64,26 @@ browser. See
   
   Either the URL was invalid, or it is other Content that is hosted as a livestream or community post, or you have reached a rate limit
 
+- **Songs from requests are not downloaded**
+
+  Automatic downloads only start once you have finished the startup step — importing
+  YouTube cookies **or** choosing *Skip* — or when cookies are already saved, and the
+  app remembers what it has not fetched yet, so anything skipped is picked up again on
+  the next refresh. Without cookies YouTube rejects age-restricted and
+  "confirm you're not a bot" videos with a *video unavailable* error, which is why the
+  app waits for your decision instead of hammering YouTube first.
+
+- **The window closed but the app is still running**
+
+  With **Settings → Startup & Window → Close to tray** enabled, clicking the window's
+  X hides the app to the tray instead of quitting (that is what the option is for).
+  To quit for real use the **Quit** button in the top bar of the main page — the same
+  button is available on the loading/launch/authentication screens — or the tray
+  menu's **Quit**, or turn *Close to tray* off.
+
+  The Quit button releases the tray icon, the OS "now playing" entry and the MIDI
+  devices before exiting, so nothing is left behind.
+
 - **Linux: the window stays black/tiny, or the app exits immediately with
   `Gdk-Message: … Error 71 (Protocol error) dispatching to Wayland display.`**
   
@@ -92,7 +112,6 @@ browser. See
   that is already set.
 
 - **Linux: the window has no icon in the dock/task bar**
-
   Wayland has no per-window icon protocol: the compositor resolves the icon from a
   `.desktop` file whose id matches the window's app id. The app therefore sets its
   app id to `songrequest` and installs

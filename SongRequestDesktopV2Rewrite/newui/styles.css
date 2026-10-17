@@ -321,6 +321,11 @@ select:disabled { opacity: 0.55; cursor: default; }
 /* Startup overlay */
 #startup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f0f10; z-index: 99999; display: flex; align-items: center; justify-content: center; transition: opacity 0.4s ease; }
 
+/* Quit is always reachable while the app is loading (and on the main page). */
+#startup-quit { position: absolute; top: 16px; right: 18px; display: inline-flex; align-items: center; gap: 8px; background: #1e1e1e; color: #d0d0d0; border: 1px solid #333; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-family: inherit; cursor: pointer; transition: all 0.15s ease; }
+#startup-quit:hover { background: #2a1a1a; border-color: #a33; color: #f0b0b0; }
+.top-btn-quit:hover { background: #2a1a1a; border-color: #a33; color: #f0b0b0; }
+
 /* Phase 1: Splash */
 #startup-splash { text-align: center; }
 #startup-splash-inner { max-width: 480px; margin: 0 auto; }

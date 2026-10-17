@@ -64,6 +64,8 @@ Run everything locally:
 | MIDI backend guard (unit) | `MidiServiceFactory` support matrix — RtMidi's ALSA backend *aborts the process* without `/dev/snd/seq`, so MIDI is reported unsupported there; override seam keeps the unit suite hermetic; `NullMidiService` no-op behaviour; soundboard state builds with no MIDI backend |
 | Linux desktop integration (unit) | generated `.desktop` entry (name/`Exec` quoting/`Icon`/`StartupWMClass`/categories), XDG data-home path, and that the app-id/icon calls are safe no-ops when unavailable |
 | Cookie browser preference (unit) | `saveCookieBrowser` persists the chosen browser and both `getStartupData` and `getSettings` report it, so the startup prompt and the settings picker default to it |
+| Interop null tolerance (unit) | `saveSettings`/`saveRemoteConfig` accept `null` values from the web UI (a `<select>` with no MIDI device sends NaN → `null`, which previously failed the save with "Can not convert Null to Int32") |
+| Download gate (unit) | automatic downloads are deferred until the user made the YouTube-cookie decision (or cookies are saved); skipped ids stay out of `fetchedYtids` so the next fetch retries them; `completeSetup` opens the gate |
 | System media (integration) | Linux **MPRIS**: service registration, per-interface `GetAll`/`Get`, metadata/state/position/artUrl round-trip, every transport command, `PropertiesChanged` signal |
 | Library | playlist CRUD, play history, persistence across instances |
 | Interop bus | request/response dispatch; read-only + safe-stateful command tables; **event envelope** (`SendEvent`) |
@@ -375,10 +377,10 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
         run: python3 tests/check-coverage.py TestResults/unit 0.36
 
       - name: Integration tests
-        run: dotnet test tests/SongRequestDesktopV2Rewrite.IntegrationTests/IntegrationTests.csproj --configuration Release --logger "trx" --collect:"XPlat Code Coverage" --results-directory TestResults/integration
+        run: dbus-run-session -- dotnet test tests/SongRequestDesktopV2Rewrite.IntegrationTests/IntegrationTests.csproj --configuration Release --settings tests/coverage.runsettings --logger "trx" --collect:"XPlat Code Coverage" --results-directory TestResults/integration
 
       - name: Check integration coverage floor
-        run: python3 tests/check-coverage.py TestResults/integration 0.18
+        run: python3 tests/check-coverage.py TestResults/integration 0.17
 
       - name: JavaScript tests
         run: node --test tests/js
@@ -420,7 +422,7 @@ FFmpeg decode/seek, OpenAL-null output, `AudioClipCache`, `keys.js`.
 - **Global hotkeys** native backends (Windows `RegisterHotKey`, Linux X11 `XGrabKey`) can't run on CI; the gesture/key-table/service logic is covered. Not supported on macOS or Linux/Wayland.
 - **Autostart / minimise-to-tray / close-to-tray** need a real-desktop smoke test on each OS (registry, `.desktop`, LaunchAgent).
 - Full per-command interop table (currently read-only/stateful subsets) and event-payload snapshots for window/presentation events (which need a `NewUiRef`).
-- Coverage floors are currently unit **0.32** / integration **0.17** (ratchet them up as coverage grows); the platform tray shells are excluded from coverage (see `tests/coverage.runsettings`).
+- Coverage floors are currently unit **0.36** / integration **0.17** (ratchet them up as coverage grows). The integration floor reflects what CI can run: the tray, hotkey and Photino-window shells are excluded (see `tests/coverage.runsettings`), and the environment-dependent suites (MIDI, MPRIS, cookie import) skip when their prerequisites are missing — so CI runs the integration suite under `dbus-run-session` and installs `libayatana-appindicator3-1` to keep as many of them running as possible.
 - Make the `test` job a **required** check in branch protection.
 
 **Required PR check (manual, repo settings).** In GitHub → Settings → Branches → branch protection for `master`: enable “Require status checks to pass” and select the `Tests` job.

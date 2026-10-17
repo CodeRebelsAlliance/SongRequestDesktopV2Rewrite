@@ -31,6 +31,13 @@ public class YoutubeFormInterop
     public ISongRequestHost YtForm => _ytForm;
     public LibraryService LibraryService => _libraryService;
 
+    /// <summary>
+    /// Invoked when the UI asks the app to quit (the Quit buttons). The host window
+    /// owns the shutdown so it can release the tray icon and the OS media session
+    /// before the process exits.
+    /// </summary>
+    public Action? QuitRequested { get; set; }
+
     private string? _currentSongPath;
     private bool _musicPlayerSubscribed;
     private bool _pendingMusicShareOpen;
@@ -127,6 +134,8 @@ public class YoutubeFormInterop
             var msg = JObject.Parse(json);
             var type = msg["type"]?.ToString();
 
+            if (type == "request") DropNullValues(msg);
+
             switch (type)
             {
                 case "request":
@@ -141,6 +150,38 @@ public class YoutubeFormInterop
     }
 
     /// <summary>
+    /// Removes JSON properties whose value is null, treating them as "not provided".
+    ///
+    /// The web UI cannot express "no value" for a number: <c>parseInt('')</c> is NaN,
+    /// and <c>JSON.stringify(NaN)</c> is <c>null</c> — which Newtonsoft turns into
+    /// "Can not convert Null to Int32" if a handler reads it (e.g. saving settings
+    /// with no MIDI device selected). Handlers already treat a missing property as
+    /// "keep the default", so dropping nulls makes a null behave the same way.
+    /// </summary>
+    private static void DropNullValues(JToken token)
+    {
+        switch (token)
+        {
+            case JObject obj:
+                foreach (var property in obj.Properties()
+                             .Where(p => p.Value.Type is JTokenType.Null or JTokenType.Undefined)
+                             .ToList())
+                {
+                    property.Remove();
+                }
+
+                foreach (var property in obj.Properties().ToList())
+                    DropNullValues(property.Value);
+                break;
+
+            case JArray array:
+                foreach (var item in array)
+                    DropNullValues(item);
+                break;
+        }
+    }
+
+    /// <summary>
     /// Handle a message from a specific window, routing responses back to that window.
     /// </summary>
     public async void HandleMessage(string json, Action<string> responseTarget)
@@ -150,6 +191,8 @@ public class YoutubeFormInterop
         {
             var msg = JObject.Parse(json);
             var type = msg["type"]?.ToString();
+
+            if (type == "request") DropNullValues(msg);
 
             switch (type)
             {
@@ -558,6 +601,11 @@ public class YoutubeFormInterop
                 case "submitCookies":
                     result = SubmitCookies(msg);
                     break;
+                case "quit":
+                    QuitRequested?.Invoke();
+                    result = new { success = true };
+                    break;
+
                 case "clearAuthCookies":
                     result = ClearAuthCookies();
                     break;
@@ -2694,6 +2742,10 @@ public class YoutubeFormInterop
             var mode = StartupMode.SongRequests;
             if (msg.TryGetValue("startupMode", out var sm))
                 Enum.TryParse<StartupMode>(sm.ToString(), true, out mode);
+
+            // The user has now made the cookie decision (imported or skipped), so
+            // automatic downloads may start from here on.
+            try { _ytForm.SetupComplete = true; } catch { }
 
             // Apply startup mode for the web UI
             if (_ytForm != null)

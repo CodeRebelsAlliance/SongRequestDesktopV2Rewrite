@@ -435,8 +435,16 @@
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
   }
 
-  async function saveSettings() {
-    const statusEl = document.getElementById('settings-status');
+  // Reads a MIDI device select; returns -1 ("no device") when the list is empty,
+  // because parseInt('') is NaN and JSON.stringify(NaN) is null, which the host
+  // could not read as a number.
+  function midiDeviceValue(elementId) {
+    const el = document.getElementById(elementId);
+    const value = el ? parseInt(el.value, 10) : NaN;
+    return Number.isFinite(value) ? value : -1;
+  }
+
+  async function saveSettings() {    const statusEl = document.getElementById('settings-status');
     statusEl.textContent = 'Saving...';
     try {
       const settings = {
@@ -472,8 +480,10 @@
       // Remote control config (keybinds, MIDI mappings, MIDI devices)
       const rc = {
         midiEnabled: document.getElementById('r-midi-enabled').checked,
-        midiInputDevice: parseInt(document.getElementById('r-midi-input').value, 10),
-        midiOutputDevice: parseInt(document.getElementById('r-midi-output').value, 10),
+        // parseInt('') is NaN and JSON.stringify(NaN) is null, which the host could not
+        // read as a number — send -1 ("no device") instead.
+        midiInputDevice: midiDeviceValue('r-midi-input'),
+        midiOutputDevice: midiDeviceValue('r-midi-output'),
         keybinds: _remoteKeybinds,
         midis: _remoteMidis
       };
@@ -1354,6 +1364,14 @@
 
   // Refresh
   document.getElementById('btn-refresh').addEventListener('click', loadData);
+
+  // Quit (main page and the loading/launch/auth steps). Closing the window is not
+  // always an exit — close-to-tray hides it — so there is an explicit way out.
+  function quitApplication() {
+    try { send('quit'); } catch { /* the host closes the process anyway */ }
+  }
+  document.getElementById('btn-quit').addEventListener('click', quitApplication);
+  document.getElementById('startup-quit').addEventListener('click', quitApplication);
 
   // Main data loading
   async function loadData() {

@@ -48,4 +48,20 @@ public static class Program
     {
         try { Console.WriteLine("[SongRequest] " + message); } catch { }
     }
+
+    /// <summary>
+    /// Terminates the process after the app's OS-visible resources have been
+    /// released. Called last by <see cref="NewUiWindow.Quit"/>.
+    /// </summary>
+    internal static void ExitApplication()
+    {
+        // Stops MIDI/remote control and flushes anything left.
+        try { AppBootstrap.Shutdown(); } catch { }
+
+        try { Console.Out.Flush(); } catch { }
+
+        // Deliberately not returning from Main: Photino's native teardown can abort on
+        // Linux and background native threads would otherwise keep the process alive.
+        Environment.Exit(0);
+    }
 }

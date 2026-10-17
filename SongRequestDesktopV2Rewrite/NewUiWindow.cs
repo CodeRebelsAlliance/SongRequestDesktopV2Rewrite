@@ -145,28 +145,8 @@ public class NewUiWindow
                     return false;
                 }
 
-                _forceClose = true;
-                try { _tray?.Dispose(); } catch { }
-                _tray = null;
-
-                _window = null;
-                _musicPlayerWindow = null;
-                _presentationWindow = null;
-                _soundboardWindow = null;
-                _visualizationWindow = null;
-                _announcementWindow = null;
-
-                _interop.SendMessage = null;
-                SoundboardSendMessage = null;
-                VisualizationSendMessage = null;
-                AnnouncementSendMessage = null;
-
-                if (_onDataRefreshedHandler != null)
-                    _ytForm.OnDataRefreshed -= _onDataRefreshedHandler;
-
-                _interop.Dispose();
-
-                return true;
+                Quit(w);
+                return false; // Quit() terminates the process, so this is not reached.
             };
 
             w.WindowMinimized += (_, _) =>
@@ -211,6 +191,13 @@ public class NewUiWindow
                     w.Invoke(() => w.SendWebMessage(json));
                 }
                 catch { }
+            };
+
+            // The UI's Quit buttons run the same shutdown as the tray/close paths.
+            _interop.QuitRequested = () =>
+            {
+                try { w.Invoke(() => Quit(w)); }
+                catch { Quit(w); }
             };
 
             _onDataRefreshedHandler = () =>
@@ -258,6 +245,44 @@ public class NewUiWindow
         try { _thread?.Join(); } catch { }
     }
 
+    /// <summary>
+    /// Quits the application for real (used by the Quit buttons, the tray menu and
+    /// the window's X button).
+    ///
+    /// Closing the window alone is not enough: on Linux Photino's GTK/WebKit teardown
+    /// aborts (<c>GdkWindow … unexpectedly destroyed</c>) and non-background native
+    /// threads — the D-Bus read loop, GTK — can keep the process alive, which is why
+    /// the window could close while the app kept running in the background. So the
+    /// resources the OS can see (tray icon, MPRIS/SMTC now-playing, MIDI devices) are
+    /// released first and the process is then terminated without running the fragile
+    /// native teardown.
+    /// </summary>
+    public void Quit(PhotinoWindow? window = null)
+    {
+        _forceClose = true;
+
+        try { _tray?.Dispose(); } catch { }
+        _tray = null;
+
+        try { _interop.SendMessage = null; } catch { }
+        SoundboardSendMessage = null;
+        VisualizationSendMessage = null;
+        AnnouncementSendMessage = null;
+
+        // Releases the OS media session (so the desktop drops "now playing") and the
+        // MIDI devices/remote control.
+        try { _interop.Dispose(); } catch { }
+
+        _window = null;
+        _musicPlayerWindow = null;
+        _presentationWindow = null;
+        _soundboardWindow = null;
+        _visualizationWindow = null;
+        _announcementWindow = null;
+
+        Program.ExitApplication();
+    }
+
     private void TrySetupTray(PhotinoWindow w)
     {
         try
@@ -303,10 +328,7 @@ public class NewUiWindow
                     _ytForm.Music.Stop();
                     break;
                 case TrayCommand.Exit:
-                    _forceClose = true;
-                    try { _tray?.Dispose(); } catch { }
-                    _tray = null;
-                    try { w.Close(); } catch { }
+                    Quit(w);
                     break;
             }
         }
@@ -774,20 +796,10 @@ public class NewUiWindow
         });
     }
 
-    public void Close()
-    {
-        var w = _window;
-        if (w != null)
-        {
-            try
-            {
-                w.Close();
-            }
-            catch { }
-        }
-
-        _window = null;
-        _musicPlayerWindow = null;
-        _presentationWindow = null;
-    }
+    /// <summary>
+    /// Requests a full quit (used by the MPRIS <c>Quit</c> command). Routed through
+    /// <see cref="Quit"/> so the process really exits instead of depending on
+    /// Photino's native teardown.
+    /// </summary>
+    public void Close() => Quit(_window);
 }

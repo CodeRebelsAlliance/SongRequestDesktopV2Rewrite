@@ -38,8 +38,8 @@
     <PackageReference Include="Silk.NET.OpenAL.Soft.Native" Version="1.23.1" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
     <PackageReference Include="Tmds.DBus" Version="0.95.1" />
-    <PackageReference Include="YoutubeExplode" Version="6.6.0" />
-    <PackageReference Include="YoutubeExplode.Converter" Version="6.6.0" />
+    <PackageReference Include="YoutubeExplode" Version="6.6.2" />
+    <PackageReference Include="YoutubeExplode.Converter" Version="6.6.2" />
   </ItemGroup>
 
   <ItemGroup>

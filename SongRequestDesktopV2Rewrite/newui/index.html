@@ -21,6 +21,7 @@
       <button id="btn-soundboard" class="top-btn"><i class="fas fa-volume-up"></i> Soundboard</button>
       <button id="btn-settings" class="top-btn"><i class="fas fa-cog"></i> Settings</button>
       <button id="btn-refresh" class="top-btn"><i class="fas fa-sync-alt"></i> Refresh</button>
+      <button id="btn-quit" class="top-btn top-btn-quit" title="Quit SongRequest"><i class="fas fa-power-off"></i> Quit</button>
     </div>
   </div>
   <div id="tabbar" class="startup-hide">
@@ -183,6 +184,9 @@
   </div>
 </div>
 <div id="startup-overlay">
+  <!-- Always available, including during the loading/launch/auth steps: closing the
+       window is not the only way out (and on some desktops it hides to the tray). -->
+  <button id="startup-quit" title="Quit SongRequest"><i class="fas fa-power-off"></i> Quit</button>
   <!-- Phase 1: Loading splash -->
   <div id="startup-splash">
     <div id="startup-splash-inner">

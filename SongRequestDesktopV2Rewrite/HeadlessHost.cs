@@ -38,6 +38,19 @@ public sealed class HeadlessHost : ISongRequestHost
     public ConcurrentDictionary<string, byte> ProcessingVideos => Engine.ProcessingVideos;
     public SemaphoreSlim DownloadSemaphore => Engine.DownloadSemaphore;
 
+    /// <summary>
+    /// Set once the user has finished the startup steps (including the decision about
+    /// importing YouTube cookies). Until then — and while no cookies are saved — the
+    /// app must not talk to YouTube.
+    /// </summary>
+    public bool SetupComplete { get; set; }
+
+    /// <summary>
+    /// Whether automatic downloads may start: either the user finished the startup
+    /// steps (imported cookies or chose to skip) or cookies are already saved.
+    /// </summary>
+    private bool ReadyForDownloads => SetupComplete || YoutubeCookieService.LoadSaved().Count > 0;
+
     public HeadlessHost(IReadOnlyList<System.Net.Cookie>? cookies = null)
     {
         var effective = (cookies != null && cookies.Count > 0) ? cookies : YoutubeCookieService.LoadSaved();
@@ -115,6 +128,16 @@ public sealed class HeadlessHost : ISongRequestHost
         {
             var videoId = YoutubeService.ExtractVideoId(videoUrl);
             if (string.IsNullOrWhiteSpace(videoId) || videoId == "404") return;
+
+            // Never touch YouTube before the user has decided about cookies (or when
+            // cookies are already saved): without them downloads fail for restricted
+            // videos with a "video unavailable" error, and the user may not even want
+            // this one. Leaving the id out of fetchedYtids makes the next fetch retry it.
+            if (!ReadyForDownloads)
+            {
+                fetchedYtids.Remove(videoId);
+                return;
+            }
 
             fetchedYtids.Add(videoId);
             var data = GetOrCreateVideoData(videoId);
