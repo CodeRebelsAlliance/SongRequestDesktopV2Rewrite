@@ -1,0 +1,479 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using SongRequestDesktopV2Rewrite;
+
+namespace SongRequest.Mobile;
+
+/// <summary>
+/// Serves the presentation page over the local network (and to a second display).
+///
+/// The desktop shows the presentation in its own native window. A phone has no
+/// second window, and casting needs a receiver app, so instead the app runs this
+/// tiny HTTP server: any TV browser — or an HDMI display through a WebView — opens
+/// <see cref="Url"/> and gets the *same* presentation page, fed by the same engine.
+///
+/// The page is served unchanged; only its host bridge is swapped (the injected
+/// <c>bridge-http.js</c> replaces <c>SongRequestHost</c> with an HTTP implementation
+/// that polls <c>/state</c>), so the TV view cannot drift from the desktop's.
+/// </summary>
+internal sealed class StageServer : IDisposable
+{
+    private readonly MusicEngine _engine;
+    private readonly LyricsService _lyrics;
+    private readonly string _webRoot;
+
+    private readonly Dictionary<string, LyricsResult?> _lyricsCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _cacheLock = new();
+
+    private TcpListener? _listener;
+    private CancellationTokenSource? _cts;
+
+    public StageServer(MusicEngine engine, string webRoot)
+    {
+        _engine = engine;
+        _webRoot = webRoot;
+        _lyrics = new LyricsService();
+    }
+
+    /// <summary>LAN URL a TV should open, e.g. <c>http://192.168.1.5:8099/</c>.</summary>
+    public string? Url { get; private set; }
+
+    public bool IsRunning => _listener != null;
+
+    /// <summary>Starts the server (idempotent) and returns its URL.</summary>
+    public string? Start()
+    {
+        if (_listener != null) return Url;
+
+        try
+        {
+            var listener = new TcpListener(IPAddress.Any, 0);
+            listener.Start();
+            _listener = listener;
+            _cts = new CancellationTokenSource();
+
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var address = LanAddress() ?? "127.0.0.1";
+            Url = $"http://{address}:{port}/";
+
+            _ = Task.Run(() => AcceptLoopAsync(listener, _cts.Token));
+            Android.Util.Log.Debug("SongRequest", $"stage server listening on {Url}");
+
+            return Url;
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"stage server failed: {ex.Message}");
+            _listener = null;
+            return null;
+        }
+    }
+
+    public void Stop()
+    {
+        try { _cts?.Cancel(); } catch { }
+        try { _listener?.Stop(); } catch { }
+        _listener = null;
+        _cts = null;
+        Url = null;
+    }
+
+    public void Dispose() => Stop();
+
+    // ── Server loop ─────────────────────────────────────────────────────────
+
+    private async Task AcceptLoopAsync(TcpListener listener, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            TcpClient client;
+            try { client = await listener.AcceptTcpClientAsync(token).ConfigureAwait(false); }
+            catch { return; }
+
+            _ = Task.Run(() => HandleAsync(client));
+        }
+    }
+
+    private async Task HandleAsync(TcpClient client)
+    {
+        try
+        {
+            using var _ = client;
+            client.ReceiveTimeout = 5000;
+            client.SendTimeout = 10000;
+
+            using var stream = client.GetStream();
+            var request = await ReadRequestAsync(stream).ConfigureAwait(false);
+            if (request == null) return;
+
+            var (method, path, query) = request.Value;
+
+            if (method == "GET" && (path == "/" || path == "/index.html"))
+            {
+                await WriteTextAsync(stream, "text/html; charset=utf-8", BuildPresentationPage()).ConfigureAwait(false);
+            }
+            else if (method == "GET" && path == "/bridge-http.js")
+            {
+                await WriteTextAsync(stream, "application/javascript; charset=utf-8", BridgeScript).ConfigureAwait(false);
+            }
+            else if (method == "GET" && path == "/state")
+            {
+                await WriteTextAsync(stream, "application/json; charset=utf-8", BuildState()).ConfigureAwait(false);
+            }
+            else if (method == "POST" && path == "/command")
+            {
+                // The page's requests (ready/fullscreen) need no server-side action:
+                // everything it displays is pushed by the state poll.
+                await WriteTextAsync(stream, "application/json; charset=utf-8", "{\"success\":true}").ConfigureAwait(false);
+            }
+            else if (method == "GET")
+            {
+                // Everything else is a file from the web root, addressed the way the
+                // page addresses it (relative: "presentation.css", "vendor/…").
+                var relative = path.StartsWith("/assets/", StringComparison.Ordinal) ? path["/assets/".Length..] : path.TrimStart('/');
+                await WriteAssetAsync(stream, relative).ConfigureAwait(false);
+            }
+            else
+            {
+                await WriteAsync(stream, 404, "text/plain", "not found").ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"stage request failed: {ex.Message}");
+        }
+    }
+
+    private static async Task<(string Method, string Path, string Query)?> ReadRequestAsync(NetworkStream stream)
+    {
+        var buffer = new byte[8192];
+        var text = new StringBuilder();
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            int read = await stream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false);
+            if (read <= 0) break;
+
+            text.Append(Encoding.ASCII.GetString(buffer, 0, read));
+            if (text.ToString().Contains("\r\n\r\n", StringComparison.Ordinal)) break;
+            if (text.Length > 32 * 1024) break;
+        }
+
+        var first = text.ToString().Split("\r\n")[0].Split(' ');
+        if (first.Length < 2) return null;
+
+        var target = first[1];
+        var q = target.IndexOf('?');
+        var path = q >= 0 ? target[..q] : target;
+        return (first[0], path, q >= 0 ? target[(q + 1)..] : string.Empty);
+    }
+
+    private async Task WriteAssetAsync(NetworkStream stream, string relative)
+    {
+        try
+        {
+            // Never escape the web root.
+            var safe = relative.Replace('\\', '/').TrimStart('/');
+            if (safe.Contains("..", StringComparison.Ordinal)) { await WriteAsync(stream, 403, "text/plain", "forbidden").ConfigureAwait(false); return; }
+
+            var full = Path.GetFullPath(Path.Combine(_webRoot, safe));
+            if (!full.StartsWith(Path.GetFullPath(_webRoot), StringComparison.Ordinal) || !File.Exists(full))
+            {
+                await WriteAsync(stream, 404, "text/plain", "not found").ConfigureAwait(false);
+                return;
+            }
+
+            var bytes = await File.ReadAllBytesAsync(full).ConfigureAwait(false);
+            await WriteAsync(stream, 200, ContentTypeFor(full), bytes).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"stage asset failed: {ex.Message}");
+        }
+    }
+
+    private static string ContentTypeFor(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".html" => "text/html; charset=utf-8",
+        ".js" => "application/javascript; charset=utf-8",
+        ".css" => "text/css; charset=utf-8",
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".woff2" => "font/woff2",
+        ".woff" => "font/woff",
+        ".ttf" => "font/ttf",
+        ".svg" => "image/svg+xml",
+        _ => "application/octet-stream",
+    };
+
+    private static Task WriteTextAsync(NetworkStream stream, string contentType, string body)
+        => WriteAsync(stream, 200, contentType, Encoding.UTF8.GetBytes(body));
+
+    private static Task WriteAsync(NetworkStream stream, int status, string contentType, string body)
+        => WriteAsync(stream, status, contentType, Encoding.UTF8.GetBytes(body));
+
+    private static async Task WriteAsync(NetworkStream stream, int status, string contentType, byte[] body)
+    {
+        var header = new StringBuilder()
+            .Append("HTTP/1.1 ").Append(status).Append(status == 200 ? " OK" : " ERR").Append("\r\n")
+            .Append("Content-Type: ").Append(contentType).Append("\r\n")
+            .Append("Content-Length: ").Append(body.Length).Append("\r\n")
+            .Append("Cache-Control: no-store\r\n")
+            .Append("Connection: close\r\n\r\n")
+            .ToString();
+
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(header)).ConfigureAwait(false);
+        await stream.WriteAsync(body).ConfigureAwait(false);
+        await stream.FlushAsync().ConfigureAwait(false);
+    }
+
+    // ── Page + state ────────────────────────────────────────────────────────
+
+    /// <summary>The presentation page, with the HTTP bridge injected after hostbridge.js.</summary>
+    private string BuildPresentationPage()
+    {
+        var path = Path.Combine(_webRoot, "presentation.html");
+        var html = File.Exists(path) ? File.ReadAllText(path) : "<html><body>presentation.html missing</body></html>";
+
+        const string marker = "<script src=\"hostbridge.js\"></script>";
+        var bridge = "<script src=\"hostbridge.js\"></script>\n<script src=\"bridge-http.js\"></script>";
+
+        return html.Contains(marker, StringComparison.Ordinal)
+            ? html.Replace(marker, bridge, StringComparison.Ordinal)
+            : html.Replace("</body>", bridge + "\n</body>", StringComparison.Ordinal);
+    }
+
+    private string BuildState()
+    {
+        var queue = _engine.Queue.ToList();
+        var current = queue.Count > 0 ? queue[0] : null;
+
+        object? nowPlaying = null;
+        if (current != null)
+        {
+            var total = SafeTotalTime();
+            var position = SafeCurrentTime();
+
+            nowPlaying = new
+            {
+                title = current.Title,
+                artist = current.Artist,
+                duration = Format(total > TimeSpan.Zero ? total : current.Duration),
+                totalTime = total.TotalSeconds,
+                currentTime = position.TotalSeconds,
+                isPlaying = _engine.IsPlaying,
+                thumbnail = Thumbnail(current.thumbnail as string),
+            };
+        }
+
+        var upcoming = queue.Skip(1).Take(3).Select(song => new
+        {
+            title = song.Title,
+            artist = song.Artist,
+            thumbnail = Thumbnail(song.thumbnail as string),
+            estimatedStart = song.EstimatedStartDisplay ?? string.Empty,
+        }).ToList();
+
+        var payload = new
+        {
+            nowPlaying,
+            queue = upcoming,
+            lyrics = current != null ? LyricsFor(current) : null,
+            settings = new
+            {
+                fontScale = ConfigService.Instance.Current?.LyricsFontScale ?? 1.0f,
+                hidden = ConfigService.Instance.Current?.LyricsHidden ?? false,
+            },
+        };
+
+        return Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+    }
+
+    private TimeSpan SafeTotalTime()
+    {
+        try { return _engine.CurrentReader?.TotalTime ?? TimeSpan.Zero; }
+        catch { return TimeSpan.Zero; }
+    }
+
+    private TimeSpan SafeCurrentTime()
+    {
+        try { return _engine.CurrentReader?.CurrentTime ?? TimeSpan.Zero; }
+        catch { return TimeSpan.Zero; }
+    }
+
+    private static string Format(TimeSpan time)
+        => $"{(int)time.TotalMinutes}:{time.Seconds:D2}";
+
+    /// <summary>Data URL for artwork, using the same store the desktop uses.</summary>
+    private static string? Thumbnail(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        try { return ThumbnailStore.Instance.GetDataUrl(path); }
+        catch { return null; }
+    }
+
+    /// <summary>Lyrics for the current song (fetched once, then cached).</summary>
+    private object? LyricsFor(Song song)
+    {
+        LyricsResult? result;
+        lock (_cacheLock)
+        {
+            if (!_lyricsCache.TryGetValue(song.songPath, out result))
+            {
+                result = null;
+                try
+                {
+                    var duration = SafeTotalTime();
+                    result = _lyrics.GetLyricsAsync(song.Artist, song.Title, duration)
+                        .GetAwaiter().GetResult();
+                }
+                catch { result = null; }
+
+                _lyricsCache[song.songPath] = result;
+            }
+        }
+
+        if (result == null || !result.Found) return null;
+
+        // The page wants { time, text } lines; the service keeps the LRC text.
+        var synced = result.ParseSyncedLines()
+            .Select(line => new { time = line.Time.TotalSeconds, text = line.Text })
+            .ToList();
+
+        return new
+        {
+            syncedLyrics = synced,
+            plainLyrics = result.PlainLyrics,
+            provider = result.Provider.ToString(),
+        };
+    }
+
+    /// <summary>
+    /// The phone's LAN address (what a TV must open). Android's host-name lookup is
+    /// unreliable, so the network interfaces are the source of truth.
+    /// </summary>
+    private static string? LanAddress()
+    {
+        // Android knows the active network's address; the managed view of the
+        // interfaces is unreliable there (Mono reports none on some devices).
+        try
+        {
+            var context = Android.App.Application.Context;
+            var connectivity = (Android.Net.ConnectivityManager?)context.GetSystemService(Android.Content.Context.ConnectivityService);
+            var network = connectivity?.ActiveNetwork;
+            var properties = network != null ? connectivity?.GetLinkProperties(network) : null;
+
+            foreach (var link in properties?.LinkAddresses ?? new System.Collections.Generic.List<Android.Net.LinkAddress>())
+            {
+                // Java's InetAddress: an IPv4 host address has no ':' in it.
+                var text = link.Address?.HostAddress;
+                if (string.IsNullOrEmpty(text)) continue;
+                if (text.Contains(':')) continue;                                    // IPv6
+                if (text.StartsWith("127.", StringComparison.Ordinal)) continue;      // loopback
+                if (text.StartsWith("169.254.", StringComparison.Ordinal)) continue;  // link-local
+
+                return text;
+            }
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"Android LAN address lookup failed: {ex.Message}");
+        }
+
+        try
+        {
+            foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                // Android reports OperationalStatus as "Unknown" for every interface,
+                // so only loopback can be filtered out reliably.
+                if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+
+                foreach (var info in nic.GetIPProperties().UnicastAddresses)
+                {
+                    var address = info.Address;
+                    if (address.AddressFamily != AddressFamily.InterNetwork) continue;
+                    if (IPAddress.IsLoopback(address)) continue;
+                    if (address.ToString().StartsWith("169.254.", StringComparison.Ordinal)) continue;   // link-local
+
+                    return address.ToString();
+                }
+            }
+
+            // Fall back to the DNS view, then to loopback (still useful for the
+            // HDMI/second-display case, which loads the page from this device).
+            foreach (var address in Dns.GetHostAddresses(Dns.GetHostName()))
+            {
+                if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                    return address.ToString();
+            }
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"LAN address lookup failed: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The TV-side host bridge: polls <c>/state</c> and turns it into the events the
+    /// presentation page already handles.
+    /// </summary>
+    private const string BridgeScript = """
+(function (global) {
+  'use strict';
+
+  var lastState = '';
+
+  function emit(handler, eventName, data) {
+    handler(JSON.stringify({ type: 'event', eventName: eventName, data: data }));
+  }
+
+  function poll(handler) {
+    fetch('state', { cache: 'no-store' })
+      .then(function (r) { return r.text(); })
+      .then(function (text) {
+        if (text === lastState) return;
+        lastState = text;
+
+        var state = JSON.parse(text);
+        if (state.nowPlaying) emit(handler, 'nowPlayingUpdate', state.nowPlaying);
+        if (state.queue) emit(handler, 'presentationQueueUpdate', { queue: state.queue });
+        if (state.lyrics) emit(handler, 'lyricsUpdate', state.lyrics);
+        if (state.settings) emit(handler, 'presentationSettings', state.settings);
+      })
+      .catch(function () { /* the phone may be gone; keep polling quietly */ });
+  }
+
+  var api = {
+    registerHostMessageHandler: function (handler) {
+      // The page's own registration drives the poll: nothing is pushed to it.
+      setInterval(function () { poll(handler); }, 500);
+      poll(handler);
+      return 'http';
+    },
+    sendToHost: function (message) {
+      try {
+        fetch('command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: typeof message === 'string' ? message : JSON.stringify(message)
+        });
+      } catch (e) { /* fire and forget */ }
+      return true;
+    },
+    transportName: function () { return 'http'; }
+  };
+
+  global.SongRequestHost = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+""";
+}

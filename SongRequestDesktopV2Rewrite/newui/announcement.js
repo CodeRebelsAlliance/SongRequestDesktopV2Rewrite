@@ -8,11 +8,7 @@
 
   // ── IPC ────────────────────────────────────────────────────────
   function postMessageToHost(msg) {
-    try { window.external.sendMessage(msg); }
-    catch (e1) {
-      try { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(msg); }
-      catch (e2) { console.error('Failed to send message:', e2); }
-    }
+    if (!SongRequestHost.sendToHost(msg)) console.error('Failed to send message: no host channel');
   }
 
   function send(method, params) {
@@ -42,7 +38,6 @@
     } catch (e) { console.error('Parse error:', e); }
   }
 
-  if (!window.external) window.external = {};
   // Register the host -> page handler. Photino exposes
   // window.external.receiveMessage(callback); it must be *called* (assigning to
   // it replaces Photino's shim, after which no host message is ever delivered).

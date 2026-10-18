@@ -6,7 +6,7 @@ using System.Threading;
 
 namespace SongRequestDesktopV2Rewrite;
 
-public class NewUiWindow
+public class NewUiWindow : IUiShell
 {
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);

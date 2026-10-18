@@ -97,3 +97,157 @@ test('exposes the helper on window for the page scripts', () => {
     delete global.window;
   }
 });
+
+// ── HybridWebView transport (mobile) ─────────────────────────────────────────
+// Mirrors what _framework/hybridwebview.js exposes inside .NET MAUI.
+function hybridShim() {
+  const sent = [];
+  const listeners = [];
+  const hybrid = { SendRawMessage: (message) => sent.push(message) };
+  return {
+    hybrid,
+    sent,
+    addEventListener: (name, cb) => listeners.push({ name, cb }),
+    dispatch: (message) => listeners.forEach((l) => {
+      if (l.name === 'HybridWebViewMessageReceived') l.cb({ detail: { message } });
+    }),
+    listenerNames: () => listeners.map((l) => l.name),
+  };
+}
+
+test('HybridWebView: receives raw host messages through its window event', () => {
+  const shim = hybridShim();
+  global.window = global;
+  global.HybridWebView = shim.hybrid;
+  global.addEventListener = shim.addEventListener;
+  delete global.external;
+  delete global.chrome;
+
+  try {
+    const { registerHostMessageHandler, transportName } = load();
+    const received = [];
+    const result = registerHostMessageHandler((m) => received.push(m));
+
+    assert.equal(result, 'hybrid');
+    assert.equal(transportName(), 'hybrid');
+    assert.deepEqual(shim.listenerNames(), ['HybridWebViewMessageReceived']);
+
+    shim.dispatch('{"type":"response","id":7}');
+    assert.deepEqual(received, ['{"type":"response","id":7}']);
+  } finally {
+    delete global.HybridWebView;
+    delete global.addEventListener;
+    delete global.window;
+  }
+});
+
+test('HybridWebView: sendToHost uses SendRawMessage', () => {
+  const shim = hybridShim();
+  global.window = global;
+  global.HybridWebView = shim.hybrid;
+  global.addEventListener = shim.addEventListener;
+  delete global.external;
+  delete global.chrome;
+
+  try {
+    const { sendToHost } = load();
+    assert.equal(sendToHost('{"type":"request","id":1}'), true);
+    assert.deepEqual(shim.sent, ['{"type":"request","id":1}']);
+  } finally {
+    delete global.HybridWebView;
+    delete global.addEventListener;
+    delete global.window;
+  }
+});
+
+test('HybridWebView wins over a window.external shim (iOS WKWebView defines both)', () => {
+  const shim = hybridShim();
+  const external = { sent: [], sendMessage(m) { this.sent.push(m); }, receiveMessage() {} };
+  global.window = global;
+  global.HybridWebView = shim.hybrid;
+  global.addEventListener = shim.addEventListener;
+  global.external = external;
+  delete global.chrome;
+
+  try {
+    const { sendToHost, transportName } = load();
+    assert.equal(transportName(), 'hybrid');
+    sendToHost('hello');
+    assert.deepEqual(shim.sent, ['hello']);
+    assert.deepEqual(external.sent, []);
+  } finally {
+    delete global.HybridWebView;
+    delete global.addEventListener;
+    delete global.external;
+    delete global.window;
+  }
+});
+
+test('mobile shell marks the document so the responsive stylesheet applies', () => {
+  const shim = hybridShim();
+  const attributes = {};
+  global.window = global;
+  global.HybridWebView = shim.hybrid;
+  global.addEventListener = shim.addEventListener;
+  global.document = { documentElement: { setAttribute: (k, v) => { attributes[k] = v; } } };
+  delete global.external;
+  delete global.chrome;
+
+  try {
+    load();
+    assert.equal(attributes['data-shell'], 'mobile');
+  } finally {
+    delete global.HybridWebView;
+    delete global.addEventListener;
+    delete global.document;
+    delete global.window;
+  }
+});
+
+test('desktop shell is not marked as mobile', () => {
+  const shim = photinoShim();
+  const attributes = {};
+  global.window = global;
+  global.external = shim.external;
+  global.document = { documentElement: { setAttribute: (k, v) => { attributes[k] = v; } } };
+  delete global.HybridWebView;
+  delete global.chrome;
+
+  try {
+    load();
+    assert.equal(attributes['data-shell'], undefined);
+  } finally {
+    delete global.external;
+    delete global.document;
+    delete global.window;
+  }
+});
+
+test('sendToHost falls back to the Photino shim and reports failure without one', () => {
+  const shim = photinoShim();
+  global.window = global;
+  global.external = shim.external;
+  delete global.HybridWebView;
+  delete global.chrome;
+
+  try {
+    const { sendToHost } = load();
+    assert.equal(sendToHost('{"type":"request"}'), true);
+    assert.deepEqual(shim.external.sent, ['{"type":"request"}']);
+  } finally {
+    delete global.external;
+    delete global.window;
+  }
+
+  global.window = global;
+  delete global.external;
+  delete global.HybridWebView;
+  delete global.chrome;
+  try {
+    const { sendToHost, transportName } = load();
+    assert.equal(sendToHost('x'), false);
+    assert.equal(transportName(), 'none');
+  } finally {
+    delete global.window;
+  }
+});

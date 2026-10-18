@@ -36,11 +36,7 @@
   // IPC
   function hostSend(method, data) {
     var msg = JSON.stringify({ type: 'request', method: method, data: data || {} });
-    if (window.chrome && window.chrome.webview) {
-      window.chrome.webview.postMessage(msg);
-    } else if (window.external && window.external.sendMessage) {
-      window.external.sendMessage(msg);
-    }
+    if (!SongRequestHost.sendToHost(msg)) console.error('Failed to send message: no host channel');
   }
 
   function escHtml(s) {
@@ -472,9 +468,22 @@
           applyLyricsSettings(data);
         } else if (name === 'presentationQueueUpdate') {
           renderQueue(data);
+        } else if (name === 'stageServer') {
+          showStageServer(data);
         }
       }
     } catch (_) {}
+  }
+
+  // The host may advertise a URL other screens (a TV) can open to show this page.
+  function showStageServer(data) {
+    var el = document.getElementById('pres-stage-server');
+    if (!el || !data || !data.url) return;
+
+    el.style.display = '';
+    el.innerHTML = '<div>Open on a TV</div>' +
+      (data.qr ? '<img src="' + escHtml(data.qr) + '" alt="TV link">' : '') +
+      '<div class="pres-tv-url">' + escHtml(data.url) + '</div>';
   }
 
   // Register the host -> page handler. Photino exposes
@@ -498,14 +507,13 @@
 
   function sendFullscreen(on) {
     isFullscreen = !!on;
-    try {
-      window.external.sendMessage(JSON.stringify({
-        type: 'request',
-        method: 'setFullscreen',
-        window: 'presentation',
-        enabled: isFullscreen
-      }));
-    } catch (e) { /* host channel missing: keep the icon honest anyway */ }
+    /* host channel missing: keep the icon honest anyway */
+    SongRequestHost.sendToHost(JSON.stringify({
+      type: 'request',
+      method: 'setFullscreen',
+      window: 'presentation',
+      enabled: isFullscreen
+    }));
     updateFullscreenIcon();
   }
 

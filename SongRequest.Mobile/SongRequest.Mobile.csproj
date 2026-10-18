@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Mobile host (Android + iOS): the shared SongRequest.Core engine behind a
+    .NET MAUI shell that renders the *same* web UI the desktop uses, in a
+    HybridWebView. See docs/MOBILE-APP-PLAN.md and docs/ARCHITECTURE.md.
+  -->
+  <PropertyGroup>
+    <!--
+      Android builds on Linux/Windows/macOS; iOS needs the macOS-only workload,
+      so it is only added to the target list when building on a Mac (the release
+      workflow's macOS job). This keeps `dotnet build` working everywhere.
+    -->
+    <TargetFrameworks>net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-android;net10.0-ios</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SongRequest.Mobile</RootNamespace>
+    <AssemblyName>SongRequest.Mobile</AssemblyName>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+
+    <ApplicationTitle>SongRequest</ApplicationTitle>
+    <ApplicationId>net.bycra.songrequest</ApplicationId>
+    <!-- Display version follows Directory.Build.props; the Android versionCode
+         must increase monotonically per release, so it is set explicitly
+         (major*10000 + minor*100 + patch). -->
+    <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
+    <ApplicationVersion>50200</ApplicationVersion>
+
+    <!-- Android 8.0 (API 26): the floor for media notifications and modern
+         foreground services (the plan's recommended minimum). -->
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Same product artwork as the desktop (Resources/AppIcon/appicon.png is a copy
+      of SRappIcon.png): MAUI's resizetizer requires lowercase resource names and
+      its own Resources layout, so the files are duplicated rather than linked.
+      Both are picked up by MAUI's default globs.
+    -->
+    <MauiIcon Include="Resources\AppIcon\appicon.png" />
+    <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#121212" BaseSize="128,128" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Since .NET 8 `UseMaui` no longer implies the package references. -->
+    <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SongRequest.Core\SongRequest.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The web UI is *linked*, never copied: `newui/` stays the single source of
+      truth for both the desktop (Photino) and the mobile (HybridWebView) hosts.
+    -->
+    <MauiAsset Include="..\SongRequestDesktopV2Rewrite\newui\**\*"
+               Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- The announcement chime, materialised into the data root at startup. -->
+    <MauiAsset Include="..\SongRequestDesktopV2Rewrite\announcement.mp3"
+               Link="announcement.mp3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SongRequest.Mobile.Tests" />
+  </ItemGroup>
+
+</Project>

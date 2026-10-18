@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The companion server is normally self-hosted: a LAN address the operator types
+  in, often plain HTTP (the desktop supports exactly that). Android blocks
+  cleartext by default, which would make those servers unreachable — and would
+  also stop the in-app update from fetching an APK over http. Everything the app
+  talks to by itself (GitHub releases, lyrics, YouTube) is HTTPS; only
+  user-configured hosts can be plain HTTP.
+-->
+<network-security-config>
+	<base-config cleartextTrafficPermitted="true">
+		<trust-anchors>
+			<certificates src="system" />
+			<certificates src="user" />
+		</trust-anchors>
+	</base-config>
+</network-security-config>

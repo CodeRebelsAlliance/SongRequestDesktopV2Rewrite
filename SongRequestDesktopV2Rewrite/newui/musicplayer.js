@@ -338,9 +338,64 @@
     patchThumbnails(homeFeedEl, 0);
   }
 
+  // Importing from the empty state: the host picks, copies and scans, then we
+  // reload the feed (the scan-completed event does not reach this page).
+  function wireHomeImport() {
+    var button = document.getElementById('home-empty-import');
+    if (!button) return;
+    button.addEventListener('click', function() {
+      var label = button.innerHTML;
+      button.disabled = true;
+      button.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Importing…';
+      hostRequest('importLibrary', { mode: 'folder' }, 600000).then(function(res) {
+        if (res && res.success) {
+          refreshLibrarySongCount().then(function() { loadHomeFeed(true); });
+          loadLibraryPage();
+          loadRecentlyPlayed();
+        }
+        else if (res && res.error) { console.error('Import failed: ' + res.error); }
+      }).catch(function(e) {
+        console.error('Import failed: ' + (e && e.message));
+      }).finally(function() {
+        button.disabled = false;
+        button.innerHTML = label;
+      });
+    });
+  }
+
+  // The feed is built from the library, so an empty library has nothing to show.
+  // Knowing that locally keeps the spinner from hanging while a slow (or
+  // unreachable) server request runs — the M1 device run showed it never clearing.
+  var librarySongCount = -1;
+
+  function refreshLibrarySongCount() {
+    return hostRequest('getLibraryStats', {}, 15000).then(function(stats) {
+      librarySongCount = stats && typeof stats.totalSongs === 'number' ? stats.totalSongs : -1;
+      return librarySongCount;
+    }).catch(function() {
+      librarySongCount = -1;
+      return -1;
+    });
+  }
+
+  var homeFeedGeneration = 0;
+
   function loadHomeFeed(force) {
-    if (homeFeedLoading) return;
+    // A forced reload must win over a request that is still in flight (an
+    // unreachable server can keep one hanging for its whole timeout), and the
+    // stale response must not overwrite the newer one.
+    if (homeFeedLoading && !force) return;
     if (homeFeedData && !force) { renderHomeFeed(homeFeedData); return; }
+
+    var generation = ++homeFeedGeneration;
+
+    if (librarySongCount === 0) {
+      // Nothing to fetch yet: show the empty state (with its import button).
+      homeFeedData = {};
+      if (homeLoadingEl) homeLoadingEl.style.display = 'none';
+      if (homeEmptyEl) homeEmptyEl.style.display = '';
+      return;
+    }
 
     homeFeedLoading = true;
     lastHomeLoad = Date.now();
@@ -348,11 +403,13 @@
     if (homeEmptyEl) homeEmptyEl.style.display = 'none';
 
     hostRequest('getHomeFeed', { count: HOME_CARD_COUNT }).then(function(feed) {
+      if (generation !== homeFeedGeneration) return;   // superseded
       homeFeedLoading = false;
       homeFeedData = feed || {};
       if (homeLoadingEl) homeLoadingEl.style.display = 'none';
       renderHomeFeed(homeFeedData);
     }).catch(function() {
+      if (generation !== homeFeedGeneration) return;
       homeFeedLoading = false;
       if (homeLoadingEl) homeLoadingEl.style.display = 'none';
       if (homeEmptyEl) homeEmptyEl.style.display = '';
@@ -886,6 +943,16 @@
       case 'lyricsUpdate':
         renderLyrics(data);
         break;
+      case 'refresh':
+        // Sent when this page becomes visible again (Android pauses JS in a
+        // hidden web view, so events that arrived meanwhile may have been queued).
+        refreshLibrarySongCount().then(function() { loadHomeFeed(true); });
+        loadRecentlyPlayed();
+        break;
+      case 'libraryChanged':
+        // An import/scan elsewhere changed the library this feed is built from.
+        refreshLibrarySongCount().then(function() { loadHomeFeed(true); });
+        break;
       case 'ytDownloadProgress':
         onYtDownloadProgress(data);
         break;
@@ -1215,17 +1282,8 @@
   var _pendingReqs = {};
 
   function hostSend(method, params) {
-    try {
-      window.external.sendMessage(JSON.stringify({ type: 'request', id: 0, method, ...params }));
-    } catch (e1) {
-      try {
-        if (window.chrome && window.chrome.webview) {
-          window.chrome.webview.postMessage(JSON.stringify({ type: 'request', id: 0, method, ...params }));
-        }
-      } catch (e2) {
-        console.error('hostSend failed', e2);
-      }
-    }
+    var msg = JSON.stringify({ type: 'request', id: 0, method, ...params });
+    if (!SongRequestHost.sendToHost(msg)) console.error('hostSend failed: no host channel');
   }
 
   function hostRequest(method, params, timeoutMs) {
@@ -1235,33 +1293,17 @@
         delete _pendingReqs[id];
         reject(new Error('Request timeout: ' + method));
       }, timeoutMs || 30000) };
-      try {
-        window.external.sendMessage(JSON.stringify({ type: 'request', id: id, method: method, ...params }));
-      } catch (e1) {
-        try {
-          if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.postMessage(JSON.stringify({ type: 'request', id: id, method: method, ...params }));
-          }
-        } catch (e2) {
-          delete _pendingReqs[id];
-          reject(e2);
-        }
+      var msg = JSON.stringify({ type: 'request', id: id, method: method, ...params });
+      if (!SongRequestHost.sendToHost(msg)) {
+        clearTimeout(_pendingReqs[id].timer);
+        delete _pendingReqs[id];
+        reject(new Error('No host channel for ' + method));
       }
     });
   }
 
   function postMessageToHost(msg) {
-    try {
-      window.external.sendMessage(msg);
-    } catch (e1) {
-      try {
-        if (window.chrome && window.chrome.webview) {
-          window.chrome.webview.postMessage(msg);
-        }
-      } catch (e2) {
-        console.error('postMessageToHost failed', e2);
-      }
-    }
+    if (!SongRequestHost.sendToHost(msg)) console.error('postMessageToHost failed: no host channel');
   }
 
   // Receive events from C# (matching app.js pattern)
@@ -1306,6 +1348,8 @@
   function sendReady() {
     // Request initial state from C# (page is now loaded)
     hostSend('musicPlayerReady');
+    wireHomeImport();
+    refreshLibrarySongCount().then(function() { loadHomeFeed(true); });
   }
 
   // Register the host -> page handler. Photino exposes

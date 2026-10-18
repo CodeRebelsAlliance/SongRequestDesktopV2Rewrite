@@ -1,0 +1,235 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Mobile shell layer.
+
+   Loaded by every page, but only active when the host marked the document as a
+   mobile shell (`<html data-shell="mobile">`, set by hostbridge.js when the page
+   runs inside .NET MAUI's HybridWebView). Desktop rendering is therefore
+   untouched — this file adds no rules outside the `[data-shell="mobile"]` scope.
+
+   Design rules for this layer:
+     * one column, nothing wider than the viewport, no hover-only affordances
+     * touch targets >= 40 px, inputs >= 16 px font (iOS zooms below that)
+     * the native tab bar lives *below* the WebView, so the pages only need their
+       own bottom padding for the player bar / safe areas
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Global ────────────────────────────────────────────────────────────────── */
+:root[data-shell="mobile"] html,
+:root[data-shell="mobile"] body {
+  font-size: 15px;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+:root[data-shell="mobile"] input,
+:root[data-shell="mobile"] select,
+:root[data-shell="mobile"] textarea {
+  /* Below 16px iOS Safari/WKWebView zooms the page when a field is focused. */
+  font-size: 16px !important;
+}
+
+:root[data-shell="mobile"] button,
+:root[data-shell="mobile"] .top-btn,
+:root[data-shell="mobile"] .tab-btn,
+:root[data-shell="mobile"] .sidebar-tab,
+:root[data-shell="mobile"] .action-btn,
+:root[data-shell="mobile"] .player-ctrl-btn {
+  min-height: 40px;
+}
+
+:root[data-shell="mobile"] .top-btn,
+:root[data-shell="mobile"] .action-btn {
+  padding: 8px 12px;
+}
+
+/* No hover on touch: reveal things that desktop shows on hover. */
+:root[data-shell="mobile"] .home-row-nav,
+:root[data-shell="mobile"] .home-card-play {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── Main window (index.html) ──────────────────────────────────────────────── */
+:root[data-shell="mobile"] #topbar {
+  padding: 8px 10px;
+  margin: 4px 4px 0 4px;
+  border-radius: 12px 12px 0 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: calc(8px + env(safe-area-inset-top));
+}
+
+/* The native tab bar navigates, so the top bar keeps only contextual actions.
+   Settings stays: it opens the settings sheet, which is not a tab. */
+:root[data-shell="mobile"] #title,
+:root[data-shell="mobile"] #btn-music-player,
+:root[data-shell="mobile"] #btn-soundboard {
+  display: none !important;
+}
+
+:root[data-shell="mobile"] #top-left #logo { width: 24px; height: 24px; }
+:root[data-shell="mobile"] #top-left #version-badge { font-size: 13px; }
+:root[data-shell="mobile"] #top-actions { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+:root[data-shell="mobile"] #tabbar {
+  padding: 6px 10px;
+  margin: 0 4px 4px 4px;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+:root[data-shell="mobile"] #tabbar::-webkit-scrollbar { display: none; }
+:root[data-shell="mobile"] #tabbar .tab-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+:root[data-shell="mobile"] .panel { padding: 10px 12px; }
+:root[data-shell="mobile"] .list-toolbar { flex-direction: column; gap: 8px; }
+
+/* Song rows: stack the title above its action buttons instead of overflowing. */
+:root[data-shell="mobile"] .song-list > div { flex-wrap: wrap; }
+:root[data-shell="mobile"] .song-list { padding-right: 0; }
+
+/* Dialogs become full-height sheets. */
+:root[data-shell="mobile"] .modal-overlay { align-items: stretch; justify-content: stretch; }
+:root[data-shell="mobile"] .modal {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  margin: 0;
+}
+:root[data-shell="mobile"] .modal-body { padding: 14px; }
+:root[data-shell="mobile"] .modal-body .action-btn { padding: 12px; }
+
+/* Desktop-only settings: a phone has no tray, no login autostart, no tool
+   downloads, no in-app self-update and no typed filesystem paths. Hiding them
+   here is deterministic — it does not depend on the settings request (which can
+   fail when the companion server is unreachable). */
+:root[data-shell="mobile"] #s-card-startup,
+:root[data-shell="mobile"] #s-card-tools,
+:root[data-shell="mobile"] #s-library-folder-row {
+  display: none !important;
+}
+
+/* Settings: tabs scroll horizontally, cards lose their desktop padding. */
+:root[data-shell="mobile"] .settings-tabs,
+:root[data-shell="mobile"] .modal-header-tabs {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+}
+:root[data-shell="mobile"] .settings-tabs::-webkit-scrollbar { display: none; }
+:root[data-shell="mobile"] .settings-tab,
+:root[data-shell="mobile"] .modal-tab-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 9px 14px;
+}
+:root[data-shell="mobile"] .settings-card { padding: 12px; }
+:root[data-shell="mobile"] .settings-checkbox input { width: 20px; height: 20px; }
+
+/* ── Music player ──────────────────────────────────────────────────────────── */
+/* Stack the three columns: sidebar strip, content, queue/lyrics sheet. */
+:root[data-shell="mobile"] #body { flex-direction: column; }
+
+:root[data-shell="mobile"] #left-sidebar {
+  width: 100% !important;
+  flex-shrink: 0;
+  flex-direction: row;
+  align-items: center;
+  border-right: none;
+  border-bottom: 1px solid #333;
+}
+:root[data-shell="mobile"] #sidebar-tabs {
+  flex-direction: row;
+  overflow-x: auto;
+  gap: 4px;
+  padding: 6px 8px;
+  flex: 1;
+  scrollbar-width: none;
+}
+:root[data-shell="mobile"] #sidebar-tabs::-webkit-scrollbar { display: none; }
+:root[data-shell="mobile"] .sidebar-tab {
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-align: center;
+  padding: 8px 12px;
+}
+/* The sidebar's own playlist list duplicates the Playlists view: hide it. */
+:root[data-shell="mobile"] #playlist-list { display: none; }
+
+:root[data-shell="mobile"] #center { min-height: 0; }
+
+/* Queue / lyrics: a sheet under the content instead of a 280 px column. */
+:root[data-shell="mobile"] #right-sidebar {
+  width: 100% !important;
+  flex-shrink: 0;
+  max-height: 38vh;
+  border-left: none;
+  border-top: 1px solid #333;
+}
+:root[data-shell="mobile"] #right-sidebar.collapsed { max-height: 0; }
+
+:root[data-shell="mobile"] .view { padding: 12px; }
+:root[data-shell="mobile"] .view-header { font-size: 19px; margin-bottom: 10px; }
+:root[data-shell="mobile"] #home-hero { gap: 10px; }
+:root[data-shell="mobile"] #home-logo { width: 44px; height: 44px; }
+:root[data-shell="mobile"] #home-title { font-size: 20px; }
+:root[data-shell="mobile"] #home-stats { justify-content: flex-start; }
+:root[data-shell="mobile"] .home-card { width: 132px; }
+:root[data-shell="mobile"] #home-feed { gap: 16px; }
+
+/* Player bar: compact (title + transport + expand). Volume/crossfade/quality and
+   the device menu are desktop-sized controls; the OS provides volume on mobile. */
+:root[data-shell="mobile"] #player-bar {
+  padding: 8px 10px;
+  gap: 8px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+:root[data-shell="mobile"] #player-bar-thumb { width: 40px; height: 40px; }
+:root[data-shell="mobile"] #player-bar-title { font-size: 13px; }
+:root[data-shell="mobile"] #player-bar-artist { font-size: 11px; }
+:root[data-shell="mobile"] #player-bar-right { gap: 2px; }
+:root[data-shell="mobile"] #player-bar-right #volume-slider-wrap,
+:root[data-shell="mobile"] #player-bar-right #crossfade-slider-wrap,
+:root[data-shell="mobile"] #player-bar-right #player-bar-quality,
+:root[data-shell="mobile"] #player-bar-right #btn-volume {
+  display: none !important;
+}
+
+/* Expanded (full-screen) player. */
+:root[data-shell="mobile"] #player-bar.expanded { padding-top: calc(10px + env(safe-area-inset-top)); }
+:root[data-shell="mobile"] #expanded-logo { width: 32px; }
+:root[data-shell="mobile"] #expanded-main { flex-direction: column; gap: 14px; }
+:root[data-shell="mobile"] #expanded-artwork { width: min(64vw, 260px); height: min(64vw, 260px); }
+:root[data-shell="mobile"] #expanded-title { font-size: 19px; }
+:root[data-shell="mobile"] #expanded-lyrics { font-size: 15px; }
+
+/* Queue / lyrics panels keep their own scroll inside the sheet. */
+:root[data-shell="mobile"] #queue-panel,
+:root[data-shell="mobile"] #lyrics-panel { width: 100% !important; }
+
+/* ── Soundboard ────────────────────────────────────────────────────────────── */
+:root[data-shell="mobile"] #sb-topbar {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  padding-top: calc(8px + env(safe-area-inset-top));
+}
+:root[data-shell="mobile"] #sb-title { font-size: 15px; }
+:root[data-shell="mobile"] #sb-top-center { display: none; }
+:root[data-shell="mobile"] #sb-grid-scroll { padding: 6px; }
+:root[data-shell="mobile"] #sb-grid { gap: 6px; }
+:root[data-shell="mobile"] .sb-btn { min-height: 56px; font-size: 12px; }
+
+/* ── Presentation (used full-screen on a phone/tablet or over HDMI) ────────── */
+:root[data-shell="mobile"] #pres-panel { padding: 12px; }
+:root[data-shell="mobile"] #pres-artwork { max-width: min(70vw, 320px); }
+
+/* ── Visualization ─────────────────────────────────────────────────────────── */
+:root[data-shell="mobile"] #viz-toolbar { flex-wrap: wrap; gap: 6px; }

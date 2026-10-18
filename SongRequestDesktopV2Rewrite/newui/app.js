@@ -13,16 +13,8 @@
   let _authBrowsers = [];
 
   function postMessageToHost(msg) {
-    try {
-      window.external.sendMessage(msg);
-    } catch (e1) {
-      try {
-        if (window.chrome && window.chrome.webview) {
-          window.chrome.webview.postMessage(msg);
-        }
-      } catch (e2) {
-        console.error('Failed to send message:', e2);
-      }
+    if (!SongRequestHost.sendToHost(msg)) {
+      console.error('Failed to send message: no host channel');
     }
   }
 
@@ -431,6 +423,18 @@
       document.getElementById('s-close-tray').checked = cfg.closeToTray ?? false;
       const trayOk = cfg.traySupported !== false;
       const autoOk = cfg.autoStartSupported !== false;
+      const isMobile = cfg.isMobile === true;
+
+      // Mobile has no tray, no login autostart and no in-app tool downloads or
+      // self-updates: hide those cards instead of offering dead options.
+      const startupCard = document.getElementById('s-card-startup');
+      if (startupCard) startupCard.style.display = (isMobile || (!trayOk && !autoOk)) ? 'none' : '';
+      const toolsCard = document.getElementById('s-card-tools');
+      if (toolsCard) toolsCard.style.display = (isMobile || cfg.selfUpdateSupported === false) ? 'none' : '';
+
+      // Typed filesystem paths only make sense where the user has one.
+      const folderRow = document.getElementById('s-library-folder-row');
+      if (folderRow) folderRow.style.display = isMobile ? 'none' : '';
       document.getElementById('s-tray-hint').style.display = trayOk ? 'none' : '';
       document.getElementById('s-minimize-tray').disabled = !trayOk;
       document.getElementById('s-close-tray').disabled = !trayOk;
@@ -1026,6 +1030,7 @@
       if (cfg.toolPromptDismissed) return;
 
       const status = await send('getToolStatus');
+      if (status && status.supported === false) return;   // nothing to install here
       const needFf = !status.audioReady;
       const needYt = !(status.ytDlp && status.ytDlp.found);
       if (!needFf && !needYt) return;
@@ -1154,6 +1159,36 @@
       });
     });
   }
+
+  // Import music (files or a folder). The host picks with its native dialog, then
+  // places the music where it can read it and scans — so the usual scan progress
+  // and result handlers below do the reporting.
+  async function importMusic(mode, buttonId) {
+    const status = document.getElementById('s-library-import-status');
+    const button = document.getElementById(buttonId);
+    const label = button ? button.innerHTML : '';
+
+    if (button) { button.disabled = true; button.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Working…'; }
+    if (status) { status.style.display = ''; status.textContent = mode === 'folder' ? 'Choose a folder with your music…' : 'Choose the files to import…'; }
+
+    try {
+      const res = await send('importLibrary', { mode });
+      if (status) {
+        if (res && res.cancelled) status.textContent = 'Import cancelled.';
+        else if (res && res.error) status.textContent = 'Import failed: ' + res.error;
+        else status.textContent = 'Imported into ' + (res && res.folder ? res.folder : 'the library') + ' — scanning…';
+      }
+      if (res && res.success) { renderLibraryFolders(); loadLibraryStats(); }
+    } catch (e) {
+      if (status) status.textContent = 'Import failed: ' + (e && e.message ? e.message : e);
+    } finally {
+      if (button) { button.disabled = false; button.innerHTML = label; }
+      setTimeout(function () { if (status) status.style.display = 'none'; }, 6000);
+    }
+  }
+
+  document.getElementById('s-library-import-folder').addEventListener('click', function() { importMusic('folder', 's-library-import-folder'); });
+  document.getElementById('s-library-import-files').addEventListener('click', function() { importMusic('files', 's-library-import-files'); });
 
   document.getElementById('s-library-folder-add').addEventListener('click', function() {
     var input = document.getElementById('s-library-folder-input');
@@ -1880,16 +1915,25 @@
           document.getElementById('startup-update-buttons').style.display = 'none';
           document.getElementById('startup-update-progress').style.display = 'block';
           document.getElementById('startup-update-progress-text').textContent = 'Starting download...';
+          const text = document.getElementById('startup-update-progress-text');
           try {
             const r = await send('installUpdate', { downloadUrl: updateInfo.downloadUrl });
             if (r && r.error) {
-              document.getElementById('startup-update-progress-text').textContent = 'Error: ' + r.error;
+              text.textContent = 'Error: ' + r.error;
               document.getElementById('startup-update-buttons').style.display = 'flex';
+              return;
             }
-            // On success the update runs in the background; the app restarts itself,
-            // so we intentionally stay on this panel and keep the sequence paused.
+
+            if (updateInfo.installKind === 'package') {
+              // The platform installer takes over (Android): the user confirms
+              // there, so let the app continue in the meantime.
+              text.textContent = 'Android will ask you to confirm the install.';
+              setTimeout(resolve, 2500);
+            }
+            // Otherwise the desktop updater replaces the app and restarts it, so we
+            // intentionally stay on this panel and keep the sequence paused.
           } catch (e) {
-            document.getElementById('startup-update-progress-text').textContent = 'Error: ' + e.message;
+            text.textContent = 'Error: ' + e.message;
             document.getElementById('startup-update-buttons').style.display = 'flex';
           }
         };
@@ -2002,24 +2046,63 @@
     const authStatusEl = document.getElementById('startup-auth-status');
 
     let authBrowsers = ['chrome', 'edge', 'firefox', 'brave', 'chromium', 'opera', 'vivaldi', 'safari'];
+    let signInSupported = false;
     try {
       const b = await send('getAuthBrowsers');
       if (b && b.browsers && b.browsers.length) authBrowsers = b.browsers;
+      signInSupported = !!(b && b.signInSupported);
     } catch { /* use defaults */ }
 
     const browserOptions = authBrowsers
       .map(b => '<option value="' + b + '"' + (b === ((data && data.cookieBrowser) || '') ? ' selected' : '') + '>' + b.charAt(0).toUpperCase() + b.slice(1) + '</option>')
       .join('');
 
-    authStatusEl.innerHTML =
-      'Sign in to YouTube in one of these browsers, then import its cookies.<br><br>' +
-      '<select id="startup-auth-browser" class="settings-input" style="max-width:220px;margin:0 auto 10px;display:block">' + browserOptions + '</select>' +
-      '<button id="startup-auth-yes" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px"><i class="fas fa-cookie-bite"></i> Import cookies</button> ' +
-      '<button id="startup-auth-no" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
+    // A phone has no desktop browser to import from: the app hosts the login
+    // itself and keeps the cookies it leaves behind.
+    if (signInSupported) {
+      const authDesc = document.getElementById('auth-required-desc');
+      if (authDesc) authDesc.textContent = 'Sign in to YouTube to enable song requests.';
+      const authIntro = document.getElementById('startup-auth-intro');
+      if (authIntro) authIntro.textContent = 'The sign-in happens inside the app; you can skip it and the app still works without downloading songs.';
+
+      authStatusEl.innerHTML =
+        '<span id="startup-auth-intro">The sign-in happens inside the app; you can skip it and ' +
+        'the app still works without downloading songs.</span><br><br>' +
+        '<button id="startup-auth-yes" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px"><i class="fab fa-youtube"></i> Sign in with YouTube</button> ' +
+        '<button id="startup-auth-no" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
+    } else {
+      authStatusEl.innerHTML =
+        'Sign in to YouTube in one of these browsers, then import its cookies.<br><br>' +
+        '<select id="startup-auth-browser" class="settings-input" style="max-width:220px;margin:0 auto 10px;display:block">' + browserOptions + '</select>' +
+        '<button id="startup-auth-yes" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px"><i class="fas fa-cookie-bite"></i> Import cookies</button> ' +
+        '<button id="startup-auth-no" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
+    }
 
     await new Promise(resolve => {
       document.getElementById('startup-auth-no').onclick = () => resolve();
       document.getElementById('startup-auth-yes').onclick = async () => {
+        if (signInSupported) {
+          authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Waiting for sign-in...</span>';
+          try {
+            const r = await send('signIn');
+            if (r.success) {
+              authStatusEl.textContent = 'Signed in (' + r.cookieCount + ' cookies)';
+              resolve();
+            } else if (r.cancelled) {
+              authStatusEl.textContent = 'Sign-in cancelled.';
+            } else {
+              authStatusEl.innerHTML = 'Sign-in failed: ' + (r.error || 'no cookies') +
+                '<br><br><button id="startup-auth-retry" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px">Retry</button> ' +
+                '<button id="startup-auth-skip" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
+              document.getElementById('startup-auth-retry').onclick = () => document.getElementById('startup-auth-yes').click();
+              document.getElementById('startup-auth-skip').onclick = () => resolve();
+            }
+          } catch (e) {
+            authStatusEl.textContent = 'Sign-in error: ' + e.message;
+          }
+          return;
+        }
+
         const browser = document.getElementById('startup-auth-browser').value;
         authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + browser + '...</span>';
         try {

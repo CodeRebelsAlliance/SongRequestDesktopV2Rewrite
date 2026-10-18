@@ -25,6 +25,11 @@ public static class Program
         // clear it once the webview has actually rendered (NewUiWindow).
         StartupGuard.Begin();
 
+        // Register the desktop implementations of the core's platform seams
+        // (OpenAL, RtMidi, MPRIS/SMTC, Win32/X11 hotkeys, tray) before anything
+        // touches them.
+        DesktopPlatform.Register();
+
         AppBootstrap.Initialize();
 
         // Windows: keep the per-user "Apps & features" entry (and the generated

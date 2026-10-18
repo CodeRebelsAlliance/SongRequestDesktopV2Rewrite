@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The downloaded update APK is shared with the system package installer through a
+  FileProvider: modern Android refuses a raw file:// URI for that intent.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+	<cache-path name="updates" path="updates/" />
+	<files-path name="update-files" path="updates/" />
+</paths>

@@ -241,6 +241,54 @@ jobs:
           path: TestResults/**
 
   # ---------------------------------------------------------------------------
+  # Mobile (Android) APK. Linux is enough: SongRequest.Mobile only adds the iOS
+  # target when built on macOS, and the GitHub runner already ships the Android
+  # SDK and a JDK. The APK joins the release as an extra asset (the desktop
+  # archive check below still requires all six platform archives).
+  # ---------------------------------------------------------------------------
+  build-android:
+    name: Build (android)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install the MAUI Android workload
+        run: dotnet workload install maui-android
+
+      - name: Publish APK
+        run: >
+          dotnet publish SongRequest.Mobile/SongRequest.Mobile.csproj
+          --configuration Release
+          --framework net10.0-android
+          -p:AndroidPackageFormat=apk
+          --output publish-android
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find publish-android -name '*-Signed.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error title=No APK::publish-android contains no signed APK."
+            exit 1
+          fi
+          cp "$apk" SongRequest-android.apk
+          ls -la SongRequest-android.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SongRequest-android
+          path: SongRequest-android.apk
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
   # Decide whether this run publishes a release: every manual dispatch, and any
   # push to master/main whose <Version> has no tag yet (i.e. a new version).
   # ---------------------------------------------------------------------------
@@ -266,12 +314,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          # The app version (<Version> in the project) is the single source of truth:
-          # it is shown in the UI, compared against the release tag by the in-app
-          # updater, and used verbatim as the release tag here.
-          version=$(python3 -c "import re,pathlib;t=pathlib.Path('SongRequestDesktopV2Rewrite/SongRequestDesktopV2Rewrite.csproj').read_text(encoding='utf-8');m=re.search(r'<Version>\s*([^<\s]+)\s*</Version>',t);print(m.group(1) if m else '')")
+          # The product version (<Version> in Directory.Build.props) is the single
+          # source of truth: it is shown in the UI, compared against the release tag
+          # by the in-app updater, used verbatim as the release tag here, and
+          # inherited by the desktop, core and mobile projects alike.
+          version=$(python3 -c "import re,pathlib;t=pathlib.Path('Directory.Build.props').read_text(encoding='utf-8');m=re.search(r'<Version>\s*([^<\s]+)\s*</Version>',t);print(m.group(1) if m else '')")
           if [ -z "$version" ]; then
-            echo "::error::Could not read <Version> from SongRequestDesktopV2Rewrite.csproj."
+            echo "::error::Could not read <Version> from Directory.Build.props."
             exit 1
           fi
           if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
@@ -316,7 +365,7 @@ jobs:
   # ---------------------------------------------------------------------------
   release:
     name: Release
-    needs: [build, test, version]
+    needs: [build, test, build-android, version]
     if: needs.version.outputs.should_release == 'true'
     runs-on: windows-latest
     # Serialized per branch so a second run cannot clobber a release mid-upload.
@@ -333,7 +382,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && needs.version.outputs.tag_exists == 'true'
         shell: bash
         run: |
-          echo "::error title=Tag already exists::Tag ${{ needs.version.outputs.tag }} already exists. Bump <Version> in SongRequestDesktopV2Rewrite.csproj before releasing."
+          echo "::error title=Tag already exists::Tag ${{ needs.version.outputs.tag }} already exists. Bump <Version> in Directory.Build.props before releasing."
           exit 1
 
       - name: Download platform archives
@@ -352,10 +401,10 @@ jobs:
           ls -la dist/
           count=$(ls dist/SongRequest-* 2>/dev/null | wc -l)
           if [ "$count" -lt 6 ]; then
-            echo "::error title=Missing release archives::Expected the 6 platform archives in dist/, found $count."
+            echo "::error title=Missing release archives::Expected the 6 desktop platform archives (plus the mobile APK) in dist/, found $count."
             exit 1
           fi
-          echo "Found $count platform archives."
+          echo "Found $count release archives."
 
       - name: Generate changelog
         id: changelog

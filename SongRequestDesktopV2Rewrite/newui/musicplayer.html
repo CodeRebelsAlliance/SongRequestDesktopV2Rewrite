@@ -5,14 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Music Player - SongRequest V2</title>
 <link rel="stylesheet" href="musicplayer.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="mobile.css">
 </head>
 <body>
 <div id="app">
   <!-- Top bar -->
   <div id="topbar">
     <div id="top-left">
-      <img id="logo" src="../SRshortLogo.png"/>
+      <img id="logo" src="SRshortLogo.png"/>
       <span id="title">Technik-AG <span style="color: yellow">Song</span><span style="color: orange">Request</span> - Music Player</span>
     </div>
     <div id="top-center">
@@ -61,7 +62,7 @@
     <div id="center">
       <div id="view-home" class="view active">
         <div id="home-hero">
-          <img src="../SRshortLogo.png" id="home-logo" alt="SongRequest">
+          <img src="SRshortLogo.png" id="home-logo" alt="SongRequest">
           <div id="home-hero-text">
             <div id="home-title"><span style="color: yellow">Song</span><span style="color: orange">Request</span></div>
             <div id="home-subtitle">Your library, your playlists, recommended for you.</div>
@@ -120,7 +121,8 @@
 
           <div id="home-empty" class="library-empty" style="display:none">
             <i class="fas fa-compact-disc"></i>
-            <p>Your library is empty. Scan a folder or download a song to get started.</p>
+            <p>Your library is empty. Import a folder of music or download a song to get started.</p>
+            <button id="home-empty-import" class="action-btn" style="width:auto;padding:10px 18px;font-size:13px;margin-top:14px"><i class="fas fa-folder-open"></i> Import music</button>
           </div>
         </div>
       </div>
@@ -254,7 +256,7 @@
     <div id="player-expanded-content">
       <div id="expanded-top-bar">
         <span id="expanded-quality" class="pill pill-quality pill-expanded" style="display:none"></span>
-        <img src="../SRshortLogo.png" id="expanded-logo" alt="SongRequest V2">
+        <img src="SRshortLogo.png" id="expanded-logo" alt="SongRequest V2">
       </div>
       <!-- Top: artwork + info side by side -->
       <div id="expanded-top">
@@ -478,6 +480,7 @@
   </div>
 
 </div>
+<script src="_framework/hybridwebview.js"></script>
 <script src="hostbridge.js"></script>
 <script src="musicplayer.js"></script>
 </body>

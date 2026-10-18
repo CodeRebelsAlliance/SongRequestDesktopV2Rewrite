@@ -10,7 +10,6 @@
       }
     } catch (e) { console.error('Parse error:', e); }
   }
-  if (!window.external) window.external = {};
   // Register the host -> page handler. Photino exposes
   // window.external.receiveMessage(callback); it must be *called* (assigning to
   // it replaces Photino's shim, after which no host message is ever delivered).
@@ -338,11 +337,8 @@
   const fullscreenBtn = document.getElementById('viz-fullscreen');
 
   function postToHost(method, params) {
-    try {
-      window.external.sendMessage(JSON.stringify(Object.assign({ type: 'request', id: ++requestId, method: method }, params || {})));
-    } catch (e) {
-      try { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(method); } catch (e2) { }
-    }
+    var msg = JSON.stringify(Object.assign({ type: 'request', id: ++requestId, method: method }, params || {}));
+    if (!SongRequestHost.sendToHost(msg)) console.error('Failed to send message: no host channel');
   }
 
   function setFullscreenIcon(on) {

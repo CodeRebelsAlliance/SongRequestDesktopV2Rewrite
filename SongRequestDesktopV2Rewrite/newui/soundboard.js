@@ -10,11 +10,7 @@
 
   // ── IPC ────────────────────────────────────────────────────────
   function postMessageToHost(msg) {
-    try { window.external.sendMessage(msg); }
-    catch (e1) {
-      try { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(msg); }
-      catch (e2) { console.error('Failed to send message:', e2); }
-    }
+    if (!SongRequestHost.sendToHost(msg)) console.error('Failed to send message: no host channel');
   }
 
   function send(method, params) {
@@ -50,7 +46,8 @@
   SongRequestHost.registerHostMessageHandler(handleIncoming);
 
   function handleEvent(name, data) {
-    if (name === 'soundboardPlayback') onPlayback(data);
+    if (name === 'refresh') refreshState();
+    else if (name === 'soundboardPlayback') onPlayback(data);
     else if (name === 'soundboardMidiCaptured') onMidiCaptured(data);
     else if (name === 'soundboardMidiError') toast(data && data.message ? data.message : 'MIDI error', 'error');
     else if (name === 'soundboardImportProgress') onImportProgress(data);

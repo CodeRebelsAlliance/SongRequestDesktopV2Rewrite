@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    Single source of truth for the product version.
+
+    Every project (the desktop host, SongRequest.Core, the mobile host) inherits
+    it, so the version shown in the UI, compared against the release tag by the
+    updater, written into the Windows "Apps & features" entry and used as the
+    release tag by CI are all the same number.
+
+    To ship: bump <Version> here and push — the release workflow publishes it once
+    the tests and the platform builds pass and the tag does not exist yet.
+  -->
+  <PropertyGroup>
+    <Version>5.2</Version>
+  </PropertyGroup>
+
+</Project>

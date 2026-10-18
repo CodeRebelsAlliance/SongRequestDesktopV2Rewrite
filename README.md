@@ -155,8 +155,36 @@ browser. See
 
 - [`tests/README.md`](tests/README.md) — how to run the test suite, conventions, coverage ratchet and branch protection
 - [`docs/TESTING.md`](docs/TESTING.md) — the full test plan / feature matrix
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the layering: `SongRequest.Core`, the desktop/mobile hosts, and the platform provider seams
+- [`docs/MOBILE-APP-PLAN.md`](docs/MOBILE-APP-PLAN.md) — the Android/iOS plan (options, parity matrix, milestones, policy/licensing)
+- [`docs/MOBILE-TESTING.md`](docs/MOBILE-TESTING.md) — building the mobile hosts and the per-milestone device checklists
 - [`docs/REMOVED-FEATURES.md`](docs/REMOVED-FEATURES.md) — everything removed or changed in the cross-platform migration (tray icon, keyboard remote shortcuts, embedded Google login, auto tool setup, …)
 - [`SongRequestDesktopV2Rewrite/tools/README.md`](SongRequestDesktopV2Rewrite/tools/README.md) — FFmpeg / yt-dlp setup
+
+## Mobile (Android & iOS)
+
+The same engine and the same web UI also run as a mobile app
+([`SongRequest.Mobile/`](SongRequest.Mobile), .NET MAUI + `HybridWebView`):
+the phone hosts the identical HTML/CSS/JS pages, and `SongRequest.Core` is the
+shared, platform-neutral engine behind both hosts.
+
+Current state: **M1–M6 done** — the shell with native tabs, the host bridge, the
+responsive layout layer, sandbox paths and the Android APK build; **audio
+playback** with crossfade/normalisation/ducking, background playback and the
+lock-screen/notification media controls; **library parity** (system-picker import
+copied into the app sandbox, portable library paths, album artwork without FFmpeg,
+playlists, history, home feed, mobile-aware settings); and **live-event parity** —
+the soundboard with its own import and fades, **MIDI** controllers over USB and
+Bluetooth LE, remote-control mappings, announcements with the chime, and Music
+Share; and **downloads** — in-app YouTube sign-in, AAC/m4a downloads with a
+background service and progress notification, and offline playback from the app's
+own storage; and **the stage** — the visualisation and the presentation page, which
+the app also serves over the LAN (with a QR for a TV) and mirrors onto a connected
+HDMI display; plus an **in-app updater** on Android (the release APK, downloaded
+with progress and handed to the system installer). The iOS host follows in M7; the
+plan and the milestone state live in
+[`docs/MOBILE-APP-PLAN.md`](docs/MOBILE-APP-PLAN.md), the build/test commands and
+device checklists in [`docs/MOBILE-TESTING.md`](docs/MOBILE-TESTING.md).
 
 ## Testing
 

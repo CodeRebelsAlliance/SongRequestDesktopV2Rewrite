@@ -5,15 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Presentation - SongRequest V2</title>
 <link rel="stylesheet" href="presentation.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="mobile.css">
+  <style>
+    /* Shown only when the host publishes a stage URL (mobile): a TV without a
+       cable opens the same page from this address. */
+    #pres-stage-server { display: none; position: fixed; right: 14px; bottom: 14px; z-index: 50;
+                         text-align: center; color: #9a9a9a; font-size: 11px; }
+    #pres-stage-server img { display: block; width: 110px; height: 110px; margin: 6px auto 4px;
+                             border-radius: 8px; background: #fff; padding: 4px; }
+    #pres-stage-server .pres-tv-url { font-family: Consolas, monospace; color: #c8c8c8; }
+  </style>
 </head>
 <body>
+  <div id="pres-stage-server"></div>
 <div id="presentation-root">
   <!-- Player panel (left) - has gradient background -->
   <div id="pres-player-panel">
     <div id="pres-top-bar">
       <button id="btn-fullscreen" title="Toggle fullscreen"><i class="fas fa-expand"></i></button>
-      <img src="../SRshortLogo.png" id="pres-logo" alt="SongRequest V2">
+      <img src="SRshortLogo.png" id="pres-logo" alt="SongRequest V2">
     </div>
     <div id="presentation-top">
       <div id="presentation-artwork"><i class="fas fa-music"></i></div>
@@ -46,12 +57,13 @@
       <div id="pres-queue-list"></div>
     </div>
     <div id="pres-qr-panel">
-      <img id="pres-qr-logo" src="../LargeSR.png" alt="Logo">
+      <img id="pres-qr-logo" src="LargeSR.png" alt="Logo">
       <div id="pres-qr-code"></div>
     </div>
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="_framework/hybridwebview.js"></script>
 <script src="hostbridge.js"></script>
 <script src="presentation.js"></script>
 </body>

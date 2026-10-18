@@ -32,6 +32,50 @@ public class AppPathsTests
     }
 
     [Fact]
+    public void UseDataRoot_PointsEveryWritableFolderAtTheSandbox()
+    {
+        // A mobile host calls this before anything else: the app bundle is
+        // read-only there, so downloads, caches, library and config all have to
+        // move under the sandbox root the platform handed us.
+        var savedRoot = AppPaths.DataRoot;
+        var savedDownload = AppPaths.DownloadPath;
+        var savedLibrary = AppPaths.LibraryDataDir;
+        var savedAppData = AppPaths.AppDataDir;
+        var savedLocalAppData = AppPaths.LocalAppDataDir;
+
+        try
+        {
+            var root = Path.Combine(TestSupport.NewTempDir(), "sandbox");
+            AppPaths.UseDataRoot(root);
+
+            Assert.Equal(root, AppPaths.DataRoot);
+            Assert.Equal(Path.Combine(root, "downloadedvideos"), AppPaths.DownloadPath);
+            Assert.Equal(Path.Combine(root, "library"), AppPaths.LibraryDataDir);
+            Assert.Equal(Path.Combine(root, "downloadedvideos", "thumbnail-cache"), AppPaths.ThumbnailCachePath);
+            Assert.Equal(Path.Combine(root, "downloadedvideos", "video-metadata-cache.json"), AppPaths.VideoMetadataCachePath);
+            Assert.Equal(root, AppPaths.AppDataDir);
+            Assert.Equal(root, AppPaths.LocalAppDataDir);
+
+            // Everything must exist and be writable.
+            Assert.True(Directory.Exists(AppPaths.DownloadPath));
+            Assert.True(Directory.Exists(AppPaths.LibraryDataDir));
+            File.WriteAllText(Path.Combine(AppPaths.LibraryDataDir, "probe.txt"), "ok");
+        }
+        finally
+        {
+            AppPaths.DataRoot = savedRoot;
+            AppPaths.DownloadPath = savedDownload;
+            AppPaths.LibraryDataDir = savedLibrary;
+            AppPaths.AppDataDir = savedAppData;
+            AppPaths.LocalAppDataDir = savedLocalAppData;
+        }
+    }
+
+    [Fact]
+    public void UseDataRoot_RejectsAnEmptyRoot()
+        => Assert.Throws<ArgumentException>(() => AppPaths.UseDataRoot("  "));
+
+    [Fact]
     public void BaseDirectory_IsNotEmpty()
         => Assert.False(string.IsNullOrWhiteSpace(AppPaths.BaseDirectory));
 

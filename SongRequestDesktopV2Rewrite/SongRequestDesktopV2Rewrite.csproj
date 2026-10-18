@@ -12,11 +12,9 @@
     <StartupObject>SongRequestDesktopV2Rewrite.Program</StartupObject>
 
     <!--
-      Single source of truth for the app version. It is shown in the UI, compared
-      against the release tag by the updater, used as the release tag by CI and
-      written into the Windows "Apps & features" entry.
+      The product version lives in Directory.Build.props (one value for the
+      desktop app, the shared core and the mobile app alike).
     -->
-    <Version>4.5</Version>
 
     <!-- Product metadata (Windows file properties, Apps & features entry). -->
     <AssemblyTitle>SongRequest Desktop</AssemblyTitle>
@@ -27,19 +25,18 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AngleSharp" Version="1.5.2" />
-    <PackageReference Include="NAudio.Core" Version="2.3.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />    <PackageReference Include="Photino.Native" Version="4.0.22" />
+    <!-- Desktop-only backends. Everything platform-neutral lives in SongRequest.Core. -->
+    <PackageReference Include="Photino.Native" Version="4.0.22" />
     <PackageReference Include="Photino.NET" Version="4.0.16" />
     <PackageReference Include="Photino.NET.Server" Version="4.0.12" />
-    <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="RtMidi.Core" Version="1.0.53" GeneratePathProperty="true" />
     <PackageReference Include="Silk.NET.OpenAL" Version="2.23.0" />
     <PackageReference Include="Silk.NET.OpenAL.Soft.Native" Version="1.23.1" />
-    <PackageReference Include="TagLibSharp" Version="2.3.0" />
     <PackageReference Include="Tmds.DBus" Version="0.95.1" />
-    <PackageReference Include="YoutubeExplode" Version="6.6.2" />
-    <PackageReference Include="YoutubeExplode.Converter" Version="6.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SongRequest.Core\SongRequest.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -61,12 +58,23 @@
     <Content Include="newui\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!--
+      The pages load `_framework/hybridwebview.js` (the .NET MAUI HybridWebView
+      shim) so one set of markup serves desktop and mobile. On mobile the control
+      serves the real script; the desktop ships this empty stub so the tag does
+      not 404 in the web view's console.
+    -->
+    <Content Include="hybridwebview-stub.js">
+      <Link>newui\_framework\hybridwebview.js</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Remove="newui\LargeSR.png" />
-    <Content Remove="newui\SRshortLogo.png" />
-  </ItemGroup>
+  <!--
+    The pages reference their images relative to newui/ (so the same tree works
+    both in the desktop output and inside the mobile app's web assets), which
+    means the copies in newui/ are published as part of the glob above.
+  -->
 
   <!-- RtMidi.Core's bundled targets omit the Linux native library; copy it so MIDI works. -->
   <ItemGroup Condition="Exists('$(PkgRtMidi_Core)/build/librtmidi.so')">

@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SongRequest V2</title>
 <link rel="stylesheet" href="styles.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="mobile.css">
 </head>
 <body>
 <div id="app">
   <div id="topbar" class="startup-hide">
     <div id="top-left">
-      <img id="logo" src="../SRshortLogo.png"/>
+      <img id="logo" src="SRshortLogo.png"/>
       <span id="title" style="font-weight: bold">Technik-AG <span style="color: yellow">Song</span><span style="color: orange">Request</span></span>
       <span id="version-badge">v...</span>
     </div>
@@ -154,7 +155,7 @@
     </div>
     <div class="modal-body" id="about-body">
       <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px">
-        <img src="../SRshortLogo.png" style="width:80px;height:80px;border-radius:8px;flex-shrink:0" />
+        <img src="SRshortLogo.png" style="width:80px;height:80px;border-radius:8px;flex-shrink:0" />
         <div>
             <div style="font-size:20px;font-weight:700;color:#fff; margin-bottom: 4px; font-weight: bold;">Technik-AG <span style="color: yellow">Song</span><span style="color: orange">Request</span></div>
           <div id="about-version" style="font-size:13px;color:#ccc;margin-bottom:4px">Version ...</div>
@@ -194,7 +195,7 @@
   <!-- Phase 1: Loading splash -->
   <div id="startup-splash">
     <div id="startup-splash-inner">
-      <img id="startup-logo" src="../SRshortLogo.png" alt=""/>
+      <img id="startup-logo" src="SRshortLogo.png" alt=""/>
       <div id="startup-title">Technik-AG <span style="color:#FFD700">Song</span><span style="color:#FFA500">Request</span></div>
       <div id="startup-version"></div>
       <div id="startup-status">Initializing...</div>
@@ -320,7 +321,7 @@
               <div class="settings-hint">Which tab is selected by default when the Submit Song modal opens.</div>
             </div>
           </div>
-          <div class="settings-card">
+          <div class="settings-card" id="s-card-startup">
             <div class="settings-card-title">Startup &amp; Window</div>
             <div class="settings-hint">How SongRequest starts and what the window does on minimise or close.</div>
             <label class="settings-checkbox"><input type="checkbox" id="s-autostart" /> Start SongRequest when you log in</label>
@@ -394,7 +395,7 @@
             </div>
             <div id="s-yt-status" class="settings-hint" style="color:#d0d0d0"></div>
           </div>
-          <div class="settings-card">
+          <div class="settings-card" id="s-card-tools">
             <div class="settings-card-title">External Tools</div>
             <div class="settings-hint">FFmpeg is required for audio playback; yt-dlp is optional (used to import YouTube cookies). They can be downloaded automatically into the app's tools folder.</div>
             <div style="padding:2px 0">
@@ -473,10 +474,19 @@
         </div>
         <div id="settings-library" class="settings-panel">
           <div class="settings-card">
+            <div class="settings-card-title">Import Music</div>
+            <div class="settings-hint">Add music to your library. On mobile the picked files are copied into the app's own storage (the only place it can read); on the desktop the folder is scanned where it is.</div>
+            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+              <button id="s-library-import-folder" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-folder-open"></i> Import folder</button>
+              <button id="s-library-import-files" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-file-audio"></i> Import files</button>
+            </div>
+            <div id="s-library-import-status" class="settings-hint" style="display:none;margin-top:8px"></div>
+          </div>
+          <div class="settings-card">
             <div class="settings-card-title">Scan Folders</div>
             <div class="settings-hint">Folders that are scanned for local audio files to build your library.</div>
             <div id="s-library-folders-list" class="settings-folder-list"></div>
-            <div style="display:flex;gap:6px;margin-top:8px">
+            <div style="display:flex;gap:6px;margin-top:8px" id="s-library-folder-row">
               <input type="text" id="s-library-folder-input" class="settings-input" style="flex:1" placeholder="C:\Music or /home/user/Music" />
               <button id="s-library-folder-add" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-plus"></i> Add</button>
             </div>
@@ -605,6 +615,7 @@
   </div>
 </div>
 <script src="keys.js"></script>
+<script src="_framework/hybridwebview.js"></script>
 <script src="hostbridge.js"></script>
 <script src="markdown.js"></script>
 <script src="app.js"></script>

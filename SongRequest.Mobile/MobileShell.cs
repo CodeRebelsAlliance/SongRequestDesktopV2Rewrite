@@ -1,0 +1,105 @@
+using System;
+using SongRequestDesktopV2Rewrite;
+
+namespace SongRequest.Mobile;
+
+/// <summary>
+/// The core's <see cref="IUiShell"/> on mobile: the desktop's sub-windows become
+/// tabs and full-screen pages, and page messages are routed to the HybridWebView
+/// that owns them.
+/// </summary>
+public sealed class MobileShell : IUiShell
+{
+    private readonly MainPage _page;
+
+    public MobileShell(MainPage page)
+    {
+        _page = page;
+
+        // The interop invokes these to push state into a "window". On mobile they
+        // are dropped when the page is not resident; every page re-requests its
+        // state when it loads, so nothing is lost permanently.
+        MusicPlayerSendMessage = json => _page.SendTo("musicplayer.html", json);
+        PresentationSendMessage = json => _page.SendTo("presentation.html", json);
+        SoundboardSendMessage = json => _page.SendTo("soundboard.html", json);
+        VisualizationSendMessage = json => _page.SendTo("visualization.html", json);
+        AnnouncementSendMessage = json => _page.SendTo("announcement.html", json);
+    }
+
+    // ── Player ───────────────────────────────────────────────────────────────
+    public void ShowMusicPlayerWindow() => _page.Select("player");
+
+    public void CloseMusicPlayerWindow()
+    {
+        // Tabs cannot be closed on mobile; leaving the tab is the user's choice.
+    }
+
+    public Action<string>? MusicPlayerSendMessage { get; set; }
+
+    // ── Presentation ─────────────────────────────────────────────────────────
+    public void ShowPresentationWindow()
+    {
+        _page.ShowFileInTab("presentation.html", "stage");
+
+#if ANDROID
+        // Serve the same page to a TV browser, and mirror it onto an HDMI display
+        // when one is connected.
+        StageMirror.Publish();
+#endif
+    }
+
+    public void ClosePresentationWindow() => _page.SetImmersive(false);
+
+    public Action<string>? PresentationSendMessage { get; set; }
+
+    // ── Soundboard ───────────────────────────────────────────────────────────
+    public void ShowSoundboardWindow() => _page.Select("board");
+
+    public void CloseSoundboardWindow() { }
+
+    public Action<string>? SoundboardSendMessage { get; set; }
+
+    // ── Visualization ────────────────────────────────────────────────────────
+    public void ShowVisualizationWindow() => _page.ShowFileInTab("visualization.html", "stage");
+
+    public void CloseVisualizationWindow() => _page.SetImmersive(false);
+
+    public Action<string>? VisualizationSendMessage { get; set; }
+
+    // ── Announcement ─────────────────────────────────────────────────────────
+    // The announcement page is a control panel (press/release), so it shares the
+    // stage tab with the presentation/visualization pages.
+    public void ShowAnnouncementWindow() => _page.ShowFileInTab("announcement.html", "stage");
+
+    public void CloseAnnouncementWindow() => _page.SetImmersive(false);
+
+    public Action<string>? AnnouncementSendMessage { get; set; }
+
+    /// <summary>
+    /// Fullscreen on mobile = the stage page hides the native tab bar. Only the
+    /// page that is actually showing can be made fullscreen, so the request is
+    /// refused (and the page keeps its own icon honest) otherwise.
+    /// </summary>
+    public bool SetSubWindowFullscreen(string? windowName, bool enabled)
+    {
+        var file = FileFor(windowName);
+        if (file == null || !string.Equals(_page.CurrentFile, file, StringComparison.Ordinal))
+            return false;
+
+        _page.SetImmersive(enabled);
+        return true;
+    }
+
+    /// <summary>Quits the app (the web UI's Quit buttons).</summary>
+    public void Close() => Application.Current?.Quit();
+
+    private static string? FileFor(string? windowName) => windowName switch
+    {
+        "visualization" => "visualization.html",
+        "presentation" => "presentation.html",
+        "musicplayer" => "musicplayer.html",
+        "soundboard" => "soundboard.html",
+        "announcement" => "announcement.html",
+        _ => null,
+    };
+}

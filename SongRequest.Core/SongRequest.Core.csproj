@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Platform-neutral application core: engines, services, models, the interop
+    dispatcher and the abstractions the platform hosts implement (audio in/out,
+    MIDI, system media session, tray, UI shell).
+
+    This assembly contains no native dependencies and no OS-specific backends:
+    the desktop (Photino) host and the future mobile hosts register their own
+    implementations through the provider hooks in AudioOutputFactory,
+    AudioSourceFactory, MidiServiceFactory, MediaSessionFactory,
+    GlobalHotkeyBackendFactory and TrayIconFactory.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>SongRequest.Core</AssemblyName>
+    <!-- Keep the original namespace so the move is a pure file move for callers. -->
+    <RootNamespace>SongRequestDesktopV2Rewrite</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="NAudio.Core" Version="2.3.0" />
+    <PackageReference Include="YoutubeExplode" Version="6.6.2" />
+    <PackageReference Include="YoutubeExplode.Converter" Version="6.6.2" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- "SongRequest V2" is the desktop host's assembly name (see its csproj);
+         SongRequest.Mobile is the mobile host. Both are first-party hosts that
+         use the core's internal seams (tool locator, tag-based duration probe…). -->
+    <InternalsVisibleTo Include="SongRequest V2" />
+    <InternalsVisibleTo Include="SongRequest.Mobile" />
+    <InternalsVisibleTo Include="SongRequestDesktopV2Rewrite.UnitTests" />
+    <InternalsVisibleTo Include="SongRequestDesktopV2Rewrite.IntegrationTests" />
+  </ItemGroup>
+
+</Project>
