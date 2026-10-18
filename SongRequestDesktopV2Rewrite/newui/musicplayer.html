@@ -60,28 +60,68 @@
     <!-- Center content -->
     <div id="center">
       <div id="view-home" class="view active">
-        <div id="home-welcome">
+        <div id="home-hero">
           <img src="../SRshortLogo.png" id="home-logo" alt="SongRequest">
-          <div id="home-title"><span style="color: yellow">Song</span><span style="color: orange">Request</span></div>
-          <div id="home-subtitle">Submit songs, control playback, enjoy music.</div>
+          <div id="home-hero-text">
+            <div id="home-title"><span style="color: yellow">Song</span><span style="color: orange">Request</span></div>
+            <div id="home-subtitle">Your library, your playlists, recommended for you.</div>
+          </div>
+          <div id="home-stats"></div>
         </div>
-        <div id="home-actions">
-          <button class="home-action-card" id="home-btn-submit">
-            <i class="fas fa-plus-circle"></i>
-            <span class="home-action-label">Submit Song</span>
-          </button>
-          <button class="home-action-card" id="home-btn-queue">
-            <i class="fas fa-list-ol"></i>
-            <span class="home-action-label">View Queue</span>
-          </button>
-          <button class="home-action-card" id="home-btn-playlists">
-            <i class="fas fa-list"></i>
-            <span class="home-action-label">Playlists</span>
-          </button>
-          <button class="home-action-card" id="home-btn-settings">
-            <i class="fas fa-cog"></i>
-            <span class="home-action-label">Settings</span>
-          </button>
+
+        <div id="home-feed">
+          <div id="home-loading" class="home-loading">
+            <i class="fas fa-circle-notch fa-spin"></i><span>Loading your library...</span>
+          </div>
+
+          <section class="home-row" id="home-row-playlists" style="display:none">
+            <div class="home-row-head">
+              <div class="home-row-title"><i class="fas fa-list"></i> Playlists — most recently listened</div>
+              <div class="home-row-nav">
+                <button class="home-scroll-btn" data-dir="-1" title="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                <button class="home-scroll-btn" data-dir="1" title="Scroll right"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+            <div class="home-scroller" id="home-playlists"></div>
+          </section>
+
+          <section class="home-row" id="home-row-recommended" style="display:none">
+            <div class="home-row-head">
+              <div class="home-row-title"><i class="fas fa-wand-magic-sparkles"></i> Recommended for you</div>
+              <div class="home-row-nav">
+                <button class="home-scroll-btn" data-dir="-1" title="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                <button class="home-scroll-btn" data-dir="1" title="Scroll right"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+            <div class="home-scroller" id="home-recommended"></div>
+          </section>
+
+          <section class="home-row" id="home-row-recent" style="display:none">
+            <div class="home-row-head">
+              <div class="home-row-title"><i class="fas fa-clock-rotate-left"></i> Recently listened</div>
+              <div class="home-row-nav">
+                <button class="home-scroll-btn" data-dir="-1" title="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                <button class="home-scroll-btn" data-dir="1" title="Scroll right"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+            <div class="home-scroller" id="home-recent"></div>
+          </section>
+
+          <section class="home-row" id="home-row-new" style="display:none">
+            <div class="home-row-head">
+              <div class="home-row-title"><i class="fas fa-sparkles"></i> New in your library</div>
+              <div class="home-row-nav">
+                <button class="home-scroll-btn" data-dir="-1" title="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                <button class="home-scroll-btn" data-dir="1" title="Scroll right"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+            <div class="home-scroller" id="home-new"></div>
+          </section>
+
+          <div id="home-empty" class="library-empty" style="display:none">
+            <i class="fas fa-compact-disc"></i>
+            <p>Your library is empty. Scan a folder or download a song to get started.</p>
+          </div>
         </div>
       </div>
       <div id="view-playlists" class="view">
@@ -190,6 +230,13 @@
     </div>
       <div id="player-bar-right">
       <span id="player-bar-quality" class="pill pill-quality pill-bar" style="display:none"></span>
+      <div id="device-picker">
+        <button id="btn-device" class="player-ctrl-btn" title="Output device"><i class="fab fa-chromecast"></i><i class="fas fa-caret-down device-caret"></i></button>
+        <div id="device-menu" class="device-menu" style="display:none">
+          <div class="device-menu-head"><i class="fab fa-chromecast"></i> Output device</div>
+          <div id="device-menu-list"></div>
+        </div>
+      </div>
       <button id="btn-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
       <div id="volume-slider-wrap">
         <span id="volume-value" class="slider-value">80</span>
@@ -258,6 +305,7 @@
           <button id="btn-exp-next" class="player-ctrl-btn" title="Next"><i class="fas fa-step-forward"></i></button>
           <button id="btn-exp-repeat" class="player-ctrl-btn" title="Repeat"><i class="fas fa-redo"></i></button>
           <div id="expanded-volume">
+            <button id="btn-exp-device" class="player-ctrl-btn" title="Output device"><i class="fab fa-chromecast"></i><i class="fas fa-caret-down device-caret"></i></button>
             <button id="btn-exp-volume" class="player-ctrl-btn" title="Volume"><i class="fas fa-volume-up"></i></button>
             <span id="exp-volume-value" class="slider-value">80</span>
             <input type="range" id="exp-volume-slider" min="0" max="100" value="80">

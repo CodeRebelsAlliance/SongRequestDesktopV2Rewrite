@@ -33,6 +33,8 @@ public static class Program
 
         var host = new HeadlessHost();
         host.Music.InvokeOnUi = a => a();
+        // Remembered output device (speaker button in the music player).
+        host.Music.OutputDeviceNumber = ConfigService.Instance.Current?.AudioOutputDeviceNumber ?? -1;
         RemoteControlService.Instance.RegisterMusicEngine(host.Music);
 
         var interop = new YoutubeFormInterop(host, host.YoutubeService);

@@ -189,23 +189,305 @@
       var target = document.getElementById('view-' + view);
       if (target) target.classList.add('active');
       recentlyPlayedActive = (view === 'recently-played');
+      if (view === 'home') loadHomeFeed(false);
     });
   });
 
-  // --- Home action buttons ---
-  document.getElementById('home-btn-queue').addEventListener('click', function() {
-    var right = document.getElementById('right-sidebar');
-    if (right) right.classList.toggle('collapsed');
+  // --- Home tab: playlists / recommendations / recently listened / new ---
+  var homeLoadingEl = document.getElementById('home-loading');
+  var homeEmptyEl = document.getElementById('home-empty');
+  var homeStatsEl = document.getElementById('home-stats');
+  var homeFeedEl = document.getElementById('home-feed');
+  var homeRows = {
+    playlists: { section: document.getElementById('home-row-playlists'), scroller: document.getElementById('home-playlists') },
+    recommended: { section: document.getElementById('home-row-recommended'), scroller: document.getElementById('home-recommended') },
+    recent: { section: document.getElementById('home-row-recent'), scroller: document.getElementById('home-recent') },
+    fresh: { section: document.getElementById('home-row-new'), scroller: document.getElementById('home-new') }
+  };
+  var HOME_CARD_COUNT = 20;
+  var homeFeedData = null;
+  var homeFeedLoading = false;
+
+  function homeRelativeTime(value) {
+    if (!value) return '';
+    var then = new Date(value);
+    if (isNaN(then.getTime())) return '';
+    var secs = Math.max(0, Math.round((Date.now() - then.getTime()) / 1000));
+    if (secs < 60) return 'just now';
+    var mins = Math.round(secs / 60);
+    if (mins < 60) return mins + 'm ago';
+    var hours = Math.round(mins / 60);
+    if (hours < 24) return hours + 'h ago';
+    var days = Math.round(hours / 24);
+    if (days < 7) return days + 'd ago';
+    return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function homeThumbHtml(item, fallbackIcon) {
+    var thumb = item && item.thumbnail;
+    var inner = thumb ? '<img src="' + escHtml(thumb) + '" alt="" loading="lazy">' : '<i class="fas ' + (fallbackIcon || 'fa-music') + '"></i>';
+    return '<div class="home-card-thumb">' + inner +
+      '<button class="home-card-play" data-play="1" title="Play"><i class="fas fa-play"></i></button>' +
+    '</div>';
+  }
+
+  function homeSongCardHtml(item, options) {
+    options = options || {};
+    var sub = escHtml(item.artist || 'Unknown');
+    var meta = '';
+    if (options.badge) {
+      meta = '<div class="home-card-meta"><span class="home-card-badge' + (options.badgeClass ? ' ' + options.badgeClass : '') + '" title="' +
+        escHtml(options.badge) + '">' + escHtml(options.badge) + '</span></div>';
+    } else if (options.meta) {
+      meta = '<div class="home-card-meta"><span class="home-card-sub">' + escHtml(options.meta) + '</span></div>';
+    }
+    return '<div class="home-card home-song-card" data-songid="' + escHtml(item.songId || '') + '" data-filepath="' + escHtml(item.filePath || '') + '"' +
+        (item.reason ? ' title="' + escHtml(item.reason) + '"' : '') + '>' +
+      homeThumbHtml(item) +
+      '<div class="home-card-title">' + escHtml(item.title || 'Unknown track') + '</div>' +
+      '<div class="home-card-sub">' + sub + '</div>' +
+      meta +
+    '</div>';
+  }
+
+  function homePlaylistCardHtml(item) {
+    var thumbs = item.thumbnail
+      ? '<div class="home-card-playlist-thumb"><img src="' + escHtml(item.thumbnail) + '" alt=""><div class="ph"><i class="fas fa-music"></i></div>' +
+        '<div class="ph"><i class="fas fa-music"></i></div><div class="ph"><i class="fas fa-list"></i></div></div>'
+      : (item.emoji
+          ? '<span style="font-size:38px">' + escHtml(item.emoji) + '</span>'
+          : '<i class="fas fa-list"></i>');
+    var played = item.lastPlayedUtc ? 'Played ' + homeRelativeTime(item.lastPlayedUtc) : 'Never played';
+    var count = item.songCount + ' song' + (item.songCount === 1 ? '' : 's');
+    return '<div class="home-card home-playlist-card" data-playlistid="' + escHtml(item.id || '') + '">' +
+      '<div class="home-card-thumb">' + thumbs +
+        '<button class="home-card-play" data-play="1" title="Play playlist"><i class="fas fa-play"></i></button>' +
+      '</div>' +
+      '<div class="home-card-title">' + escHtml(item.name || 'Playlist') + '</div>' +
+      '<div class="home-card-sub">' + escHtml(count) + '</div>' +
+      '<div class="home-card-meta"><span class="home-card-sub">' + escHtml(played) + '</span></div>' +
+    '</div>';
+  }
+
+  function renderHomeRow(key, html, visible) {
+    var row = homeRows[key];
+    if (!row || !row.section || !row.scroller) return;
+    if (!visible) { row.section.style.display = 'none'; return; }
+    row.scroller.innerHTML = html;
+    row.section.style.display = '';
+    // stagger the card animation a little so the row slides in nicely
+    var cards = row.scroller.querySelectorAll('.home-card');
+    for (var i = 0; i < cards.length; i++) cards[i].style.animationDelay = Math.min(i * 22, 260) + 'ms';
+    updateHomeScrollButtons(row);
+  }
+
+  function updateHomeScrollButtons(row) {
+    var buttons = row.section.querySelectorAll('.home-scroll-btn');
+    if (!buttons.length) return;
+    var max = row.scroller.scrollWidth - row.scroller.clientWidth;
+    buttons[0].disabled = row.scroller.scrollLeft <= 2;
+    buttons[1].disabled = row.scroller.scrollLeft >= max - 2;
+  }
+
+  function renderHomeFeed(feed) {
+    feed = feed || {};
+    var stats = feed.stats || {};
+    var songCount = stats.presentSongs || stats.totalSongs || 0;
+    var parts = [];
+    if (songCount) parts.push('<span class="home-stat"><b>' + songCount + '</b> songs</span>');
+    if (stats.totalPlaylists) parts.push('<span class="home-stat"><b>' + stats.totalPlaylists + '</b> playlists</span>');
+    if (stats.totalPlays) parts.push('<span class="home-stat"><b>' + stats.totalPlays + '</b> plays</span>');
+    if (homeStatsEl) homeStatsEl.innerHTML = parts.join('');
+
+    var playlists = feed.playlists || [];
+    var recommended = feed.recommended || [];
+    var recent = feed.recentlyPlayed || [];
+    var fresh = feed.newlyAdded || [];
+
+    renderHomeRow('playlists',
+      playlists.map(homePlaylistCardHtml).join(''),
+      playlists.length > 0);
+
+    var recommendedHtml = '';
+    for (var i = 0; i < recommended.length; i++) {
+      var rec = recommended[i];
+      recommendedHtml += homeSongCardHtml(rec, { badge: rec.reason || 'For you' });
+    }
+    renderHomeRow('recommended', recommendedHtml, recommended.length > 0);
+
+    renderHomeRow('recent',
+      recent.map(function(item) {
+        return homeSongCardHtml(item, { meta: item.playedUtc ? homeRelativeTime(item.playedUtc) : '' });
+      }).join(''),
+      recent.length > 0);
+
+    renderHomeRow('fresh',
+      fresh.map(function(item) {
+        return homeSongCardHtml(item, { meta: item.dateAddedUtc ? 'Added ' + homeRelativeTime(item.dateAddedUtc) : '', badgeClass: 'is-new' });
+      }).join(''),
+      fresh.length > 0);
+
+    var anyVisible = playlists.length + recommended.length + recent.length + fresh.length > 0;
+    if (homeEmptyEl) homeEmptyEl.style.display = anyVisible ? 'none' : '';
+  }
+
+  function loadHomeFeed(force) {
+    if (homeFeedLoading) return;
+    if (homeFeedData && !force) { renderHomeFeed(homeFeedData); return; }
+
+    homeFeedLoading = true;
+    if (homeLoadingEl) homeLoadingEl.style.display = '';
+    if (homeEmptyEl) homeEmptyEl.style.display = 'none';
+
+    hostRequest('getHomeFeed', { count: HOME_CARD_COUNT }).then(function(feed) {
+      homeFeedLoading = false;
+      homeFeedData = feed || {};
+      if (homeLoadingEl) homeLoadingEl.style.display = 'none';
+      renderHomeFeed(homeFeedData);
+    }).catch(function() {
+      homeFeedLoading = false;
+      if (homeLoadingEl) homeLoadingEl.style.display = 'none';
+      if (homeEmptyEl) homeEmptyEl.style.display = '';
+    });
+  }
+
+  function invalidateHomeFeed() {
+    homeFeedData = null;
+    var homeView = document.getElementById('view-home');
+    if (homeView && homeView.classList.contains('active')) loadHomeFeed(true);
+  }
+
+  // Section scroll buttons + horizontal wheel scrolling
+  Object.keys(homeRows).forEach(function(key) {
+    var row = homeRows[key];
+    if (!row || !row.section || !row.scroller) return;
+    row.section.querySelectorAll('.home-scroll-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var dir = parseInt(this.dataset.dir, 10) || 1;
+        row.scroller.scrollBy({ left: dir * Math.max(240, row.scroller.clientWidth * 0.8), behavior: 'smooth' });
+      });
+    });
+    row.scroller.addEventListener('scroll', function() { updateHomeScrollButtons(row); }, { passive: true });
+    row.scroller.addEventListener('wheel', function(e) {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;   // horizontal gesture: let it be
+      this.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }, { passive: false });
   });
-  document.getElementById('home-btn-playlists').addEventListener('click', function() {
-    document.querySelectorAll('.sidebar-tab').forEach(function(t) { t.classList.remove('active'); });
-    document.querySelector('[data-view="playlists"]').classList.add('active');
-    document.querySelectorAll('#center .view').forEach(function(v) { v.classList.remove('active'); });
-    document.getElementById('view-playlists').classList.add('active');
+
+  // Card clicks: play button plays, the card itself opens/plays
+  if (homeFeedEl) {
+    homeFeedEl.addEventListener('click', function(e) {
+      var card = e.target.closest('.home-card');
+      if (!card) return;
+
+      var playlistId = card.dataset.playlistid;
+      var songId = card.dataset.songid;
+      var isPlayButton = !!e.target.closest('.home-card-play');
+
+      if (playlistId) {
+        if (isPlayButton) hostSend('playPlaylist', { playlistId: playlistId });
+        else openPlaylistDetail(playlistId);
+        return;
+      }
+      if (songId) hostSend('playLibrarySong', { songId: songId });
+    });
+
+    homeFeedEl.addEventListener('contextmenu', function(e) {
+      var card = e.target.closest('.home-card');
+      if (!card) return;
+      e.preventDefault();
+      if (card.dataset.playlistid) showPlaylistContextMenu(e, card.dataset.playlistid);
+      else if (card.dataset.songid) showContextMenu(e.clientX, e.clientY, card.dataset.songid, card, 'library');
+    });
+  }
+
+  // --- Output device picker (speaker icon) ---
+  var deviceMenuEl = document.getElementById('device-menu');
+  var deviceMenuListEl = document.getElementById('device-menu-list');
+  var deviceTriggers = [document.getElementById('btn-device'), document.getElementById('btn-exp-device')].filter(Boolean);
+  var deviceSelected = -1;
+  var deviceMenuOpen = false;
+
+  function hideDeviceMenu() {
+    deviceMenuOpen = false;
+    if (deviceMenuEl) deviceMenuEl.style.display = 'none';
+  }
+
+  function renderDeviceMenu(devices, selected) {
+    if (!deviceMenuListEl) return;
+    if (!devices || !devices.length) {
+      deviceMenuListEl.innerHTML = '<div class="device-menu-empty">No output devices found</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < devices.length; i++) {
+      var d = devices[i];
+      var isSelected = d.number === selected;
+      html += '<button class="device-menu-item" data-number="' + d.number + '" title="' + escHtml(d.name || '') + '">' +
+        '<span class="check">' + (isSelected ? '<i class="fas fa-check"></i>' : '') + '</span>' +
+        '<span class="name">' + escHtml(d.name || ('Device ' + d.number)) + '</span>' +
+      '</button>';
+    }
+    deviceMenuListEl.innerHTML = html;
+  }
+
+  function openDeviceMenu(anchor) {
+    if (!deviceMenuEl) return;
+    deviceMenuOpen = true;
+    deviceMenuEl.style.display = 'block';
+    renderDeviceMenu([], deviceSelected);
+    deviceMenuListEl.innerHTML = '<div class="device-menu-empty"><i class="fas fa-circle-notch fa-spin"></i> Looking for devices...</div>';
+
+    var rect = anchor.getBoundingClientRect();
+    var w = deviceMenuEl.offsetWidth, h = deviceMenuEl.offsetHeight;
+    var left = Math.min(Math.max(8, rect.right - w), window.innerWidth - w - 8);
+    var top = rect.top - h - 8;
+    if (top < 8) top = Math.min(rect.bottom + 8, window.innerHeight - h - 8);
+    deviceMenuEl.style.left = Math.max(8, left) + 'px';
+    deviceMenuEl.style.top = Math.max(8, top) + 'px';
+
+    hostRequest('getMusicAudioDevices', {}).then(function(result) {
+      if (!deviceMenuOpen) return;
+      deviceSelected = (result && typeof result.selected === 'number') ? result.selected : -1;
+      renderDeviceMenu((result && result.devices) || [], deviceSelected);
+    }).catch(function() {
+      if (deviceMenuOpen && deviceMenuListEl) {
+        deviceMenuListEl.innerHTML = '<div class="device-menu-empty">Could not list devices</div>';
+      }
+    });
+  }
+
+  deviceTriggers.forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (deviceMenuOpen) { hideDeviceMenu(); return; }
+      openDeviceMenu(btn);
+    });
   });
-  document.getElementById('home-btn-settings').addEventListener('click', function() {
-    document.getElementById('btn-settings').click();
-  });
+
+  if (deviceMenuEl) {
+    deviceMenuEl.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var item = e.target.closest('.device-menu-item');
+      if (!item) return;
+      var number = parseInt(item.dataset.number, 10);
+      if (isNaN(number)) return;
+      deviceSelected = number;
+      hostSend('setMusicOutputDevice', { deviceNumber: number });
+      // reflect the choice immediately, then close
+      var items = deviceMenuListEl.querySelectorAll('.device-menu-item');
+      for (var i = 0; i < items.length; i++) {
+        var check = items[i].querySelector('.check');
+        if (check) check.innerHTML = (parseInt(items[i].dataset.number, 10) === number) ? '<i class="fas fa-check"></i>' : '';
+      }
+      hideDeviceMenu();
+    });
+  }
+
+  document.addEventListener('click', function() { hideDeviceMenu(); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideDeviceMenu(); });
+  window.addEventListener('resize', hideDeviceMenu);
 
   // --- Recently Played ---
   var recentlyPlayedList = document.getElementById('recently-played-list');
@@ -560,9 +842,16 @@
     }
   }
 
+  var homeRefreshTimer = null;
+  function scheduleHomeRefresh() {
+    if (homeRefreshTimer) clearTimeout(homeRefreshTimer);
+    homeRefreshTimer = setTimeout(function() { invalidateHomeFeed(); }, 1500);
+  }
+
   function updateNowPlaying(data) {
     // Track metadata (only sent when song changes)
     if (data.title) {
+      scheduleHomeRefresh();
       // Collapsed mode
       colTitle.textContent = data.title;
       colArtist.textContent = data.artist || '—';
@@ -933,6 +1222,8 @@
           const iconName = v == 0 ? 'fa-volume-mute' : 'fa-volume-up';
           volIcons.forEach(ic => { if (ic) ic.className = `fas ${iconName}`; });
         }
+        // Home tab content (playlists / recommendations / recent / new)
+        loadHomeFeed(true);
         // Load persisted lyrics settings
         if (msg.lyricsFontScale != null) {
           lyricsFontScale = msg.lyricsFontScale;
@@ -1347,6 +1638,7 @@
   onEvent = function(eventName, data) {
     if (eventName === 'libraryUpdated') {
       onLibraryUpdated();
+      invalidateHomeFeed();
       return;
     }
     origOnEvent(eventName, data);

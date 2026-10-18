@@ -1,3 +1,4 @@
+using NAudio.Wave;
 using SongRequestDesktopV2Rewrite;
 using Xunit;
 
@@ -312,6 +313,65 @@ public class MusicEngineTests
         Assert.False(engine.RepeatEnabled);
         engine.ToggleRepeat();
         Assert.True(engine.RepeatEnabled);
+    }
+
+    // ── Output device switching (speaker button in the music player) ───────
+
+    [Fact]
+    public void SetOutputDevice_StoresTheChoice_WhenNothingIsPlaying()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+
+        engine.SetOutputDevice(4);
+
+        Assert.Equal(4, engine.OutputDeviceNumber);
+        Assert.Null(engine.Output);
+    }
+
+    [Fact]
+    public void SetOutputDevice_ReopensTheRunningOutput_OnTheNewDevice()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        var first = new FakeAudioOutput();
+        var second = new FakeAudioOutput();
+        var created = new List<FakeAudioOutput>();
+        engine.OutputFactory = () =>
+        {
+            var next = created.Count == 0 ? first : second;
+            created.Add(next);
+            return next;
+        };
+
+        engine.AddSong(Track("a", 60));
+        engine.StartPlayback(new FakeAudioSource(frames: 44100));
+        Assert.Same(first, engine.Output);
+        Assert.Equal(1, first.PlayCount);
+
+        engine.SetOutputDevice(3);
+
+        Assert.Equal(3, engine.OutputDeviceNumber);
+        Assert.Same(second, engine.Output);
+        Assert.Equal(3, second.DeviceNumber);
+        Assert.Equal(1, second.PlayCount);                       // the new output plays
+        Assert.Equal(PlaybackState.Stopped, first.PlaybackState); // and the old one is torn down
+        Assert.NotNull(engine.CurrentReader);                     // playback continues, not restarted
+    }
+
+    [Fact]
+    public void SetOutputDevice_SameDevice_KeepsTheOutput()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        var output = new FakeAudioOutput();
+        int created = 0;
+        engine.OutputFactory = () => { created++; return output; };
+
+        engine.AddSong(Track("a", 60));
+        engine.StartPlayback(new FakeAudioSource(frames: 44100));
+
+        engine.SetOutputDevice(-1);   // already the default
+
+        Assert.Equal(1, created);
+        Assert.Same(output, engine.Output);
     }
 
     [Fact]

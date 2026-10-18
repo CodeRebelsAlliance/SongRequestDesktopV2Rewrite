@@ -20,7 +20,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _normalizeVolume = false;
         private float _defaultVolume = -1f; // -1 means not set
         private bool _normalizationActive = false;
-        private bool _autoEnqueue = false;
+        private int _audioOutputDeviceNumber = -1;        private bool _autoEnqueue = false;
         private bool _useCaptionLyricsFallback = true;
         private bool _enableAnnouncements = true;
         private bool _useNewUI = false;
@@ -108,6 +108,16 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _normalizationActive;
             set => SetField(ref _normalizationActive, value);
+        }
+
+        /// <summary>
+        /// OpenAL output device used by the music player (-1 = the system default).
+        /// Chosen with the speaker button in the player bar; applied live.
+        /// </summary>
+        public int AudioOutputDeviceNumber
+        {
+            get => _audioOutputDeviceNumber;
+            set => SetField(ref _audioOutputDeviceNumber, value);
         }
 
         public bool AutoEnqueue

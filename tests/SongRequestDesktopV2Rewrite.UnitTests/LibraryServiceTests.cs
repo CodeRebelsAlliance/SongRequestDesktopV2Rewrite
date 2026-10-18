@@ -30,6 +30,38 @@ public class LibraryServiceTests
     }
 
     [Fact]
+    public void MarkPlaylistPlayed_RecordsTheTimestamp_ForTheHomeOrdering()
+    {
+        TestSupport.ResetLibrary();
+        using var lib = new LibraryService();
+        var first = lib.CreatePlaylist("First");
+        var second = lib.CreatePlaylist("Second");
+
+        // never played: the summary reports an empty string (JSON null) for the timestamp
+        Assert.Null(lib.GetPlaylist(first.Id)!.LastPlayedUtc);
+        Assert.Equal("", lib.GetPlaylistsSummary().First(p => (string)p["id"] == first.Id)["lastPlayedUtc"]);
+
+        lib.MarkPlaylistPlayed(second.Id);
+
+        Assert.NotNull(lib.GetPlaylist(second.Id)!.LastPlayedUtc);
+        Assert.NotEqual("", lib.GetPlaylistsSummary().First(p => (string)p["id"] == second.Id)["lastPlayedUtc"]);
+
+        // untouched playlists stay at "never played"
+        Assert.Null(lib.GetPlaylist(first.Id)!.LastPlayedUtc);
+    }
+
+    [Fact]
+    public void MarkPlaylistPlayed_UnknownId_IsIgnored()
+    {
+        TestSupport.ResetLibrary();
+        using var lib = new LibraryService();
+
+        lib.MarkPlaylistPlayed("does-not-exist");
+
+        Assert.Empty(lib.GetPlaylistsSummary());
+    }
+
+    [Fact]
     public void AddSongToPlaylist_IncrementsEntriesWithIncreasingSortOrder()
     {
         TestSupport.ResetLibrary();

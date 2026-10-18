@@ -59,6 +59,8 @@ Run everything locally:
 | Backend requests (unit + integration) | every backend call carries the identifying `User-Agent` (`SongRequest Desktop v<version>`) and bearer token — `BackendHttpClient` header application (unit) and the exact wire value received by a loopback listener from `FetchingService` and an interop command (integration) |
 | Linux webview env (unit) | WebKitGTK/DMA-BUF mitigation matrix (`ComputeVariables`), NVIDIA/Wayland detection, safe-mode escalation after repeated interrupted starts, `--gpu`/`--safe-mode`/env overrides, user-set variables never overridden; `NativeEnvironment` proves values reach native `getenv()` |
 | Photino host bridge (JavaScript) | `hostbridge.js` registers the host→page handler by *calling* `window.external.receiveMessage(callback)` (assigning to it replaces Photino's shim and silently breaks every response), falls back to `chrome.webview`, and reports when no channel exists |
+| Visualization math (JavaScript) | `vizmath.js`: log-spaced band edges are strictly increasing (integer edges made the first 8 bars share one FFT bin, then 4, then 3…), each bar gets its own value, the frequency tilt keeps the bass from towering over the spectrum (a 1/f spectrum: bass/mid 16.3x + only 22/64 bars visible before, 2.0x + 64/64 after), and the waveform column→sample mapping spans the whole width (the old walk stopped at the buffer length: 51 % of the view) |
+| Changelog rendering (JavaScript) | `markdown.js`: release notes are Markdown from GitHub — headings, bullet/ordered lists (incl. nesting, loose lists and task lists), emphasis, inline code, fenced code (verbatim, unformatted), links (unsafe schemes dropped), quotes, rules, tables, paragraphs; raw HTML is escaped, never executed; and the exact `## Changes` + `- commit` shape the release workflow produces renders as a heading with one list |
 | Cookie import (unit) | `BuildYtDlpArguments` keeps the export to a single simulated/flat entry (pointing yt-dlp at the bare homepage walks the logged-in "recommended" feed and never finishes), YouTube-only domain filtering, and an import timeout below the UI's request timeout |
 | Cookie import (integration) | real yt-dlp plumbing: a hung import is killed and reported before the UI gives up, and an unknown browser fails fast with a clear error |
 | MIDI backend guard (unit) | `MidiServiceFactory` support matrix — RtMidi's ALSA backend *aborts the process* without `/dev/snd/seq`, so MIDI is reported unsupported there; override seam keeps the unit suite hermetic; `NullMidiService` no-op behaviour; soundboard state builds with no MIDI backend |
@@ -67,6 +69,9 @@ Run everything locally:
 | Interop null tolerance (unit) | `saveSettings`/`saveRemoteConfig` accept `null` values from the web UI (a `<select>` with no MIDI device sends NaN → `null`, which previously failed the save with "Can not convert Null to Int32") |
 | Playback tick (unit) | the engine drives its own `MusicEngine.ProcessTick()` while playing (the crossfade mixer pads with silence, so the output can never report EOF), so the music player gets position/now-playing updates and the queue advances at end of track |
 | Queue timings (unit) | `ComputeQueueTimings` sets "Playing Now" + cumulative wait times, and the queue notification carries *fresh* wait times — the newly added (or shifted) item included, not the stale default from before the change |
+| Recommendations (unit) | `RecommendationEngine`: the documented five weighted signals, affinity decay (recent plays beat stale ones), artist/genre ranking, fresh-discovery metadata quality, tag/album similarity, echo-chamber discount for its own skipped suggestions, missing files never suggested, the 3 most recently played excluded, scores 0–1 and ordered, count/limit, and a documented `Signal` + non-empty `Reason` per suggestion |
+| Playlist ordering (unit) | `LibraryService.MarkPlaylistPlayed` records the timestamp the home feed orders playlists by (and leaves untouched playlists at "never played"); the summary exposes `lastPlayedUtc` |
+| Output device (unit) | `MusicEngine.SetOutputDevice` stores the choice when idle and re-opens the *running* output on the new device without restarting the track (`SetOutputDevice`, `getMusicAudioDevices`, `setMusicOutputDevice` interop contract) |
 | Sub-window lifecycle (unit) | `StartupGuard` tray limits (`TrayDisabled`, `TrayUsedLastRun`, crash recovery) and that changing the tray settings clears the guard so the tray can be retried |
 | Download gate (unit) | automatic downloads are deferred until the user made the YouTube-cookie decision (or cookies are saved); skipped ids stay out of `fetchedYtids` so the next fetch retries them; `completeSetup` opens the gate |
 | System media (integration) | Linux **MPRIS**: service registration, per-interface `GetAll`/`Get`, metadata/state/position/artUrl round-trip, every transport command, `PropertiesChanged` signal |
@@ -465,6 +470,29 @@ harness over real FFmpeg sources.
 abort `StartSystemMediaIntegration` before the MPRIS session was created (settings
 showed it enabled but inactive). The handle is now only resolved where it exists; MPRIS
 needs none.
+
+**Window fullscreen**: the sub-window pages asked for the DOM Fullscreen API
+(`documentElement.requestFullscreen()`), which needs the embedder to handle WebKit's
+fullscreen request — Photino does not, so the button silently did nothing (and the
+"Open presentation in fullscreen mode" setting was never applied either). The pages now
+ask the host (`setFullscreen` → `NewUiWindow.SetSubWindowFullscreen` → Photino's native
+`SetFullScreen`), which works on every platform; Esc leaves fullscreen.
+
+**Music player home tab** (verified with screenshots, data covered by unit tests): the four
+horizontally scrolling rows come from one `getHomeFeed` call — playlists ordered by
+`LastPlayedUtc`, recommendations (library songs only, each with a reason badge),
+recently listened (from the Recently Played data) and the newest library additions — plus
+the header stats. Rows with no content hide themselves.
+
+**Output device menu** (verified with screenshots): the speaker button in the player bar
+opens a menu listing `getMusicAudioDevices` with the current device ticked; picking one
+sends `setMusicOutputDevice`, which switches the live output and persists the choice.
+
+Verified live on the visualization window (screenshots analysed pixel-wise, before/after):
+the waveform trace covered 51 % of the canvas before and 99.9 % after; the spectrum drew
+13 identical bass bars pinned at the top of the canvas before (then runs of 3/3/2/2) and
+all-distinct bars with the bass at ~half height after; the fullscreen button resized the
+window from 1000x720 to the full 1920x1080 logical screen.
 
 Verified live with a real `WM_DELETE_WINDOW` (what a title-bar "X" produces): before the
 fix, closing the music player or visualization window exited the app; after it, the app

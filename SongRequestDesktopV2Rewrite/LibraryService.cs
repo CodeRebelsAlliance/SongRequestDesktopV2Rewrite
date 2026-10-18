@@ -242,9 +242,33 @@ namespace SongRequestDesktopV2Rewrite
                     ["emoji"] = p.Emoji ?? "",
                     ["songCount"] = p.Entries.Count,
                     ["createdUtc"] = p.CreatedUtc,
-                    ["lastModifiedUtc"] = p.LastModifiedUtc
+                    ["lastModifiedUtc"] = p.LastModifiedUtc,
+                    ["lastPlayedUtc"] = p.LastPlayedUtc.HasValue ? (object)p.LastPlayedUtc.Value : ""
                 }).ToList();
             }
+        }
+
+        /// <summary>
+        /// Marks a playlist as played (used for the home tab's "recently listened"
+        /// ordering, which the play history cannot provide because history entries do
+        /// not record which playlist a song came from).
+        /// </summary>
+        public void MarkPlaylistPlayed(string playlistId)
+        {
+            if (string.IsNullOrEmpty(playlistId)) return;
+
+            bool changed = false;
+            lock (_lock)
+            {
+                var playlist = _data.Playlists.FirstOrDefault(p => p.Id == playlistId);
+                if (playlist != null)
+                {
+                    playlist.LastPlayedUtc = DateTime.UtcNow;
+                    changed = true;
+                }
+            }
+
+            if (changed) Save();
         }
 
         public Playlist? AddSongToPlaylist(string playlistId, string songId)

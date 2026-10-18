@@ -276,6 +276,17 @@ public class YoutubeFormInterop
                     _ytForm.NewUiRef?.CloseVisualizationWindow();
                     SendResponse(id, new { success = true });
                     return;
+                case "setFullscreen":
+                {
+                    // The sub-window pages ask the host: the DOM Fullscreen API needs the
+                    // embedder to handle WebKit's fullscreen request, which Photino does
+                    // not, so the button used to do nothing at all.
+                    bool wanted = (msg["enabled"] ?? msg["data"]?["enabled"])?.ToObject<bool>() ?? false;
+                    string? windowName = (msg["window"] ?? msg["data"]?["window"])?.ToString();
+                    bool applied = _ytForm.NewUiRef?.SetSubWindowFullscreen(windowName, wanted) ?? false;
+                    SendResponse(id, new { success = applied, fullscreen = applied && wanted });
+                    return;
+                }
                 case "playPause":
                     PostToUi(() => _ytForm.Music.TogglePlayPause());
                     SendResponse(id, new { success = true });
@@ -684,6 +695,15 @@ public class YoutubeFormInterop
                 // ── Playlists ─────────────────────────────
                 case "getPlaylists":
                     result = GetPlaylists();
+                    break;
+                case "getHomeFeed":
+                    result = GetHomeFeed(msg);
+                    break;
+                case "getMusicAudioDevices":
+                    result = GetMusicAudioDevices();
+                    break;
+                case "setMusicOutputDevice":
+                    result = SetMusicOutputDevice(msg);
                     break;
                 case "getPlaylist":
                     result = GetPlaylist(msg);
@@ -3211,7 +3231,7 @@ public class YoutubeFormInterop
             autoScanOnStartup = data.Config.AutoScanOnStartup,
             autoAddDownloads = data.Config.AutoAddDownloadsToLibrary,
             removeMissing = data.Config.RemoveMissingOnScan,
-            recommendationsEnabled = data.Config.AutoScanOnStartup
+            recommendationsEnabled = ConfigService.Instance.Current?.LibraryRecommendationsEnabled ?? true
         };
     }
 
@@ -3478,6 +3498,159 @@ public class YoutubeFormInterop
             lastScanUtc = data.LastScanUtc,
             scanFolders = data.Config.ScanFolders.Count
         };
+    }
+
+    /// <summary>
+    /// Everything the music player home tab needs, in one round trip: playlists ordered
+    /// by when they were last listened to, recommendations, recently played songs and
+    /// the newest library additions.
+    /// </summary>
+    private object GetHomeFeed(JObject msg)
+    {
+        var count = msg["count"]?.ToObject<int>() ?? 20;
+        if (count <= 0) count = 20;
+        count = Math.Min(count, 100);
+
+        var data = _libraryService.Data;
+
+        // ── Playlists: most recently listened first, then most recently changed ──
+        var playlists = data.Playlists
+            .OrderByDescending(p => p.LastPlayedUtc ?? DateTime.MinValue)
+            .ThenByDescending(p => p.LastModifiedUtc)
+            .Take(count)
+            .Select(p => new
+            {
+                id = p.Id,
+                name = p.Name,
+                emoji = p.Emoji ?? "",
+                songCount = p.Entries.Count,
+                lastPlayedUtc = p.LastPlayedUtc,
+                thumbnail = p.Entries
+                    .Select(e => data.FindSong(e.SongId))
+                    .Where(s => s != null && !string.IsNullOrEmpty(s!.ThumbnailPath))
+                    .Select(s => GetLibrarySongThumbnail(s!))
+                    .FirstOrDefault(t => t != null)
+            })
+            .ToList();
+
+        // ── Songs recommended to you (library-indexed songs only) ──
+        var recommendedEnabled = ConfigService.Instance.Current?.LibraryRecommendationsEnabled ?? true;
+        var recommended = new List<object>();
+        if (recommendedEnabled)
+        {
+            foreach (var r in RecommendationEngine.Recommend(data, count))
+            {
+                recommended.Add(new
+                {
+                    songId = r.Song.Id,
+                    title = r.Song.Title,
+                    artist = r.Song.Artist,
+                    album = r.Song.Album,
+                    genre = r.Song.Genre,
+                    duration = r.Song.Duration.TotalSeconds,
+                    durationDisplay = r.Song.DurationDisplay,
+                    thumbnail = GetLibrarySongThumbnail(r.Song),
+                    filePath = r.Song.FilePath,
+                    score = Math.Round(r.Score, 4),
+                    reason = r.Reason,
+                    signal = r.Signal
+                });
+            }
+        }
+
+        // ── Recently played: the Recently Played tab's newest entries, one per song ──
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var recentlyPlayed = new List<object>();
+        foreach (var entry in _libraryService.GetRecentlyPlayed(Math.Max(count * 3, 30)))
+        {
+            var songId = entry.TryGetValue("songId", out var idObj) ? idObj?.ToString() : null;
+            if (string.IsNullOrEmpty(songId) || !seen.Add(songId!)) continue;
+
+            var filePath = entry.TryGetValue("filePath", out var fpObj) ? fpObj?.ToString() : null;
+            recentlyPlayed.Add(new
+            {
+                songId,
+                title = entry.TryGetValue("title", out var titleObj) ? titleObj?.ToString() : "",
+                artist = entry.TryGetValue("artist", out var artistObj) ? artistObj?.ToString() : "",
+                durationDisplay = entry.TryGetValue("durationDisplay", out var durObj) ? durObj?.ToString() : "",
+                playedUtc = entry.TryGetValue("playedUtc", out var playedObj) ? playedObj : null,
+                thumbnail = GetThumbnailForSongPath(filePath)
+            });
+
+            if (recentlyPlayed.Count >= count) break;
+        }
+
+        // ── Newly added to the library ──
+        var newlyAdded = data.Songs
+            .Where(s => s.FileStatus == FileStatus.Present)
+            .OrderByDescending(s => s.DateAddedUtc)
+            .Take(count)
+            .Select(s => new
+            {
+                songId = s.Id,
+                title = s.Title,
+                artist = s.Artist,
+                album = s.Album,
+                durationDisplay = s.DurationDisplay,
+                thumbnail = GetLibrarySongThumbnail(s),
+                filePath = s.FilePath,
+                dateAddedUtc = s.DateAddedUtc,
+                playCount = s.PlayCount
+            })
+            .ToList();
+
+        return new
+        {
+            playlists,
+            recommended,
+            recommendedEnabled,
+            recentlyPlayed,
+            newlyAdded,
+            stats = new
+            {
+                totalSongs = data.Songs.Count,
+                presentSongs = data.Songs.Count(s => s.FileStatus == FileStatus.Present),
+                totalPlaylists = data.Playlists.Count,
+                totalPlays = data.PlayHistory.Count
+            }
+        };
+    }
+
+    /// <summary>Output devices for the music player's speaker menu.</summary>
+    private object GetMusicAudioDevices()
+    {
+        var devices = new List<object> { new { number = -1, name = "System Default" } };
+        try
+        {
+            foreach (var device in AudioDevices.Enumerate())
+                devices.Add(new { number = device.Number, name = device.Name });
+        }
+        catch { }
+
+        return new
+        {
+            devices,
+            selected = _ytForm.Music?.OutputDeviceNumber ?? -1
+        };
+    }
+
+    /// <summary>Switches the music output device (the change is audible immediately).</summary>
+    private object SetMusicOutputDevice(JObject msg)
+    {
+        var deviceNumber = msg["deviceNumber"]?.ToObject<int?>() ?? -1;
+        var engine = _ytForm.Music;
+        if (engine == null) return new { success = false, error = "No music engine" };
+
+        try
+        {
+            PostToUi(() => engine.SetOutputDevice(deviceNumber));
+            ConfigService.Instance.Update(cfg => cfg.AudioOutputDeviceNumber = deviceNumber);
+            return new { success = true, selected = deviceNumber };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
+        }
     }
 
     private object GetPlayHistory(JObject msg)
@@ -3831,6 +4004,7 @@ public class YoutubeFormInterop
         if (playlist == null) return new { error = "Playlist not found" };
         var songs = ResolvePlaylistToSongs(playlist);
         if (songs.Count == 0) return new { error = "Playlist is empty" };
+        _libraryService.MarkPlaylistPlayed(playlist.Id);
         PostToUi(() => _ytForm.Music.LoadPlaylist(songs, false));
         return new { success = true, count = songs.Count };
     }
@@ -3843,6 +4017,7 @@ public class YoutubeFormInterop
         if (playlist == null) return new { error = "Playlist not found" };
         var songs = ResolvePlaylistToSongs(playlist);
         if (songs.Count == 0) return new { error = "Playlist is empty" };
+        _libraryService.MarkPlaylistPlayed(playlist.Id);
         PostToUi(() => _ytForm.Music.LoadPlaylist(songs, true));
         return new { success = true, count = songs.Count };
     }

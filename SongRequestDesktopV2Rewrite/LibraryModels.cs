@@ -200,6 +200,12 @@ namespace SongRequestDesktopV2Rewrite
         public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
         public DateTime LastModifiedUtc { get; set; } = DateTime.UtcNow;
 
+        /// <summary>
+        /// When the playlist was last played (null = never). Drives the "Playlists —
+        /// most recently listened" row on the music player home tab.
+        /// </summary>
+        public DateTime? LastPlayedUtc { get; set; }
+
         /// <summary>Ordered list of entries (manual playlists).</summary>
         public List<PlaylistEntry> Entries { get; set; } = new();
 

@@ -55,6 +55,46 @@ public class InteropDispatchTests
     }
 
     [Fact]
+    public async Task GetHomeFeed_ReturnsTheFourHomeRows()
+    {
+        var (_, interop, responses) = Create();
+
+        var response = await Request(interop, responses, "getHomeFeed");
+        var result = response["result"];
+
+        Assert.NotNull(result);
+        Assert.NotNull(result!["playlists"]);
+        Assert.NotNull(result["recommended"]);
+        Assert.NotNull(result["recentlyPlayed"]);
+        Assert.NotNull(result["newlyAdded"]);
+        Assert.NotNull(result["stats"]);
+    }
+
+    [Fact]
+    public async Task GetMusicAudioDevices_AlwaysListsTheSystemDefault()
+    {
+        var (_, interop, responses) = Create();
+
+        var response = await Request(interop, responses, "getMusicAudioDevices");
+        var devices = response["result"]?["devices"] as JArray;
+
+        Assert.NotNull(devices);
+        Assert.Contains(devices!, d => d["number"]?.ToObject<int>() == -1);
+    }
+
+    [Fact]
+    public async Task SetMusicOutputDevice_AppliesTheChoiceToTheEngine()
+    {
+        var (host, interop, responses) = Create();
+
+        var response = await Request(interop, responses, "setMusicOutputDevice",
+            customize: m => m["deviceNumber"] = 7);
+
+        Assert.True(response["result"]?["success"]?.ToObject<bool>());
+        Assert.Equal(7, host.Music.OutputDeviceNumber);
+    }
+
+    [Fact]
     public async Task UnknownMethod_ReturnsError()
     {
         var (_, interop, responses) = Create();
@@ -65,8 +105,7 @@ public class InteropDispatchTests
     }
 
     [Fact]
-    public async Task GetStartupData_ReturnsAResponse()
-    {
+    public async Task GetStartupData_ReturnsAResponse()    {
         var (_, interop, responses) = Create();
 
         var response = await Request(interop, responses, "getStartupData");

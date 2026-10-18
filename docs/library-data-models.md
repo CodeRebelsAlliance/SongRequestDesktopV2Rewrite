@@ -100,6 +100,7 @@ A named, ordered collection of songs.
 | `Emoji` | `string?` | Optional icon emoji. |
 | `CreatedUtc` | `DateTime` | Creation timestamp. |
 | `LastModifiedUtc` | `DateTime` | Last modification timestamp. |
+| `LastPlayedUtc` | `DateTime?` | Last time the playlist was played (`null` = never). Set by `LibraryService.MarkPlaylistPlayed`, drives the "Playlists — most recently listened" home row. |
 | `Entries` | `List<PlaylistEntry>` | Manual entries (ordered). |
 | `SmartRules` | `SmartPlaylistRules?` | Non-null = smart playlist. |
 | `ResolvedSongIds` | `List<string>` | Last-resolved smart playlist snapshot. |
@@ -337,8 +338,7 @@ re-evaluation on every UI render. Re-evaluation is triggered on:
 
 ### Recommendation scoring
 
-The engine produces a 0–1 `Score` per unplayed library song using these
-signals:
+The engine (`LibraryRecommendations.cs`, `RecommendationEngine.Recommend`) produces a 0–1 `Score` per library song using these signals:
 
 | Signal | Weight | Description |
 |--------|--------|-------------|
@@ -348,8 +348,37 @@ signals:
 | `recently_enjoyed` | 15% | Cosine similarity with recently completed tracks. |
 | `collaborative` | 10% | Reserved for future server-side similar-user data. |
 
-`PlayHistoryEntry.Trigger` lets the engine discount its own suggestions
-to avoid echo chambers.
+Affinity is a recency-weighted share of the play history (14-day half-life, completions
+weigh more than skips, the engine's own suggestions weigh less), normalised so the
+listener's current favourite artist/genre is 1.0. `fresh_discovery` scales with how
+complete the metadata is (title/artist/album/genre/duration); a thumbnail is a bonus.
+`recently_enjoyed` is a cosine similarity over artist/genre/album/tag features against
+the last 15 played tracks.
+
+Implementation notes (they refine the rules above):
+
+- Only **library-indexed songs whose file is present** are ever suggested — a missing or
+  unreadable file is never recommended.
+- The **3 most recently played songs are excluded** so the home row does not just repeat
+  what is already on screen.
+- `PlayHistoryEntry.Trigger == "recommendation"` discounts the score (halved when the
+  suggestion was skipped) to avoid an echo chamber. `collaborative` is still 0.
+
+Each suggestion also carries a `Reason` (shown as the card badge, e.g. *"More from Dua
+Lipa"*, *"New in your library"*, *"Because you played …"*) and the dominant `Signal`.
+
+### Home feed
+
+`getHomeFeed` returns everything the music player's home tab renders in one round trip:
+
+| Row | Source | Order |
+|-----|--------|-------|
+| Playlists | `LibraryData.Playlists` | `LastPlayedUtc` desc, then `LastModifiedUtc` desc |
+| Recommended for you | `RecommendationEngine.Recommend` (respects `Config.LibraryRecommendationsEnabled`) | score desc |
+| Recently listened | `LibraryService.GetRecentlyPlayed` (the Recently Played tab's data, deduplicated per song) | newest first |
+| New in your library | `LibraryData.Songs` (present files) | `DateAddedUtc` desc |
+
+The response also includes `stats` (songs/playlists/plays) for the home header.
 
 ### Fast searching
 

@@ -601,7 +601,17 @@ public class NewUiWindow
                 .Center()
                 .Load(htmlPath);
 
-            pw.WindowCreated += (_, _) => { ApplyInitialGeometry(pw, 1280, 761); BringToFront(pw); };
+            pw.WindowCreated += (_, _) =>
+            {
+                ApplyInitialGeometry(pw, 1280, 761);
+                BringToFront(pw);
+                // The "Open presentation in fullscreen mode" setting was stored but
+                // never applied to the window.
+                if (ConfigService.Instance.Current?.PresentationFullscreen == true)
+                {
+                    try { pw.SetFullScreen(true); } catch { }
+                }
+            };
 
             pw.RegisterWebMessageReceivedHandler((sender, message) =>
             {
@@ -801,6 +811,40 @@ public class NewUiWindow
         // The window instance is kept (hidden) so reopening it is instant and no
         // web-view teardown can block the UI thread.
         SetSubWindowVisible("Visualization - ", false);;
+    }
+
+    /// <summary>
+    /// Applies fullscreen to a sub-window on behalf of its page.
+    ///
+    /// The pages used to call the DOM Fullscreen API, but that needs the embedder to
+    /// handle WebKit's fullscreen request (Photino does not), so the button silently
+    /// did nothing once the UI moved to WebKitGTK. This drives the native window
+    /// instead, which works on every platform. Returns whether a window was found.
+    /// </summary>
+    public bool SetSubWindowFullscreen(string? windowName, bool enabled)
+    {
+        var target = windowName switch
+        {
+            "visualization" => _visualizationWindow,
+            "presentation" => _presentationWindow,
+            "musicplayer" => _musicPlayerWindow,
+            "soundboard" => _soundboardWindow,
+            "announcement" => _announcementWindow,
+            _ => null,
+        };
+
+        if (target == null) return false;
+
+        try
+        {
+            target.Invoke(() => { try { target.SetFullScreen(enabled); } catch { } });
+            return true;
+        }
+        catch
+        {
+            // Fall back to calling it directly when the invoke cannot be marshalled.
+            try { target.SetFullScreen(enabled); return true; } catch { return false; }
+        }
     }
 
     public void ShowAnnouncementWindow()

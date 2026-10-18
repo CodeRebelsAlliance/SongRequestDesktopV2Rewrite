@@ -472,29 +472,41 @@
   SongRequestHost.registerHostMessageHandler(handleIncoming);
 
   // ── Fullscreen toggle ──
+  // The host applies fullscreen to the native window: the DOM Fullscreen API needs the
+  // embedder to handle WebKit's fullscreen request, which Photino does not do, so the
+  // button used to do nothing after the move to WebKitGTK.
   var btnFullscreen = document.getElementById('btn-fullscreen');
+  var isFullscreen = false;
 
   function updateFullscreenIcon() {
-    var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
     if (btnFullscreen) {
-      btnFullscreen.innerHTML = isFs ? '<i class="fas fa-compress"></i>' : '<i class="fas fa-expand"></i>';
-      btnFullscreen.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
+      btnFullscreen.innerHTML = isFullscreen ? '<i class="fas fa-compress"></i>' : '<i class="fas fa-expand"></i>';
+      btnFullscreen.title = isFullscreen ? 'Exit fullscreen' : 'Fullscreen';
     }
   }
 
-  if (btnFullscreen) {
-    btnFullscreen.addEventListener('click', function() {
-      if (document.fullscreenElement || document.webkitFullscreenElement) {
-        (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
-      } else {
-        var el = document.documentElement;
-        (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
-      }
-    });
+  function sendFullscreen(on) {
+    isFullscreen = !!on;
+    try {
+      window.external.sendMessage(JSON.stringify({
+        type: 'request',
+        method: 'setFullscreen',
+        window: 'presentation',
+        enabled: isFullscreen
+      }));
+    } catch (e) { /* host channel missing: keep the icon honest anyway */ }
+    updateFullscreenIcon();
   }
 
-  document.addEventListener('fullscreenchange', updateFullscreenIcon);
-  document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+  if (btnFullscreen) {
+    btnFullscreen.addEventListener('click', function () { sendFullscreen(!isFullscreen); });
+  }
+
+  // Esc leaves fullscreen (the native window has no title bar to do it for us).
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && isFullscreen) sendFullscreen(false);
+  });
+
   updateFullscreenIcon();
 
   // Ready

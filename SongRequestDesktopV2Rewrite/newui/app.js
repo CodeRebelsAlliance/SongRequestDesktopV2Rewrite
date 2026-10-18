@@ -323,6 +323,9 @@
     _availableUpdate = null;
     try {
       const result = await send('checkForUpdates');
+      const notesWrap = document.getElementById('about-update-notes-wrap');
+      const notesEl = document.getElementById('about-update-notes');
+      if (notesWrap) notesWrap.style.display = 'none';
       if (result.error) {
         statusEl.textContent = 'Check failed: ' + result.error;
       } else if (result.updateAvailable) {
@@ -330,6 +333,10 @@
         toast('Update available: ' + result.latestVersion, 'info');
         _availableUpdate = result;
         installBtn.style.display = '';
+        if (notesWrap && notesEl && result.releaseNotes) {
+          notesEl.innerHTML = renderMarkdown(result.releaseNotes);
+          notesWrap.style.display = '';
+        }
       } else {
         statusEl.textContent = 'You\'re up to date! (Version ' + result.currentVersion + ')';
       }
@@ -354,6 +361,20 @@
       btn.disabled = false;
     }
   });
+
+  // ── Changelog / release notes rendering ────────────────────────
+  // Release bodies come from GitHub as Markdown; render them instead of dumping the
+  // raw text (headings and bullets used to show up literally).
+  function renderMarkdown(markdown) {
+    var text = markdown || '';
+    if (!text) return '';
+    if (window.SongRequestMarkdown && typeof window.SongRequestMarkdown.render === 'function') {
+      try { return window.SongRequestMarkdown.render(text); } catch (e) { /* fall through */ }
+    }
+    var div = document.createElement('div');
+    div.textContent = text;      // last resort: plain, escaped text
+    return '<p>' + div.innerHTML.replace(/\n/g, '<br>') + '</p>';
+  }
 
   // Settings modal
   const settingsModal = document.getElementById('settings-modal');
@@ -1846,7 +1867,12 @@
       showPanel(updatePanel);
       document.getElementById('startup-update-info').textContent =
         'Version ' + updateInfo.latestVersion + ' available (current: ' + updateInfo.currentVersion + ')';
-      document.getElementById('startup-update-notes').textContent = updateInfo.releaseNotes || '';
+      var startupNotes = document.getElementById('startup-update-notes');
+      if (startupNotes) {
+        var notesHtml = renderMarkdown(updateInfo.releaseNotes || '');
+        startupNotes.innerHTML = notesHtml;
+        startupNotes.style.display = notesHtml ? '' : 'none';
+      }
 
       await new Promise(resolve => {
         document.getElementById('startup-update-later').onclick = resolve;

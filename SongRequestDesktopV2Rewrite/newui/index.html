@@ -173,6 +173,10 @@
           <div style="height:6px;background:#1a1a1a;border-radius:3px;overflow:hidden"><div id="about-update-progress-fill" style="height:100%;width:0%;background:#5b8def;transition:width .2s ease"></div></div>
           <div id="about-update-progress-text" style="font-size:12px;color:#888;margin-top:4px">Downloading...</div>
         </div>
+        <div id="about-update-notes-wrap" style="display:none;margin-top:12px">
+          <div class="md-panel-title"><i class="fas fa-list-ul"></i> What's new</div>
+          <div id="about-update-notes" class="md-panel"></div>
+        </div>
       </div>
       <div id="about-badges" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
         <img style="cursor:pointer" src="https://img.shields.io/github/v/release/CodeRebelsAlliance/SongRequestDesktopV2Rewrite?label=release&style=flat" data-url="https://github.com/CodeRebelsAlliance/SongRequestDesktopV2Rewrite/releases" />
@@ -208,7 +212,7 @@
       <div id="startup-update-icon"><i class="fas fa-download" style="color:#4caf50;font-size:32px"></i></div>
       <div id="startup-update-title">Update Available</div>
       <div id="startup-update-info"></div>
-      <div id="startup-update-notes" style="margin-top:10px;background:#1a1a1a;border-radius:8px;padding:10px;max-height:120px;overflow-y:auto;font-size:12px;color:#aaa;text-align:left;font-family:Consolas,monospace;white-space:pre-wrap"></div>
+      <div id="startup-update-notes" class="md-panel" style="margin-top:10px;text-align:left"></div>
       <div id="startup-update-buttons" style="display:flex;gap:10px;justify-content:center;margin-top:14px">
         <button id="startup-update-later" class="top-btn" style="font-size:13px;padding:8px 20px">Remind Me Later</button>
         <button id="startup-update-now" class="action-btn" style="width:auto;padding:8px 24px;font-size:13px">Install Now</button>
@@ -602,6 +606,7 @@
 </div>
 <script src="keys.js"></script>
 <script src="hostbridge.js"></script>
+<script src="markdown.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

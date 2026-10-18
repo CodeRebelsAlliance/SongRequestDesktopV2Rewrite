@@ -327,6 +327,45 @@ public sealed class MusicEngine
 
     public ISampleProvider GetSampleProviderCompatible(IAudioSource reader) => GetMixerInput(reader);
 
+    /// <summary>
+    /// Selects the output device (-1 = system default).
+    ///
+    /// <see cref="OutputDeviceNumber"/> alone is only read when an output is created, so
+    /// when music is playing the running output is re-created on the new device. The
+    /// sample reader is untouched, so playback continues from the same position (with
+    /// the usual short gap a device switch causes).
+    /// </summary>
+    public void SetOutputDevice(int deviceNumber)
+    {
+        if (OutputDeviceNumber == deviceNumber) return;
+        OutputDeviceNumber = deviceNumber;
+
+        if (!IsPlaybackActive || Output == null) return;
+
+        try
+        {
+            var old = Output;
+            var replacement = OutputFactory();
+            replacement.DeviceNumber = deviceNumber;
+            replacement.Volume = Math.Clamp(AnnouncementOutputFactor, 0f, 1f);
+            replacement.Init(CapturingProvider ?? (ISampleProvider)Mixer);
+            replacement.PlaybackStopped += Output_PlaybackStopped;
+            replacement.Play();
+
+            Output = replacement;
+
+            // Detach first so the teardown of the old output cannot look like the end
+            // of the track.
+            try { old.PlaybackStopped -= Output_PlaybackStopped; } catch { }
+            try { old.Stop(); } catch { }
+            try { old.Dispose(); } catch { }
+        }
+        catch
+        {
+            // Keep playing on whatever device still works.
+        }
+    }
+
     public async Task CalculateLoudnessForQueueAsync()
     {
         foreach (var song in Queue)

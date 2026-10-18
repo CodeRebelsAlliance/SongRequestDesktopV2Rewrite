@@ -71,39 +71,14 @@
   window.addEventListener('resize', resize);
   resize();
 
-  // ── FFT (iterative radix-2) ────────────────────────────────────
-  function fft(re, im) {
-    const n = re.length;
-    for (let i = 1, j = 0; i < n; i++) {
-      let bit = n >> 1;
-      for (; j & bit; bit >>= 1) j ^= bit;
-      j ^= bit;
-      if (i < j) {
-        let t = re[i]; re[i] = re[j]; re[j] = t;
-        t = im[i]; im[i] = im[j]; im[j] = t;
-      }
-    }
-    for (let len = 2; len <= n; len <<= 1) {
-      const ang = -2 * Math.PI / len;
-      const wr = Math.cos(ang), wi = Math.sin(ang);
-      for (let i = 0; i < n; i += len) {
-        let cwr = 1, cwi = 0;
-        for (let j = 0; j < len / 2; j++) {
-          const ur = re[i + j], ui = im[i + j];
-          const vr = re[i + j + len / 2] * cwr - im[i + j + len / 2] * cwi;
-          const vi = re[i + j + len / 2] * cwi + im[i + j + len / 2] * cwr;
-          re[i + j] = ur + vr; im[i + j] = ui + vi;
-          re[i + j + len / 2] = ur - vr; im[i + j + len / 2] = ui - vi;
-          const nwr = cwr * wr - cwi * wi;
-          cwi = cwr * wi + cwi * wr;
-          cwr = nwr;
-        }
-      }
-    }
-  }
+  // ── FFT / band helpers (pure, unit-tested in tests/js/vizmath.test.js) ──
+  const viz = window.SongRequestViz;
+  const fft = viz.fft;
 
   const BAR_COUNT = 64;
   const FFT_SIZE = 512;
+  // 1..(binCount-1) of a 512-point FFT: ~86 Hz .. ~22 kHz, log-spaced.
+  const bandEdges = viz.spectrumEdges(BAR_COUNT, FFT_SIZE / 2, 1, FFT_SIZE / 2 - 1);
   const smoothed = new Float32Array(BAR_COUNT);
   let autoGain = 1.0;
 
@@ -120,22 +95,14 @@
     }
     fft(re, im);
 
-    const half = N / 2;
-    // Logarithmically spaced bands
-    const bands = new Float32Array(BAR_COUNT);
+    const mag = viz.magnitudes(re, im, N / 2);
+    // Log bands with fractional edges (no two bars share a bin) + a frequency tilt,
+    // so the bass is not pinned at full scale while everything else sits near zero.
+    const bands = viz.applyTilt(
+      viz.bandsFromMagnitudes(mag, bandEdges), bandEdges, _sampleRate, N);
+
     let maxVal = 0.0001;
-    for (let b = 0; b < BAR_COUNT; b++) {
-      const lo = Math.floor(Math.pow(half, b / BAR_COUNT));
-      const hi = Math.max(lo + 1, Math.floor(Math.pow(half, (b + 1) / BAR_COUNT)));
-      let sum = 0, count = 0;
-      for (let k = lo; k < hi && k < half; k++) {
-        const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]) / N;
-        sum += mag; count++;
-      }
-      const val = count > 0 ? sum / count : 0;
-      bands[b] = val;
-      if (val > maxVal) maxVal = val;
-    }
+    for (let b = 0; b < BAR_COUNT; b++) if (bands[b] > maxVal) maxVal = bands[b];
 
     // Auto gain (decay towards 1)
     const targetGain = 0.6 / maxVal;
@@ -181,22 +148,44 @@
   function renderWaveform(w, h) {
     const mono = _mono;
     const centerY = h / 2;
+    const amp = h * 0.45;
     ctx.strokeStyle = 'rgba(120,120,120,0.3)';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(w, centerY); ctx.stroke();
+
+    if (mono.length === 0) return;
 
     ctx.strokeStyle = '#5b8def';
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    const step = Math.max(1, Math.floor(mono.length / w));
-    let started = false;
-    for (let x = 0; x < w; x++) {
-      const idx = x * step;
-      if (idx >= mono.length) break;
-      const y = centerY + mono[idx] * h * 0.4;
-      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+
+    if (mono.length >= w) {
+      // More samples than columns: draw the min/max envelope of each column so the
+      // shape stays readable instead of aliasing into noise.
+      const per = mono.length / w;
+      for (let x = 0; x < w; x++) {
+        const from = Math.floor(x * per);
+        const to = Math.min(mono.length, Math.max(from + 1, Math.floor((x + 1) * per)));
+        let lo = 1, hi = -1;
+        for (let i = from; i < to; i++) {
+          const v = mono[i];
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        ctx.moveTo(x, centerY - hi * amp);
+        ctx.lineTo(x, centerY - lo * amp);
+      }
+    } else {
+      // Fewer samples than columns: stretch the buffer across the whole width
+      // (the old code stopped at the buffer length and drew only half of it).
+      for (let x = 0; x < w; x++) {
+        const v = viz.sampleAt(mono, viz.sampleIndexForColumn(x, w, mono.length));
+        const y = centerY - v * amp;
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
     }
+
     ctx.stroke();
   }
 
@@ -340,8 +329,42 @@
       particles.length = 0;
     });
   });
-  document.getElementById('viz-fullscreen').addEventListener('click', () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen();
+
+  // Fullscreen is applied to the *native* window by the host: the DOM Fullscreen API
+  // needs the embedder to handle WebKit's enter-fullscreen request, which Photino does
+  // not do — so `document.documentElement.requestFullscreen()` silently rejects here.
+  let requestId = 0;
+  let _fullscreen = false;
+  const fullscreenBtn = document.getElementById('viz-fullscreen');
+
+  function postToHost(method, params) {
+    try {
+      window.external.sendMessage(JSON.stringify(Object.assign({ type: 'request', id: ++requestId, method: method }, params || {})));
+    } catch (e) {
+      try { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(method); } catch (e2) { }
+    }
+  }
+
+  function setFullscreenIcon(on) {
+    if (!fullscreenBtn) return;
+    fullscreenBtn.innerHTML = on ? '<i class="fas fa-compress"></i>' : '<i class="fas fa-expand"></i>';
+    fullscreenBtn.title = on ? 'Exit fullscreen' : 'Fullscreen';
+  }
+
+  function applyFullscreen(on) {
+    _fullscreen = !!on;
+    postToHost('setFullscreen', { window: 'visualization', enabled: _fullscreen });
+    setFullscreenIcon(_fullscreen);
+  }
+
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('click', () => applyFullscreen(!_fullscreen));
+  }
+
+  // Esc leaves fullscreen (the native window has no title bar to do it for us).
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _fullscreen) applyFullscreen(false);
   });
+
+  setFullscreenIcon(false);
 })();

@@ -173,7 +173,10 @@ body { background: #121212; color: #e0e0e0; }
 
 /* Modal */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9998; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
-.modal { background: #1e1e1e; border: 1px solid #444; border-radius: 12px; width: 460px; max-width: 92%; box-shadow: 0 8px 32px rgba(0,0,0,0.5); animation: slideUp 0.25s ease; }
+.modal { background: #1e1e1e; border: 1px solid #444; border-radius: 12px; width: 460px; max-width: 92%; box-shadow: 0 8px 32px rgba(0,0,0,0.5); animation: slideUp 0.25s ease;
+  /* The overlay centres the modal, so an over-tall panel spills past the top and
+     bottom edges with no way to scroll to it: cap the height and scroll inside. */
+  max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #333; color: #fff; font-size: 16px; font-weight: 600; gap: 12px; }
 .modal-header-tabs { display: flex; gap: 0; }
 .modal-tab-btn { background: transparent; color: #888; border: 1px solid #444; padding: 4px 14px; cursor: pointer; font-size: 12px; transition: all 0.2s ease; }
@@ -183,7 +186,7 @@ body { background: #121212; color: #e0e0e0; }
 .modal-tab-btn:hover:not(.active) { background: #2a2a2a; color: #ddd; }
 .modal-close { background: none; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 6px; transition: all 0.2s ease; margin-left: auto; }
 .modal-close:hover { color: #fff; background: rgba(255,255,255,0.08); }
-.modal-body { padding: 18px; }
+.modal-body { padding: 18px; overflow-y: auto; min-height: 0; }
 .modal-body input[type="text"] { width: 100%; background: #222; border: 1px solid #444; color: #ddd; padding: 10px 14px; border-radius: 8px; margin-bottom: 10px; font-size: 14px; box-sizing: border-box; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .modal-body input[type="text"]:focus { outline: none; border-color: #5b8def; box-shadow: 0 0 0 2px rgba(91,141,239,0.2); }
 .modal-body .action-btn { width: 100%; padding: 10px; font-size: 14px; margin-top: 4px; }
@@ -340,7 +343,7 @@ select:disabled { opacity: 0.55; cursor: default; }
 
 /* Phase 2: Update prompt */
 #startup-update-panel, #startup-launch-panel, #startup-auth-panel { display: none; align-items: center; justify-content: center; width: 100%; height: 100%; }
-#startup-update-box, #startup-launch-box, #startup-auth-box { text-align: center; max-width: 540px; width: 90%; background: #0f0f10; border: 1px solid #2C2C2C; border-radius: 15px; padding: 30px; }
+#startup-update-box, #startup-launch-box, #startup-auth-box { text-align: center; max-width: 540px; width: 90%; background: #0f0f10; border: 1px solid #2C2C2C; border-radius: 15px; padding: 30px; max-height: calc(100vh - 32px); overflow-y: auto; }
 #startup-update-icon, #startup-auth-icon { margin-bottom: 12px; }
 #startup-update-title, #startup-auth-title { font-size: 24px; font-weight: 700; color: #E0E0E0; margin-bottom: 8px; }
 #startup-update-info { font-size: 14px; color: #aaa; }
@@ -373,3 +376,38 @@ select:disabled { opacity: 0.55; cursor: default; }
 #auth-required-actions { display: flex; gap: 10px; justify-content: center; }
 #auth-required-actions .action-btn { width: auto; padding: 10px 24px; }
 #auth-required-actions .top-btn { padding: 10px 24px; font-size: 13px; }
+/* ── Rendered changelog / release notes (markdown.js) ───────────────────── */
+.md-panel-title { display: flex; align-items: center; gap: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #8a8a8a; margin-bottom: 6px; }
+.md-panel-title i { color: #5B8DEF; font-size: 12px; }
+.md-panel {
+  background: #161616; border: 1px solid #262626; border-radius: 8px;
+  padding: 12px 14px; overflow-y: auto; font-size: 13px; line-height: 1.55; color: #c9c9c9;
+  /* a long changelog scrolls here instead of stretching the dialog off-screen */
+  max-height: min(45vh, 360px);
+}
+/* the startup prompt sits in a smaller box, so it scrolls sooner */
+#startup-update-notes { max-height: 170px; }
+.md-panel > *:first-child { margin-top: 0; }
+.md-panel > *:last-child { margin-bottom: 0; }
+.md-panel p { margin: 0 0 8px; }
+.md-panel .md-h1, .md-panel .md-h2 { font-size: 15px; font-weight: 700; color: #fff; margin: 14px 0 8px; letter-spacing: 0.2px; }
+.md-panel .md-h3, .md-panel .md-h4, .md-panel .md-h5, .md-panel .md-h6 { font-size: 13.5px; font-weight: 600; color: #e6e6e6; margin: 12px 0 6px; }
+.md-panel .md-list { margin: 0 0 8px; padding-left: 20px; }
+.md-panel .md-list .md-list { margin: 4px 0 0; }
+.md-panel li { margin-bottom: 3px; }
+.md-panel li.md-bullet { list-style: disc; }
+.md-panel .md-list li::marker { color: #5B8DEF; }
+.md-panel a { color: #7fb0ff; text-decoration: none; border-bottom: 1px solid rgba(127,176,255,0.35); }
+.md-panel a:hover { color: #a8c8ff; border-bottom-color: #a8c8ff; }
+.md-panel code { background: #242424; border: 1px solid #303030; border-radius: 4px; padding: 1px 5px; font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #e0cfa0; }
+.md-panel .md-code { background: #101010; border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0; }
+.md-panel .md-code code { background: none; border: none; padding: 0; color: #d6d6d6; font-size: 12px; line-height: 1.45; }
+.md-panel blockquote { margin: 8px 0; padding: 4px 0 4px 12px; border-left: 3px solid #3a3a3a; color: #a8a8a8; }
+.md-panel hr.md-hr { border: none; border-top: 1px solid #2c2c2c; margin: 12px 0; }
+.md-panel del { color: #7a7a7a; }
+.md-panel strong { color: #f0f0f0; font-weight: 600; }
+.md-panel .md-task { display: inline-flex; align-items: center; margin-right: 7px; color: #5B8DEF; }
+.md-panel .md-task.is-done { color: #1db954; }
+.md-panel .md-table { border-collapse: collapse; margin: 8px 0; font-size: 12.5px; }
+.md-panel .md-table th, .md-panel .md-table td { border: 1px solid #2c2c2c; padding: 5px 9px; text-align: left; }
+.md-panel .md-table th { background: #1e1e1e; color: #e6e6e6; font-weight: 600; }
