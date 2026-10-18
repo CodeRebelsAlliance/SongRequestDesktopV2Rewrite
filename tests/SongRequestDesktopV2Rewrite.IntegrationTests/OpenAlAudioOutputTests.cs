@@ -185,6 +185,126 @@ public class OpenAlAudioOutputTests
         }
     }
 
+    /// <summary>
+    /// OpenAL's current context is process-wide with the build we ship (not per-thread),
+    /// and the app runs two outputs at once: the music and the announcement chime. Every
+    /// AL call therefore has to be serialized and must re-select its own context, or the
+    /// other output's context is the current one while a feed loop uploads its buffers —
+    /// each call then fails with AL_INVALID_NAME, the output stops being fed and the
+    /// track "hangs" (the reported bug).
+    ///
+    /// The provider switches to a foreign context from inside <c>Read</c>, i.e. in the
+    /// middle of the feed loop's AL sequence (exactly the worst-case interleaving, made
+    /// deterministic here instead of relying on timing). With the fix the output simply
+    /// re-selects its context and keeps playing.
+    /// </summary>
+    [SkippableFact]
+    public async Task ForeignCurrentContext_DoesNotBreakAPlayingOutput()
+    {
+        RequireOpenAl();
+
+        using var foreign = new ForeignContext();
+        Skip.IfNot(foreign.IsValid, "OpenAL cannot open a device here");
+
+        var provider = new SlowEndlessProvider(44100, 2, 440, decodeDelayMs: 0);
+        provider.OnRead = foreign.MakeCurrent;   // "another output's thread switched context"
+
+        var output = new OpenAlAudioOutput();
+        var stopped = new ManualResetEventSlim(false);
+        output.PlaybackStopped += (_, _) => stopped.Set();
+
+        try
+        {
+            output.Init(provider);
+            output.Play();
+
+            long before = provider.TotalRead;
+            await Task.Delay(2000);
+            long fed = provider.TotalRead - before;
+
+            Assert.False(stopped.IsSet, "the output was reported as stopped while audio was still available");
+            Assert.True(fed >= 44100 * 2 * 1.2,
+                $"the output stopped being fed after a foreign context was made current: {fed / (44100.0 * 2):0.00}s of audio in 2s");
+        }
+        finally
+        {
+            try { output.Dispose(); } catch { }
+        }
+    }
+
+    /// <summary>A context owned by the test, used to make another context current.</summary>
+    private sealed unsafe class ForeignContext : IDisposable
+    {
+        private readonly Silk.NET.OpenAL.ALContext _alc;
+        private readonly Silk.NET.OpenAL.Device* _device;
+        private readonly Silk.NET.OpenAL.Context* _context;
+
+        public ForeignContext()
+        {
+            _alc = Silk.NET.OpenAL.ALContext.GetApi();
+            _device = _alc.OpenDevice(null);
+            if (_device != null) _context = _alc.CreateContext(_device, null);
+        }
+
+        public bool IsValid => _device != null && _context != null;
+
+        public void MakeCurrent()
+        {
+            if (_context == null) return;
+            lock (OpenAlAudioOutput.AlGate) { try { _alc.MakeContextCurrent(_context); } catch { } }
+        }
+
+        public void Dispose()
+        {
+            if (_context != null)
+            {
+                lock (OpenAlAudioOutput.AlGate)
+                {
+                    try { _alc.MakeContextCurrent(_context); } catch { }
+                    try { _alc.DestroyContext(_context); } catch { }
+                }
+            }
+            if (_device != null) { try { _alc.CloseDevice(_device); } catch { } }
+        }
+    }
+
+    /// <summary>Endless tone whose <see cref="Read"/> takes a moment, like a real decode.</summary>
+    private sealed class SlowEndlessProvider : NAudio.Wave.ISampleProvider
+    {
+        private readonly double _freq;
+        private readonly int _delayMs;
+        private double _phase;
+        private long _read;
+
+        public SlowEndlessProvider(int sampleRate, int channels, double freq, int decodeDelayMs)
+        {
+            WaveFormat = NAudio.Wave.WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels);
+            _freq = freq;
+            _delayMs = decodeDelayMs;
+        }
+
+        /// <summary>Runs inside <see cref="Read"/>, i.e. between the feed loop's AL calls.</summary>
+        public Action? OnRead { get; set; }
+
+        public NAudio.Wave.WaveFormat WaveFormat { get; }
+        public long TotalRead => System.Threading.Interlocked.Read(ref _read);
+
+        public int Read(float[] buffer, int offset, int count)
+        {
+            for (int i = 0; i < count; i += 2)
+            {
+                float v = (float)(0.3 * Math.Sin(_phase));
+                _phase += 2 * Math.PI * _freq / WaveFormat.SampleRate;
+                buffer[offset + i] = v;
+                if (i + 1 < count) buffer[offset + i + 1] = v;
+            }
+            System.Threading.Interlocked.Add(ref _read, count);
+            try { OnRead?.Invoke(); } catch { }
+            if (_delayMs > 0) System.Threading.Thread.Sleep(_delayMs);
+            return count;
+        }
+    }
+
     [SkippableFact]
     public void DecodedOpusMp3_PlaysToCompletion()
     {

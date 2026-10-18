@@ -275,8 +275,11 @@ public class NewUiWindow
             // callback (while GTK is still setting the window up) segfaults GTK.
             ScheduleTraySetup(w);
 
-            // Expose playback to the OS media controls (MPRIS/SMTC/...).
-            try { _interop.StartSystemMediaIntegration(w.WindowHandle); } catch { }
+            // Expose playback to the OS media controls (MPRIS/SMTC/...). Photino's
+            // WindowHandle is Windows-only and *throws* on Linux, which used to abort
+            // this call before the session was created — so MPRIS never started.
+            try { _interop.StartSystemMediaIntegration(w.WindowHandle); }
+            catch { _interop.StartSystemMediaIntegration(); }
 
             if (AppLaunchArgs.StartMinimized || ConfigService.Instance.Current?.StartMinimized == true)
             {

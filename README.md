@@ -37,7 +37,10 @@ uninstaller removes the app from Settings, removes the autostart entry, and asks
 whether to also delete your settings/library/downloads.
 
 Releases are tagged from the app's `<Version>`, so the version in Settings, in the
-About dialog and in the update check always agree.
+About dialog and in the update check always agree. A release is published automatically
+when a push to `master`/`main` bumps `<Version>` **and** the `Tests` job passes; a manual
+run of the *Build and Release* workflow publishes the current version as well. An
+already-tagged version is never re-released by a push — bump `<Version>` to ship again.
 
 ### Prerequisites
 

@@ -44,22 +44,27 @@ internal static unsafe class OpenAlDevices
 
     private static IReadOnlyList<string> Probe()
     {
-        var alc = ALContext.GetApi();
-        var device = alc.OpenDevice(null);
-        if (device == null) return Array.Empty<string>();
-
-        try
+        // Shares the playback gate: opening/closing a device here would otherwise
+        // become the process-wide current context while the outputs are feeding.
+        lock (OpenAlAudioOutput.AlGate)
         {
-            var proc = (IntPtr)alc.GetProcAddress(device, "alcGetString");
-            if (proc == IntPtr.Zero) return Array.Empty<string>();
+            var alc = ALContext.GetApi();
+            var device = alc.OpenDevice(null);
+            if (device == null) return Array.Empty<string>();
 
-            var getString = Marshal.GetDelegateForFunctionPointer<AlcGetStringDelegate>(proc);
-            var ptr = getString(IntPtr.Zero, AlcDeviceSpecifier);
-            return ReadDoubleNullList(ptr);
-        }
-        finally
-        {
-            try { alc.CloseDevice(device); } catch { }
+            try
+            {
+                var proc = (IntPtr)alc.GetProcAddress(device, "alcGetString");
+                if (proc == IntPtr.Zero) return Array.Empty<string>();
+
+                var getString = Marshal.GetDelegateForFunctionPointer<AlcGetStringDelegate>(proc);
+                var ptr = getString(IntPtr.Zero, AlcDeviceSpecifier);
+                return ReadDoubleNullList(ptr);
+            }
+            finally
+            {
+                try { alc.CloseDevice(device); } catch { }
+            }
         }
     }
 

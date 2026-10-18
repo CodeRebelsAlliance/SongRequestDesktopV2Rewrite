@@ -77,7 +77,7 @@ Run everything locally:
 | Library (integration) | scan finds/indexes audio files, import + duplicate-by-hash rejection, persistence |
 | MIDI (integration) | device enumeration, bad-index rejection, no-op sends, **Midi Through loopback** (skips when unavailable, and skips entirely when the ALSA sequencer is missing) |
 | FFmpeg decode (integration) | wav/mp3/m4a/flac + **Opus-in-WebM labelled `.mp3`**, seek forward/backward, byte positions |
-| OpenAL output (integration) | null-driver play/pause/stop, `PlaybackStopped` at EOF **and** on Stop, device enumeration + selection, buffered feed, 4 concurrent outputs |
+| OpenAL output (integration) | null-driver play/pause/stop, `PlaybackStopped` at EOF **and** on Stop, device enumeration + selection, buffered feed, 4 concurrent outputs, and that a foreign current context (another output) cannot break a playing output |
 | Clip cache (integration) | short → in-memory, long → streaming, independent cursors, preload |
 | Track transitions (integration) | two real 3s songs + 1s crossfade through the real engine/output: the crossfade starts before the track ends, the queue advances (`First` → `Second`) and the queue drains — with no output EOF signal (the mixer pads with silence), so it fails if the playback tick is ever removed |
 | JS | `keys.js` gesture mapping (letters/digits/F-keys/numpad/OEM/modifiers) |
@@ -448,6 +448,23 @@ closed sub-window then stops the single GTK main loop and the whole app exits. A
 sub-windows go through `NewUiWindow.RegisterHideOnClose`, which hides the window, keeps
 it for reopening and always returns true; the main window's handler does the same for
 "close to tray" and calls `Quit` (which exits the process) otherwise.
+
+**OpenAL current-context contract** (the announcement bug): with the OpenAL build we
+ship, `alcMakeContextCurrent` is **process-wide**, not per-thread. The app runs the
+music output and the announcement chime output as two contexts on one device, so every
+AL call must (a) be serialized process-wide against every other output
+(`OpenAlAudioOutput.AlGate`, which `OpenAlDevices` shares too) and (b) select its own
+context immediately before the call — the feed loop decodes between AL calls, and the
+other output's thread switches context in that window. Without it the calls fail with
+`AL_INVALID_NAME`, the buffers stop being queued and the track "hangs"/loops while the
+chime stays broken. Reproduced with a provider that makes a foreign context current from
+inside `Read` (`ForeignCurrentContext_DoesNotBreakAPlayingOutput`) and with a two-output
+harness over real FFmpeg sources.
+
+**System media on Linux**: `PhotinoWindow.WindowHandle` throws on Linux, which used to
+abort `StartSystemMediaIntegration` before the MPRIS session was created (settings
+showed it enabled but inactive). The handle is now only resolved where it exists; MPRIS
+needs none.
 
 Verified live with a real `WM_DELETE_WINDOW` (what a title-bar "X" produces): before the
 fix, closing the music player or visualization window exited the app; after it, the app

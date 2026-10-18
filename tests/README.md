@@ -106,6 +106,11 @@ The `Tests` job in `.github/workflows/release.yml` runs unit + integration + JS
 with coverage, prints a summary (see below) and **fails if any suite fails or a
 coverage floor is missed**. It runs on every push and pull request.
 
+The same workflow also publishes releases: the `Version` job reads `<Version>` and
+checks for its tag, and the `Release` job (needs `build` + `Tests`) then runs either on
+a manual dispatch or automatically when a push to `master`/`main` bumps `<Version>`.
+A push with an already-released version simply skips the job.
+
 ### Detailed failure reports
 
 - Each `dotnet test` writes a **TRX** file; the job uploads `TestResults/**`

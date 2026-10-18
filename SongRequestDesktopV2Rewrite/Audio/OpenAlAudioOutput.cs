@@ -20,6 +20,19 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
     private const int BufferCount = 4;
     private const int FramesPerBuffer = 4096;
 
+    /// <summary>
+    /// Serializes ALL OpenAL calls of every output in the process.
+    ///
+    /// <c>alcMakeContextCurrent</c> is <b>process-wide</b> with the OpenAL build we
+    /// ship, not per-thread: while the announcement chime played, its context was
+    /// current and the music's feed thread issued its own calls (with source/buffer
+    /// ids from the music context) against the chime's context — every one of them
+    /// failed with <c>AL_INVALID_NAME</c>, the music's buffers stopped being queued and
+    /// the track "hung"/looped while the chime stayed broken. Each output therefore
+    /// selects its context <i>inside</i> this gate, immediately before its calls.
+    /// </summary>
+    internal static readonly object AlGate = new();
+
     private readonly object _sync = new();
     private readonly AL _al;
     private readonly ALContext _alc;
@@ -60,28 +73,33 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
     /// <summary>Closes any open device and opens the one for <paramref name="number"/> (-1 = default).</summary>
     private void OpenDevice(int number)
     {
-        if (_context != null)
+        lock (AlGate)
         {
-            try { _alc.DestroyContext(_context); } catch { }
-            _context = null;
+            if (_context != null)
+            {
+                try { EnsureCurrent(); } catch { }
+                try { _alc.MakeContextCurrent(null); } catch { }
+                try { _alc.DestroyContext(_context); } catch { }
+                _context = null;
+            }
+            if (_device != null)
+            {
+                try { _alc.CloseDevice(_device); } catch { }
+                _device = null;
+            }
+
+            var name = number >= 0 ? OpenAlDevices.NameAt(number) : null;
+
+            _device = name != null ? _alc.OpenDevice(name) : _alc.OpenDevice(null);
+            if (_device == null && name != null) _device = _alc.OpenDevice(null); // fall back to default
+            if (_device == null) throw new InvalidOperationException("Unable to open an OpenAL device.");
+
+            _context = _alc.CreateContext(_device, null);
+            if (_context == null) throw new InvalidOperationException("Unable to create an OpenAL context.");
+
+            _alc.MakeContextCurrent(_context);
+            _currentDeviceNumber = name != null ? number : -1;
         }
-        if (_device != null)
-        {
-            try { _alc.CloseDevice(_device); } catch { }
-            _device = null;
-        }
-
-        var name = number >= 0 ? OpenAlDevices.NameAt(number) : null;
-
-        _device = name != null ? _alc.OpenDevice(name) : _alc.OpenDevice(null);
-        if (_device == null && name != null) _device = _alc.OpenDevice(null); // fall back to default
-        if (_device == null) throw new InvalidOperationException("Unable to open an OpenAL device.");
-
-        _context = _alc.CreateContext(_device, null);
-        if (_context == null) throw new InvalidOperationException("Unable to create an OpenAL context.");
-
-        _alc.MakeContextCurrent(_context);
-        _currentDeviceNumber = name != null ? number : -1;
     }
 
     public PlaybackState PlaybackState
@@ -95,6 +113,7 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
         set
         {
             _volume = Math.Clamp(value, 0f, 1f);
+            lock (AlGate)
             lock (_sync)
             {
                 if (!_started || _disposed) return;
@@ -117,6 +136,7 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
 
     private void InitCore(ISampleProvider provider)
     {
+        lock (AlGate)
         lock (_sync)
         {
             if (_started || _disposed) return;
@@ -153,12 +173,14 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
         {
             int frames = FillBuffer(_bufferIds[i]);
             if (frames <= 0) break;
+            EnsureCurrent();
             fixed (uint* p = &_bufferIds[i]) _al.SourceQueueBuffers(_source, 1, p);
         }
     }
 
     public void Play()
     {
+        lock (AlGate)
         lock (_sync)
         {
             if (!_started || _disposed) return;
@@ -176,6 +198,7 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
 
     public void Pause()
     {
+        lock (AlGate)
         lock (_sync)
         {
             if (!_started || _disposed) return;
@@ -187,6 +210,7 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
 
     public void Stop()
     {
+        lock (AlGate)
         lock (_sync)
         {
             if (!_started || _disposed) return;
@@ -205,7 +229,7 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
 
     private void FeedLoop()
     {
-        try { _alc.MakeContextCurrent(_context); } catch { }
+        lock (AlGate) { try { _alc.MakeContextCurrent(_context); } catch { } }
 
         while (_running)
         {
@@ -233,11 +257,13 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
     /// <summary>Refills any processed buffers. Returns true if the source had no data (starved/ended).</summary>
     private bool RefillOnce()
     {
+        lock (AlGate)
         lock (_sync)
         {
             if (!_started || _disposed) return false;
             EnsureCurrent();
 
+            EnsureCurrent();
             _al.GetSourceProperty(_source, GetSourceInteger.BuffersProcessed, out int processed);
             if (processed == 0)
             {
@@ -263,6 +289,7 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
                 int frames = FillBuffer(id);
                 if (frames > 0)
                 {
+                    EnsureCurrent();
                     _al.SourceQueueBuffers(_source, 1, &id);
                     queuedAny = true;
                 }
@@ -279,6 +306,7 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
 
     private void EnsureSourcePlaying()
     {
+        EnsureCurrent();
         _al.GetSourceProperty(_source, GetSourceInteger.SourceState, out int st);
         if ((SourceState)st != SourceState.Playing) _al.SourcePlay(_source);
     }
@@ -316,6 +344,11 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
 
         _sourceExhausted = false;
 
+        // The provider read above runs arbitrary code (decoding), which can take long
+        // enough for another output's thread to make its own context current. Never
+        // assume the context is still ours: re-select right before the call.
+        EnsureCurrent();
+
         fixed (short* p = _shortScratch)
         {
             _al.BufferData(bufferId, _channels == 1 ? BufferFormat.Mono16 : BufferFormat.Stereo16, p, frames * _channels * 2, _sampleRate);
@@ -344,8 +377,9 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
         }
 
         _running = false;
-        try { _thread?.Join(750); } catch { }
+        try { _thread?.Join(750); } catch { }   // must be outside the gate: the feed thread needs it
 
+        lock (AlGate)
         lock (_sync)
         {
             try
@@ -360,6 +394,8 @@ internal sealed unsafe class OpenAlAudioOutput : IAudioOutput
             }
             catch { }
 
+            // Never leave a destroyed context as the process-wide current one.
+            try { if (_context != null && _alc.GetCurrentContext() == _context) _alc.MakeContextCurrent(null); } catch { }
             try { if (_context != null) _alc.DestroyContext(_context); } catch { }
             try { if (_device != null) _alc.CloseDevice(_device); } catch { }
             _context = null;

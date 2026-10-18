@@ -241,75 +241,165 @@ jobs:
           path: TestResults/**
 
   # ---------------------------------------------------------------------------
-  # Create a release with every platform archive (manual runs only).
+  # Decide whether this run publishes a release: every manual dispatch, and any
+  # push to master/main whose <Version> has no tag yet (i.e. a new version).
   # ---------------------------------------------------------------------------
-  release:
-    name: Release
-    if: github.event_name == 'workflow_dispatch'
-    needs: build
-    runs-on: windows-latest
+  version:
+    name: Version
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      tag_exists: ${{ steps.check.outputs.tag_exists }}
+      tag: ${{ steps.check.outputs.tag }}
+      version: ${{ steps.check.outputs.version }}
+      previous_tag: ${{ steps.check.outputs.previous_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0        # git tag / git describe need the tags
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Determine version
-        id: version
-        shell: pwsh
+      - name: Read <Version> and look for its tag
+        id: check
+        shell: bash
         run: |
+          set -euo pipefail
+
           # The app version (<Version> in the project) is the single source of truth:
           # it is shown in the UI, compared against the release tag by the in-app
           # updater, and used verbatim as the release tag here.
-          [xml]$proj = Get-Content SongRequestDesktopV2Rewrite/SongRequestDesktopV2Rewrite.csproj
-          $nodes = $proj.SelectNodes('//Version')
-          if ($nodes.Count -eq 0) { throw "Could not read <Version> from SongRequestDesktopV2Rewrite.csproj." }
-          $version = $nodes[0].InnerText.Trim()
-          if ($version -notmatch '^\d+(\.\d+)*$') { throw "Unexpected <Version> value '$version'." }
-
-          $tag = "v$version"
-          Write-Host "Project version: $version -> tag $tag"
+          version=$(python3 -c "import re,pathlib;t=pathlib.Path('SongRequestDesktopV2Rewrite/SongRequestDesktopV2Rewrite.csproj').read_text(encoding='utf-8');m=re.search(r'<Version>\s*([^<\s]+)\s*</Version>',t);print(m.group(1) if m else '')")
+          if [ -z "$version" ]; then
+            echo "::error::Could not read <Version> from SongRequestDesktopV2Rewrite.csproj."
+            exit 1
+          fi
+          if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::Unexpected <Version> value '$version'."
+            exit 1
+          fi
+          tag="v$version"
 
           git fetch --tags --quiet
-          if (git tag -l $tag) {
-            throw "Tag $tag already exists. Bump <Version> in SongRequestDesktopV2Rewrite.csproj before releasing."
-          }
+          previous_tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
 
-          $previousTag = (git describe --tags --abbrev=0 2>$null | Select-Object -First 1)
-          if (-not $previousTag) { $previousTag = "" }
+          if git tag -l "$tag" | grep -q .; then
+            tag_exists=true
+          else
+            tag_exists=false
+          fi
 
-          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "previous_tag=$previousTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          # A push only releases a version that is not tagged yet (a version bump is
+          # what "there is something to release" means); a manual dispatch always
+          # tries, and the release job reports a clear error if the tag exists.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$tag_exists" = "false" ]; then
+            should_release=true
+          else
+            should_release=false
+          fi
+
+          echo "version=$version -> tag $tag (tag exists: $tag_exists, previous tag: ${previous_tag:-none})"
+          echo "should_release=$should_release (event: ${{ github.event_name }})"
+
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "tag_exists=$tag_exists"
+            echo "should_release=$should_release"
+            echo "previous_tag=$previous_tag"
+          } >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Create the release with every platform archive. Runs on a manual dispatch, or
+  # automatically on a push to master/main that bumps <Version> — and only once
+  # the build and the whole test suite (job "Tests") have passed.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Release
+    needs: [build, test, version]
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    # Serialized per branch so a second run cannot clobber a release mid-upload.
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # the changelog is generated from the git log
+
+      - name: Refuse to re-release a tagged version (manual runs)
+        if: github.event_name == 'workflow_dispatch' && needs.version.outputs.tag_exists == 'true'
+        shell: bash
+        run: |
+          echo "::error title=Tag already exists::Tag ${{ needs.version.outputs.tag }} already exists. Bump <Version> in SongRequestDesktopV2Rewrite.csproj before releasing."
+          exit 1
+
+      - name: Download platform archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          # Only the platform archives: the test job also uploads artifacts, and
+          # those must never end up as release assets.
+          pattern: SongRequest-*
+          merge-multiple: true
+
+      - name: Verify the platform archives are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la dist/
+          count=$(ls dist/SongRequest-* 2>/dev/null | wc -l)
+          if [ "$count" -lt 6 ]; then
+            echo "::error title=Missing release archives::Expected the 6 platform archives in dist/, found $count."
+            exit 1
+          fi
+          echo "Found $count platform archives."
 
       - name: Generate changelog
         id: changelog
-        shell: pwsh
+        shell: bash
         run: |
-          $prev = "${{ steps.version.outputs.previous_tag }}"
-          if ($prev) {
-            $log = git log "$prev..HEAD" --pretty=format:"- %s"
-          } else {
-            $log = git log --pretty=format:"- %s"
-          }
-          if (-not $log) { $log = "- No changes" }
+          set -euo pipefail
+          prev="${{ needs.version.outputs.previous_tag }}"
+          if [ -n "$prev" ]; then
+            log=$(git log "$prev..HEAD" --pretty=format:"- %s")
+          else
+            log=$(git log --pretty=format:"- %s")
+          fi
+          [ -n "$log" ] || log="- No changes"
 
-          "changelog<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "## Changes`n$log" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          {
+            echo "changelog<<EOF"
+            echo "## Changes"
+            echo "$log"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Release ${{ steps.version.outputs.tag }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Release ${{ needs.version.outputs.tag }}
           body: ${{ steps.changelog.outputs.changelog }}
+          # Tag the commit this run built, not whatever the branch points at later.
+          target_commitish: ${{ github.sha }}
           files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Release"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| version | \`${{ needs.version.outputs.version }}\` |"
+            echo "| tag | \`${{ needs.version.outputs.tag }}\` |"
+            echo "| trigger | \`${{ github.event_name }}\` |"
+            echo "| previous tag | \`${{ needs.version.outputs.previous_tag }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
