@@ -204,7 +204,7 @@
     recent: { section: document.getElementById('home-row-recent'), scroller: document.getElementById('home-recent') },
     fresh: { section: document.getElementById('home-row-new'), scroller: document.getElementById('home-new') }
   };
-  var HOME_CARD_COUNT = 20;
+  var HOME_CARD_COUNT = 12;
   var homeFeedData = null;
   var homeFeedLoading = false;
 
@@ -225,8 +225,14 @@
 
   function homeThumbHtml(item, fallbackIcon) {
     var thumb = item && item.thumbnail;
-    var inner = thumb ? '<img src="' + escHtml(thumb) + '" alt="" loading="lazy">' : '<i class="fas ' + (fallbackIcon || 'fa-music') + '"></i>';
-    return '<div class="home-card-thumb">' + inner +
+    var songId = (item && item.songId) || '';
+    var inner = thumb
+      ? '<img src="' + escHtml(thumb) + '" alt="" loading="lazy">'
+      : '<i class="fas ' + (fallbackIcon || 'fa-music') + '"></i>';
+    // artwork that is still being downscaled shows a placeholder carrying the song id,
+    // so patchThumbnails() can drop it in without re-rendering the row
+    var missing = (!thumb && songId) ? ' thumb-pending' : '';
+    return '<div class="home-card-thumb' + missing + '" data-songid="' + escHtml(songId) + '">' + inner +
       '<button class="home-card-play" data-play="1" title="Play"><i class="fas fa-play"></i></button>' +
     '</div>';
   }
@@ -329,6 +335,7 @@
 
     var anyVisible = playlists.length + recommended.length + recent.length + fresh.length > 0;
     if (homeEmptyEl) homeEmptyEl.style.display = anyVisible ? 'none' : '';
+    patchThumbnails(homeFeedEl, 0);
   }
 
   function loadHomeFeed(force) {
@@ -336,6 +343,7 @@
     if (homeFeedData && !force) { renderHomeFeed(homeFeedData); return; }
 
     homeFeedLoading = true;
+    lastHomeLoad = Date.now();
     if (homeLoadingEl) homeLoadingEl.style.display = '';
     if (homeEmptyEl) homeEmptyEl.style.display = 'none';
 
@@ -351,10 +359,15 @@
     });
   }
 
+  var HOME_MIN_REFRESH_MS = 4000;
+  var lastHomeLoad = 0;
   function invalidateHomeFeed() {
-    homeFeedData = null;
     var homeView = document.getElementById('view-home');
-    if (homeView && homeView.classList.contains('active')) loadHomeFeed(true);
+    var visible = homeView && homeView.classList.contains('active');
+    homeFeedData = null;
+    if (!visible) return;                       // nothing to refresh while it is hidden
+    if (Date.now() - lastHomeLoad < HOME_MIN_REFRESH_MS) return;
+    loadHomeFeed(true);
   }
 
   // Section scroll buttons + horizontal wheel scrolling
@@ -367,7 +380,12 @@
         row.scroller.scrollBy({ left: dir * Math.max(240, row.scroller.clientWidth * 0.8), behavior: 'smooth' });
       });
     });
-    row.scroller.addEventListener('scroll', function() { updateHomeScrollButtons(row); }, { passive: true });
+    var scrollScheduled = false;
+    row.scroller.addEventListener('scroll', function() {
+      if (scrollScheduled) return;
+      scrollScheduled = true;
+      requestAnimationFrame(function() { scrollScheduled = false; updateHomeScrollButtons(row); });
+    }, { passive: true });
     row.scroller.addEventListener('wheel', function(e) {
       if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;   // horizontal gesture: let it be
       this.scrollLeft += e.deltaY;
@@ -400,6 +418,50 @@
       if (card.dataset.playlistid) showPlaylistContextMenu(e, card.dataset.playlistid);
       else if (card.dataset.songid) showContextMenu(e.clientX, e.clientY, card.dataset.songid, card, 'library');
     });
+  }
+
+  // Artwork that the host still has to downscale arrives as a placeholder; ask for it
+  // again shortly instead of re-rendering the whole row.
+  var _thumbTimers = [];
+  function patchThumbnails(root, attempt) {
+    attempt = attempt || 0;
+    if (attempt > 8) return;
+    var pending = root ? root.querySelectorAll('.home-card-thumb.thumb-pending[data-songid], .library-song-thumb.thumb-pending[data-songid]') : [];
+    if (!pending.length) return;
+
+    var ids = [];
+    for (var i = 0; i < pending.length && ids.length < 24; i++) {
+      var id = pending[i].dataset.songid;
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    }
+    if (!ids.length) return;
+
+    hostRequest('getThumbnails', { songIds: ids }).then(function(result) {
+      var thumbs = (result && result.thumbs) || {};
+      var patched = 0;
+      for (var i = 0; i < pending.length; i++) {
+        var el = pending[i];
+        var url = thumbs[el.dataset.songid];
+        if (!url) continue;
+        el.classList.remove('thumb-pending');
+        var icon = el.querySelector('i');
+        if (icon) icon.remove();
+        var play = el.querySelector('.home-card-play');
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.loading = 'lazy';
+        if (play) el.insertBefore(img, play); else el.insertBefore(img, el.firstChild);
+        patched++;
+      }
+      if (patched < pending.length) scheduleThumbPatch(root, attempt + 1);
+    }).catch(function() { scheduleThumbPatch(root, attempt + 1); });
+  }
+
+  function scheduleThumbPatch(root, attempt) {
+    var timer = setTimeout(function() { patchThumbnails(root, attempt); }, 700 + attempt * 400);
+    _thumbTimers.push(timer);
+    if (_thumbTimers.length > 40) _thumbTimers.splice(0, 20);
   }
 
   // --- Output device picker (speaker icon) ---
@@ -513,6 +575,7 @@
     var thumbHtml = entry.thumbnail
       ? '<img src="' + entry.thumbnail + '" alt="">'
       : '<i class="fas fa-music"></i>';
+    var thumbState = (!entry.thumbnail && entry.songId) ? ' thumb-pending' : '';
     var timeStr = '';
     if (entry.playedUtc) {
       var d = new Date(entry.playedUtc);
@@ -522,7 +585,7 @@
     if (entry.trigger === 'autopilot') triggerLabel = '<span class="pill pill-auto">Autopilot</span>';
 
     return '<div class="library-song rp-song" data-songid="' + entry.songId + '" data-entryid="' + (entry.entryId || '') + '" data-filepath="' + escHtml(entry.filePath || '') + '">' +
-      '<div class="library-song-thumb">' + thumbHtml +
+      '<div class="library-song-thumb' + thumbState + '" data-songid="' + escHtml(entry.songId || '') + '">' + thumbHtml +
         '<div class="thumb-overlay"><i class="fas fa-play"></i></div>' +
       '</div>' +
       '<div class="library-song-info">' +
@@ -565,6 +628,7 @@
         html += renderRecentlyPlayedSong(entry, idx++);
       }
       recentlyPlayedList.innerHTML = html;
+      patchThumbnails(recentlyPlayedList, 0);
     }).catch(function() {
       recentlyPlayedLoading.style.display = 'none';
       recentlyPlayedEmpty.style.display = '';
@@ -1519,6 +1583,7 @@
     var thumbHtml = song.thumbnail
       ? '<img src="' + song.thumbnail + '" alt="">'
       : '<i class="fas fa-music"></i>';
+    var thumbState = (!song.thumbnail && song.id) ? ' thumb-pending' : '';
     var title = song.title || song.filePath.split(/[/\\]/).pop();
     var artist = song.artist || 'Unknown';
 
@@ -1528,7 +1593,7 @@
     if (song.hasMetadataDuplicates) pills += '<span class="pill pill-dup"><i class="fas fa-clone"></i> Meta Dup' + (song.metadataDuplicateCount > 1 ? ' (' + song.metadataDuplicateCount + ')' : '') + '</span>';
 
     return '<div class="library-song" data-id="' + song.id + '" data-filepath="' + escHtml(song.filePath || '') + '">' +
-      '<div class="library-song-thumb" data-song-id="' + song.id + '">' + thumbHtml +
+      '<div class="library-song-thumb' + thumbState + '" data-songid="' + song.id + '" data-song-id="' + song.id + '">' + thumbHtml +
         '<div class="thumb-overlay"><i class="fas fa-play"></i></div>' +
         '<div class="thumb-now-playing"><span class="eq-bar"></span><span class="eq-bar"></span><span class="eq-bar"></span></div>' +
       '</div>' +
@@ -1574,6 +1639,7 @@
 
       songs.forEach(function(song) {
         libListEl.insertAdjacentHTML('beforeend', renderLibrarySong(song));
+        patchThumbnails(libListEl, 0);
       });
       updateLibraryPlayingState();
 

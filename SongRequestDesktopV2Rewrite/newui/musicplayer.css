@@ -109,7 +109,9 @@ body { background: #121212; color: #e0e0e0; }
 .view-header { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 16px; }
 
 /* Home view */
-#view-home { display: flex; flex-direction: column; gap: 22px; }
+/* NB: keep this scoped to .active — an unscoped `#view-home { display: … }` rule wins
+   over `.view { display: none }` and leaves the home tab rendered behind every tab. */
+#view-home.active { display: flex; flex-direction: column; gap: 22px; }
 #home-hero { display: flex; align-items: center; gap: 16px; padding: 4px 2px 0; }
 #home-logo { width: 56px; height: 56px; border-radius: 12px; }
 #home-hero-text { flex: 1; min-width: 0; }

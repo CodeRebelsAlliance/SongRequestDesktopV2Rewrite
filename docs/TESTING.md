@@ -70,6 +70,7 @@ Run everything locally:
 | Playback tick (unit) | the engine drives its own `MusicEngine.ProcessTick()` while playing (the crossfade mixer pads with silence, so the output can never report EOF), so the music player gets position/now-playing updates and the queue advances at end of track |
 | Queue timings (unit) | `ComputeQueueTimings` sets "Playing Now" + cumulative wait times, and the queue notification carries *fresh* wait times — the newly added (or shifted) item included, not the stale default from before the change |
 | Recommendations (unit) | `RecommendationEngine`: the documented five weighted signals, affinity decay (recent plays beat stale ones), artist/genre ranking, fresh-discovery metadata quality, tag/album similarity, echo-chamber discount for its own skipped suggestions, missing files never suggested, the 3 most recently played excluded, scores 0–1 and ordered, count/limit, and a documented `Signal` + non-empty `Reason` per suggestion |
+| Artwork store (unit + integration) | `ThumbnailStore`: converts artwork once and serves it from memory afterwards, honours the per-call conversion budget (feed-style calls pass 0 and get "not ready yet" + a background queue instead), inlines small artwork without a converter, skips oversized artwork when there is no converter, handles embedded-art bytes, prewarms in the background, and survives a failing converter; the integration test runs the real FFmpeg and asserts the result is smaller than the source (guards the converter arguments) |
 | Playlist ordering (unit) | `LibraryService.MarkPlaylistPlayed` records the timestamp the home feed orders playlists by (and leaves untouched playlists at "never played"); the summary exposes `lastPlayedUtc` |
 | Output device (unit) | `MusicEngine.SetOutputDevice` stores the choice when idle and re-opens the *running* output on the new device without restarting the track (`SetOutputDevice`, `getMusicAudioDevices`, `setMusicOutputDevice` interop contract) |
 | Sub-window lifecycle (unit) | `StartupGuard` tray limits (`TrayDisabled`, `TrayUsedLastRun`, crash recovery) and that changing the tray settings clears the guard so the tray can be retried |
@@ -483,6 +484,17 @@ horizontally scrolling rows come from one `getHomeFeed` call — playlists order
 `LastPlayedUtc`, recommendations (library songs only, each with a reason badge),
 recently listened (from the Recently Played data) and the newest library additions — plus
 the header stats. Rows with no content hide themselves.
+
+Two things that made it feel broken were fixed and re-verified visually:
+
+- The home view's `display` rule was scoped to the id, not to `.active`, so it outranked
+  `.view { display: none }` and the home tab stayed rendered behind every other tab
+  (`#view-home.active` now).
+- Artwork was base64-inlined at full size (the library artwork averages ~120 KB, up to
+  2 MB): one feed load was **63 MB** of IPC, re-encoded on the UI thread on every queue
+  and now-playing update. `ThumbnailStore` now downscales once (320 px, FFmpeg, cached on
+  disk), caches the encoded string in memory, never converts inside a feed call (0.02 MB
+  on a cold cache, 4 ms) and the page fetches only the artwork it is showing.
 
 **Output device menu** (verified with screenshots): the speaker button in the player bar
 opens a menu listing `getMusicAudioDevices` with the current device ticked; picking one

@@ -699,6 +699,9 @@ public class YoutubeFormInterop
                 case "getHomeFeed":
                     result = GetHomeFeed(msg);
                     break;
+                case "getThumbnails":
+                    result = GetThumbnails(msg);
+                    break;
                 case "getMusicAudioDevices":
                     result = GetMusicAudioDevices();
                     break;
@@ -1686,10 +1689,9 @@ public class YoutubeFormInterop
                 }
                 if (libSong != null && !string.IsNullOrEmpty(libSong.ThumbnailPath) && File.Exists(libSong.ThumbnailPath))
                 {
-                    var bytes = File.ReadAllBytes(libSong.ThumbnailPath);
-                    var ext = System.IO.Path.GetExtension(libSong.ThumbnailPath).ToLowerInvariant();
-                    var mime = ext == ".png" ? "image/png" : "image/jpeg";
-                    return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
+                    // Downscaled + cached: the raw artwork is often ~1 MB and inlining it
+                    // made every queue/home update push tens of megabytes to the webview.
+                    return Thumbnails.GetDataUrl(libSong.ThumbnailPath);
                 }
             }
             catch { /* fall through */ }
@@ -1701,9 +1703,7 @@ public class YoutubeFormInterop
                 var pic = tfile.Tag.Pictures?.FirstOrDefault();
                 if (pic != null && pic.Data != null && pic.Data.Data != null && pic.Data.Data.Length > 0)
                 {
-                    var mime = pic.MimeType ?? "image/jpeg";
-                    var b64 = Convert.ToBase64String(pic.Data.Data);
-                    return "data:" + mime + ";base64," + b64;
+                    return Thumbnails.GetDataUrl(pic.Data.Data, songPath ?? "");
                 }
             }
             catch { /* no embedded art, fall through */ }
@@ -1717,18 +1717,10 @@ public class YoutubeFormInterop
                     "data", "downloadedvideos", "thumbnail-cache");
                 var cachePath = System.IO.Path.Combine(cacheDir, $"{videoId}.png");
 
-                if (File.Exists(cachePath))
-                {
-                    var bytes = File.ReadAllBytes(cachePath);
-                    return "data:image/png;base64," + Convert.ToBase64String(bytes);
-                }
+                if (File.Exists(cachePath)) return Thumbnails.GetDataUrl(cachePath);
 
                 var jpgPath = System.IO.Path.Combine(cacheDir, $"{videoId}.jpg");
-                if (File.Exists(jpgPath))
-                {
-                    var bytes = File.ReadAllBytes(jpgPath);
-                    return "data:image/jpeg;base64," + Convert.ToBase64String(bytes);
-                }
+                if (File.Exists(jpgPath)) return Thumbnails.GetDataUrl(jpgPath);
             }
         }
         catch { }
@@ -3303,12 +3295,7 @@ public class YoutubeFormInterop
         try
         {
             if (!string.IsNullOrEmpty(song.ThumbnailPath) && File.Exists(song.ThumbnailPath))
-            {
-                var bytes = File.ReadAllBytes(song.ThumbnailPath);
-                var ext = Path.GetExtension(song.ThumbnailPath).ToLowerInvariant();
-                var mime = ext == ".png" ? "image/png" : "image/jpeg";
-                return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
-            }
+                return Thumbnails.GetDataUrl(song.ThumbnailPath);
         }
         catch { }
         return null;
@@ -3511,6 +3498,9 @@ public class YoutubeFormInterop
         if (count <= 0) count = 20;
         count = Math.Min(count, 100);
 
+        // 0 inline conversions: the feed must return immediately. Anything not ready yet
+        // is queued below and collected by the page with getThumbnails.
+        Thumbnails.BeginRequest(0);
         var data = _libraryService.Data;
 
         // ── Playlists: most recently listened first, then most recently changed ──
@@ -3581,6 +3571,16 @@ public class YoutubeFormInterop
         }
 
         // ── Newly added to the library ──
+        // warm the cache in the background so the artwork is there next time
+        try
+        {
+            Thumbnails.Prewarm(data.Songs
+                .Where(s => !string.IsNullOrEmpty(s.ThumbnailPath))
+                .Take(240)
+                .Select(s => s.ThumbnailPath!));
+        }
+        catch { }
+
         var newlyAdded = data.Songs
             .Where(s => s.FileStatus == FileStatus.Present)
             .OrderByDescending(s => s.DateAddedUtc)
@@ -3617,6 +3617,42 @@ public class YoutubeFormInterop
     }
 
     /// <summary>Output devices for the music player's speaker menu.</summary>
+    /// <summary>Small, cached artwork data URLs (downscaled once, then reused).</summary>
+    internal ThumbnailStore Thumbnails { get; set; } = ThumbnailStore.Instance;
+
+    /// <summary>
+    /// Looks up artwork for a set of library songs. The UI calls this with the cards it
+    /// is actually showing: the main feed response deliberately omits artwork that is not
+    /// ready yet instead of blocking on converting dozens of images at once.
+    /// </summary>
+    private object GetThumbnails(JObject msg)
+    {
+        var ids = msg["songIds"] as JArray;
+        var wanted = new List<string>();
+        if (ids != null)
+        {
+            foreach (var id in ids)
+            {
+                var value = id?.ToString();
+                if (!string.IsNullOrEmpty(value) && wanted.Count < 64) wanted.Add(value!);
+            }
+        }
+
+        Thumbnails.BeginRequest();
+        var data = _libraryService.Data;
+        var result = new Dictionary<string, string>();
+        foreach (var id in wanted)
+        {
+            var song = data.FindSong(id);
+            if (song == null || string.IsNullOrEmpty(song.ThumbnailPath) || !File.Exists(song.ThumbnailPath)) continue;
+
+            var url = Thumbnails.GetDataUrl(song.ThumbnailPath);
+            if (url != null) result[id] = url;
+        }
+
+        return new { thumbs = result, pending = Thumbnails.PendingCount };
+    }
+
     private object GetMusicAudioDevices()
     {
         var devices = new List<object> { new { number = -1, name = "System Default" } };

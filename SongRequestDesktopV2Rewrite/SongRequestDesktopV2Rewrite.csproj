@@ -16,7 +16,7 @@
       against the release tag by the updater, used as the release tag by CI and
       written into the Windows "Apps & features" entry.
     -->
-    <Version>4.3</Version>
+    <Version>4.4</Version>
 
     <!-- Product metadata (Windows file properties, Apps & features entry). -->
     <AssemblyTitle>SongRequest Desktop</AssemblyTitle>
