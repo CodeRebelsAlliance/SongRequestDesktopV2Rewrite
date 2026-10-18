@@ -251,13 +251,23 @@
   }
 
   // ── Lyrics rendering ──
+  // New lyrics always start at the top: the container used to keep the previous song's
+  // scroll offset, so the view crawled up a few lines into the new song instead of
+  // jumping to the first line.
+  function resetLyricsScroll() {
+    lastHighlightIndex = -1;
+    try { presLyrics.scrollTop = 0; } catch (e) { }
+  }
+
   function renderLyricsLoading() {
     presLyrics.innerHTML = '<div class="lyrics-loading"><i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div></div>';
     if (lyricsProvider) lyricsProvider.textContent = '';
+    resetLyricsScroll();
   }
 
   function renderNoLyrics() {
     presLyrics.innerHTML = '<div class="lyrics-no-lyrics"><i class="fas fa-music"></i><div>No lyrics available</div></div>';
+    resetLyricsScroll();
   }
 
   function renderLyrics(data) {
@@ -308,6 +318,7 @@
     }
 
     updateLyricFontSizes();
+    resetLyricsScroll();                       // a new song starts at line one
   }
 
   function createSpacer() {

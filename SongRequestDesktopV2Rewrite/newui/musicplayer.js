@@ -1344,13 +1344,23 @@
     lyricsContainer.style.setProperty('--lyric-prev', prev + 'px');
   }
 
+  // New lyrics always start at the top: the container used to keep the previous song's
+  // scroll offset, and because the highlight only moves when its index changes, the view
+  // crawled up a few lines into the new song instead of jumping to the start.
+  function resetLyricsScroll() {
+    lastHighlightIndex = -1;
+    try { lyricsContainer.scrollTop = 0; } catch (e) { }
+  }
+
   function renderLyricsLoading() {
     lyricsContainer.innerHTML = '<div class="lyrics-loading"><i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div></div>';
     if (lyricsProvider) lyricsProvider.textContent = '';
+    resetLyricsScroll();
   }
 
   function renderNoLyrics() {
     lyricsContainer.innerHTML = '<div class="lyrics-no-lyrics"><i class="fas fa-music"></i><div>No lyrics available</div></div>';
+    resetLyricsScroll();
   }
 
   function renderLyrics(data) {
@@ -1406,6 +1416,7 @@
     if (lyricsProvider) lyricsProvider.textContent = data.provider ? 'Lyrics: ' + data.provider : '';
     lastHighlightIndex = -1;
     updateLyricFontSizes();
+    resetLyricsScroll();                       // a new song starts at line one
     if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
   }
 
