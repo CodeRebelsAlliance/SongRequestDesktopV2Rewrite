@@ -260,6 +260,51 @@ public class MusicEngineTests
         Assert.Equal("Wait Time: 02:00", engine.Queue[2].EstimatedStartDisplay);
     }
 
+    /// <summary>
+    /// The queue notification is what the music player window renders, so the wait
+    /// times must be recomputed *before* it is raised. They used to be computed after
+    /// the ObservableCollection's CollectionChanged event (which raises the
+    /// notification), so a freshly added item was announced with its stale default
+    /// "00:00" and only looked right after some later refresh.
+    /// </summary>
+    [Fact]
+    public void QueueChanged_AnnouncesFreshWaitTimes_ForTheNewlyAddedItem()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        var announced = new List<string[]>();
+        engine.QueueChanged += (_, _)
+            => announced.Add(engine.Queue.Select(s => s.EstimatedStartDisplay).ToArray());
+
+        engine.AddSong(Track("a", 60));
+        Assert.Equal(new[] { "Playing Now" }, announced[^1]);
+
+        engine.AddSong(Track("b", 60));
+        Assert.Equal(new[] { "Playing Now", "Wait Time: Now" }, announced[^1]);
+
+        // The third item's own wait time has to be in the very announcement that adds
+        // it — this is the assertion that fails when the timings are computed last.
+        engine.AddSong(Track("c", 60));
+        Assert.Equal(new[] { "Playing Now", "Wait Time: Now", "Wait Time: 01:00" }, announced[^1]);
+    }
+
+    [Fact]
+    public void QueueChanged_RecalculatesWaitTimes_WhenAnItemIsRemoved()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        engine.AddSong(Track("a", 60));
+        engine.AddSong(Track("b", 120));
+        engine.AddSong(Track("c", 60));
+
+        var announced = Array.Empty<string>();
+        engine.QueueChanged += (_, _)
+            => announced = engine.Queue.Select(s => s.EstimatedStartDisplay).ToArray();
+
+        engine.RemoveQueueItem(1);   // drop the 2 minute track
+
+        // "c" now follows "a" alone, so its wait time shrinks to zero.
+        Assert.Equal(new[] { "Playing Now", "Wait Time: Now" }, announced);
+    }
+
     [Fact]
     public void ToggleRepeat_Toggles()
     {

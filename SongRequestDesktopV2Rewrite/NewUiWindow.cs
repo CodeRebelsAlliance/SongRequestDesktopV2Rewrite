@@ -24,6 +24,9 @@ public class NewUiWindow
     /// stays on screen and the whole UI stops handling messages), so "closing" a
     /// sub-window only hides it; reopening it is then instant because the web view is
     /// already loaded. No-op elsewhere.
+    ///
+    /// A window that is only hidden still has to be *prevented* from closing — see
+    /// <see cref="RegisterHideOnClose"/> (returning false there quits the whole app).
     /// </summary>
     private static void SetSubWindowVisible(string titlePrefix, bool visible)
     {
@@ -34,6 +37,26 @@ public class NewUiWindow
             else GtkWindows.Hide(titlePrefix);
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Registers the "close" behaviour of a sub-window: run <paramref name="onClosing"/>
+    /// (channel bookkeeping), hide the window and — crucially — <b>return true</b>.
+    ///
+    /// Photino's <c>NetClosingDelegate</c> reads a true result as "do not close", so
+    /// returning true is what keeps the GTK widget alive; returning false lets GTK
+    /// destroy it, and Photino hooks every toplevel window's "destroy" signal to
+    /// <c>gtk_main_quit()</c> — which stops the single GTK main loop and takes the
+    /// whole application down (closing any sub-window used to quit the app).
+    /// </summary>
+    private static void RegisterHideOnClose(PhotinoWindow window, string titlePrefix, Action onClosing)
+    {
+        window.WindowClosing += (_, _) =>
+        {
+            try { onClosing(); } catch { }
+            SetSubWindowVisible(titlePrefix, false);
+            return true;
+        };
     }
 
     /// <summary>Brings a Photino window to the foreground (Windows only; no-op elsewhere).</summary>
@@ -164,14 +187,19 @@ public class NewUiWindow
             w.WindowClosing += (_, _) =>
             {
                 // Close-to-tray: cancel the close and hide until the user picks Quit.
+                // true = "do not close" (Photino's NetClosingDelegate); returning false
+                // would destroy the window — and Photino hooks every toplevel's GTK
+                // "destroy" to gtk_main_quit(), which ends the app.
                 if (!_forceClose && _tray is { IsSupported: true } && ConfigService.Instance.Current?.CloseToTray == true)
                 {
                     HideWindow(w);
-                    return false;
+                    return true;
                 }
 
+                // Quit() releases the OS-visible resources and calls Environment.Exit,
+                // so this never returns; cancelling is only a safety net if it does.
                 Quit(w);
-                return false; // Quit() terminates the process, so this is not reached.
+                return true;
             };
 
             w.WindowMinimized += (_, _) =>
@@ -521,13 +549,7 @@ public class NewUiWindow
 
             _musicPlayerSend = MusicPlayerSendMessage;
 
-            mp.WindowClosing += (_, _) =>
-            {
-                // Hide instead of closing: destroying the web view blocks the GTK thread.
-                SetSubWindowVisible("Music Player - ", false);
-                MusicPlayerSendMessage = null;
-                return false;
-            };
+            RegisterHideOnClose(mp, "Music Player - ", () => MusicPlayerSendMessage = null);
 
             _musicPlayerWindow = mp;
 
@@ -604,12 +626,10 @@ public class NewUiWindow
 
             _presentationSend = PresentationSendMessage;
 
-            pw.WindowClosing += (_, _) =>
+            RegisterHideOnClose(pw, "Presentation - ", () =>
             {
                 _presentationClosing = true;
                 PresentationSendMessage = null;
-                // Hide instead of closing: destroying the web view blocks the GTK thread.
-                SetSubWindowVisible("Presentation - ", false);
 
                 // Notify the music player window so the button state updates
                 try
@@ -622,10 +642,7 @@ public class NewUiWindow
                     }
                 }
                 catch { }
-
-                // Cancel the close so GTK keeps the web view (destroying it would block).
-                return false;
-            };
+            });
 
             _presentationWindow = pw;
 
@@ -693,14 +710,11 @@ public class NewUiWindow
 
             _soundboardSend = SoundboardSendMessage;
 
-            sb.WindowClosing += (_, _) =>
+            RegisterHideOnClose(sb, "Soundboard - ", () =>
             {
-                // Hide instead of closing: destroying the web view blocks the GTK thread.
-                SetSubWindowVisible("Soundboard - ", false);
                 SoundboardSendMessage = null;
                 try { _interop.OnSoundboardClosed(); } catch { }
-                return false;
-            };
+            });
 
             _soundboardWindow = sb;
 
@@ -768,14 +782,11 @@ public class NewUiWindow
 
             _visualizationSend = VisualizationSendMessage;
 
-            vw.WindowClosing += (_, _) =>
+            RegisterHideOnClose(vw, "Visualization - ", () =>
             {
-                // Hide instead of closing: destroying the web view blocks the GTK thread.
-                SetSubWindowVisible("Visualization - ", false);
                 VisualizationSendMessage = null;
                 try { _interop.OnVisualizationClosed(); } catch { }
-                return false;
-            };
+            });
 
             _visualizationWindow = vw;
             vw.WaitForClose();
@@ -842,14 +853,11 @@ public class NewUiWindow
 
             _announcementSend = AnnouncementSendMessage;
 
-            aw.WindowClosing += (_, _) =>
+            RegisterHideOnClose(aw, "Announcement - ", () =>
             {
-                // Hide instead of closing: destroying the web view blocks the GTK thread.
-                SetSubWindowVisible("Announcement - ", false);
                 AnnouncementSendMessage = null;
                 try { _interop.OnAnnouncementClosed(); } catch { }
-                return false;
-            };
+            });
 
             _announcementWindow = aw;
 

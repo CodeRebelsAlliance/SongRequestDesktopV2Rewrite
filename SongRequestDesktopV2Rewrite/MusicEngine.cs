@@ -68,7 +68,15 @@ public sealed class MusicEngine
 
     public MusicEngine()
     {
-        Queue.CollectionChanged += (_, _) => QueueChanged?.Invoke(this, EventArgs.Empty);
+        // Wait times depend on every song before them, so they are recomputed *before*
+        // the UI is told about the change: this notification is what pushes the queue
+        // to the music player window, and it used to fire before the newly added song
+        // got its wait time (the item then showed a stale value until the next update).
+        Queue.CollectionChanged += (_, _) =>
+        {
+            ComputeQueueTimings();
+            QueueChanged?.Invoke(this, EventArgs.Empty);
+        };
         PlaylistQueue.CollectionChanged += (_, _) => PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -81,8 +89,7 @@ public sealed class MusicEngine
     public void AddSong(Song s)
     {
         if (s == null) return;
-        Queue.Add(s);
-        ComputeQueueTimings();
+        Queue.Add(s);   // CollectionChanged recomputes the wait times and notifies the UI
         var cfg = ConfigAccessor();
         if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
             _ = System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(s));
@@ -113,7 +120,7 @@ public sealed class MusicEngine
         catch { }
 
         if (Queue.Count > 1) Queue.Insert(1, s); else Queue.Add(s);
-        ComputeQueueTimings();
+        // CollectionChanged recomputes the wait times and notifies the UI.
 
         var cfg = ConfigAccessor();
         if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)

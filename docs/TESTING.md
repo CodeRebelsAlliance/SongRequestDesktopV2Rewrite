@@ -66,6 +66,7 @@ Run everything locally:
 | Cookie browser preference (unit) | `saveCookieBrowser` persists the chosen browser and both `getStartupData` and `getSettings` report it, so the startup prompt and the settings picker default to it |
 | Interop null tolerance (unit) | `saveSettings`/`saveRemoteConfig` accept `null` values from the web UI (a `<select>` with no MIDI device sends NaN → `null`, which previously failed the save with "Can not convert Null to Int32") |
 | Playback tick (unit) | the engine drives its own `MusicEngine.ProcessTick()` while playing (the crossfade mixer pads with silence, so the output can never report EOF), so the music player gets position/now-playing updates and the queue advances at end of track |
+| Queue timings (unit) | `ComputeQueueTimings` sets "Playing Now" + cumulative wait times, and the queue notification carries *fresh* wait times — the newly added (or shifted) item included, not the stale default from before the change |
 | Sub-window lifecycle (unit) | `StartupGuard` tray limits (`TrayDisabled`, `TrayUsedLastRun`, crash recovery) and that changing the tray settings clears the guard so the tray can be retried |
 | Download gate (unit) | automatic downloads are deferred until the user made the YouTube-cookie decision (or cookies are saved); skipped ids stay out of `fetchedYtids` so the next fetch retries them; `completeSetup` opens the gate |
 | System media (integration) | Linux **MPRIS**: service registration, per-interface `GetAll`/`Get`, metadata/state/position/artUrl round-trip, every transport command, `PropertiesChanged` signal |
@@ -183,7 +184,7 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Crossfade params | U | `AdjustCrossfade`/`SetCrossfade`/`SetCrossfadeFromMidi` clamp to `CrossfadeMax`; `CrossfadeNormalized` = seconds/max |
 | **Normalization gain** | U | `CalculateNormalizedVolume` — disabled returns base; `DefaultVolume<0` returns base; `PerceivedLoudness<-50` returns base; gain = `DefaultVolume·10^((target−lufs)/20)` clamped |
 | Loudness pass | I | `CalculateSongLoudness` on generated tone/silence → LUFS ≈ expected; missing file → `TargetLoudness` |
-| Queue timings | U | `ComputeQueueTimings` sets “Playing Now”, cumulative wait times, mm:ss formatting |
+| Queue timings | U | `ComputeQueueTimings` sets “Playing Now”, cumulative wait times, mm:ss formatting; the `QueueChanged` announcement already carries the new timings (add + remove) |
 | Tick transitions | U | `ProcessTick`: remaining ≤ crossfade → begin crossfade; ≤ 0.15 → immediate; single track + playlist; repeat restarts (use injected clock/source) |
 | Ducking envelope | U | `FadeAnnouncementDuckingAsync` target factor = `10^(−|db|/20)` clamped 0.01–1; restore → 1; values applied to output over time (injected Delay) |
 | Announcement remote ops | U | toggle play-sound / push-to-talk, dim db adjust/set clamp 0–50 |
@@ -438,3 +439,17 @@ Document these (also in `docs/REMOVED-FEATURES.md`):
 - Photino window behaviour, drag-drop, focus, multi-window.
 - Update install on a real install (Windows `.bat`, macOS app bundle).
 - YouTube authentication end-to-end (browser cookies / yt-dlp network flows).
+
+**Photino closing contract** (verified by hand, not by CI — it needs a real GTK/WebKit
+display): `WindowClosing` handlers must `return true`, because Photino reads that as
+"do not close" (`NetClosingDelegate`). Returning false lets GTK destroy the widget, and
+Photino wires *every* toplevel window's GTK "destroy" signal to `gtk_main_quit()` — one
+closed sub-window then stops the single GTK main loop and the whole app exits. All
+sub-windows go through `NewUiWindow.RegisterHideOnClose`, which hides the window, keeps
+it for reopening and always returns true; the main window's handler does the same for
+"close to tray" and calls `Quit` (which exits the process) otherwise.
+
+Verified live with a real `WM_DELETE_WINDOW` (what a title-bar "X" produces): before the
+fix, closing the music player or visualization window exited the app; after it, the app
+keeps running and the window can be reopened (it is only hidden).
+
