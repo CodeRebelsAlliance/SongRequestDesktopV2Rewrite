@@ -55,13 +55,18 @@ adb install -r publish-android/net.bycra.songrequest-Signed.apk
 adb logcat -s SongRequest:D mono-stdout:D   # app + console output
 ```
 
-> **CI note (workload rollout failures).** If `dotnet workload install maui-android`
-> fails with `Version X of package microsoft.net.sdk.*.manifest-10.0.100 is not
-> found in NuGet feeds`, the advertised workload set is ahead of nuget.org. The
-> release workflow switches to manifests mode
-> (`dotnet workload config --update-mode manifests`) and installs with
-> `--skip-manifest-update`, which uses the SDK's bundled manifests. The same
-> command fixes a local machine in that state; `dotnet workload repair` after it.
+> **CI note (workload install failures).**
+>
+> - `Version X of package microsoft.net.sdk.*.manifest-10.0.100 is not found in
+>   NuGet feeds`: the advertised workload *set* is ahead of nuget.org (recent sets
+>   reference an unpublished iOS manifest). Switch to manifests mode
+>   (`dotnet workload config --update-mode manifests`) and install `maui-android`
+>   normally — it only resolves Android/Maui/Mono, never iOS.
+> - `Unable to find package Microsoft.NETCore.App.Runtime.Mono.linux-x64`: the
+>   Android workload is too old (36.1.2, the version bundled with the SDK). It
+>   predates the fix that stops `dotnet publish` from adding the Linux host RID.
+>   **Do not** install with `--skip-manifest-update`; the manifest update installs
+>   36.1.118, which is fixed.
 
 ### iOS (macOS only)
 

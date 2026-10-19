@@ -270,15 +270,17 @@ jobs:
       - name: Install the MAUI Android workload
         shell: bash
         run: |
-          # During a .NET servicing rollout the advertised workload *set* can point
-          # at manifests that are not on nuget.org yet, which aborts the install
-          # ("Version X of package ... is not found in NuGet feeds"). Manifests mode
-          # installs from the SDK's bundled, consistent manifests instead;
-          # --skip-manifest-update covers the same gap. The plain install remains a
-          # fallback for future SDKs.
+          # Install individual manifests instead of a workload *set*: recent sets
+          # (e.g. 10.0.402.1) advertise an iOS manifest that is not on nuget.org
+          # yet, which aborts the whole install. Manifests mode only resolves what
+          # maui-android needs (Android/Maui/Mono), never iOS.
+          #
+          # Do NOT pass --skip-manifest-update: the manifest bundled with the SDK is
+          # Android 36.1.2, which predates the Linux host-RID fix and makes publish
+          # request Microsoft.NETCore.App.Runtime.Mono.linux-x64 (NU1102). The
+          # update installs 36.1.118, which has the fix.
           dotnet workload config --update-mode manifests
-          dotnet workload install maui-android --skip-manifest-update \
-            || dotnet workload install maui-android
+          dotnet workload install maui-android
 
       # Fallback: keep the automatically generated debug keystore between runs.
       # A fresh debug key per run is what made Android answer "App not installed".
