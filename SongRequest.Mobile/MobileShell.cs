@@ -19,7 +19,7 @@ public sealed class MobileShell : IUiShell
         // The interop invokes these to push state into a "window". On mobile they
         // are dropped when the page is not resident; every page re-requests its
         // state when it loads, so nothing is lost permanently.
-        MusicPlayerSendMessage = json => _page.SendTo("musicplayer.html", json);
+        MusicPlayerSendMessage = json => _page.SendToMusic(json);
         PresentationSendMessage = json => _page.SendTo("presentation.html", json);
         SoundboardSendMessage = json => _page.SendTo("soundboard.html", json);
         VisualizationSendMessage = json => _page.SendTo("visualization.html", json);
@@ -27,7 +27,13 @@ public sealed class MobileShell : IUiShell
     }
 
     // ── Player ───────────────────────────────────────────────────────────────
-    public void ShowMusicPlayerWindow() => _page.Select("player");
+    public void ShowMusicPlayerWindow()
+    {
+        // In music mode the startup flow applies the mode (landing on Home) and
+        // then asks for the player window; that request must not skip Home.
+        if (_page.ConsumeInitialPlayerOpen()) return;
+        _page.Select("player");
+    }
 
     public void CloseMusicPlayerWindow()
     {
@@ -89,6 +95,11 @@ public sealed class MobileShell : IUiShell
         _page.SetImmersive(enabled);
         return true;
     }
+
+    /// <summary>
+    /// Rebuilds the mobile navigation for the operating mode chosen at startup.
+    /// </summary>
+    public void SetOperatingMode(StartupMode mode) => _page.ConfigureMode(mode);
 
     /// <summary>Quits the app (the web UI's Quit buttons).</summary>
     public void Close() => Application.Current?.Quit();

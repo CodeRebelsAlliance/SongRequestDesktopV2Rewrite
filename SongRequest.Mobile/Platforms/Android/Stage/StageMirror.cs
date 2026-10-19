@@ -23,7 +23,12 @@ internal static class StageMirror
             if (_server == null)
             {
                 if (!StageAssets.EnsureExtracted()) return;
-                _server = new StageServer(AppHost.Current!.Host.Music, StageAssets.WebRoot);
+                _server = new StageServer(AppHost.Current!.Host.Music, StageAssets.WebRoot)
+                {
+                    // A TV changing the zoom updates the setting the in-app page and
+                    // the HDMI mirror read too.
+                    ZoomChanged = zoom => AppHost.Current?.Interop.SetPresentationZoom(zoom),
+                };
             }
 
             var url = _server.Start();

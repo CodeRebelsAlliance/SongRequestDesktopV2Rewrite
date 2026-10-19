@@ -28,7 +28,7 @@
          must increase monotonically per release, so it is set explicitly
          (major*10000 + minor*100 + patch). -->
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
-    <ApplicationVersion>50400</ApplicationVersion>
+    <ApplicationVersion>50600</ApplicationVersion>
 
     <!-- Android 8.0 (API 26): the floor for media notifications and modern
          foreground services (the plan's recommended minimum). -->
@@ -45,6 +45,10 @@
     -->
     <MauiIcon Include="Resources\AppIcon\appicon.png" />
     <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#121212" BaseSize="128,128" />
+    <!-- Font Awesome 6 Free Solid: the native navigation-bar icons. The web UI
+         already vendors the same font (webfonts/*.woff2); Android/iOS need the
+         TrueType form. License text lives next to it. -->
+    <MauiFont Include="Resources\Fonts\*.ttf" />
   </ItemGroup>
 
   <ItemGroup>

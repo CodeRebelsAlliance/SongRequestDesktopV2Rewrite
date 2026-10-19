@@ -24,6 +24,10 @@ public static class MauiProgram
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
 
+        // Font Awesome solid: the Material-style navigation-bar icons (the web UI
+        // uses the same icon set, so the native bar matches it).
+        builder.ConfigureFonts(fonts => fonts.AddFont("FaSolid.ttf", "FaSolid"));
+
 #if DEBUG
         // Chrome DevTools / Safari Web Inspector for the embedded web UI.
         builder.Services.AddHybridWebViewDeveloperTools();

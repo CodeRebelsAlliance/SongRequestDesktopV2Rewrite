@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Controls.Shapes;
+using SongRequestDesktopV2Rewrite;
 
 namespace SongRequest.Mobile;
 
@@ -9,38 +12,57 @@ namespace SongRequest.Mobile;
 /// The mobile shell: one <see cref="HybridWebView"/> per UI page, a native tab
 /// bar, and the host side of the JSON bridge the web UI already speaks.
 ///
-/// Pages are created lazily and only <see cref="MaxResidentViews"/> of them stay
-/// alive (LRU): the desktop shows each page in its own OS window, mobile must not
-/// keep six web views resident on a phone.
+/// The tabs depend on the <b>operating mode</b> chosen at startup (see
+/// <see cref="ConfigureMode"/>): music mode gets Home/Library/Player/Queue, the
+/// request and soundboard modes keep the request-oriented pages.
 /// </summary>
 public sealed class MainPage : ContentPage
 {
-    /// <summary>Tab order of the native bottom bar.</summary>
-    private static readonly string[] TabOrder = { "requests", "player", "board", "stage" };
+    /// <summary>The touch-first music page used by every player tab on mobile.</summary>
+    public const string MobileMusicFile = "mobilemusic.html";
 
-    /// <summary>How many web views stay alive; the rest are disposed on tab switch.</summary>
-    private const int MaxResidentViews = 2;
+    /// <summary>The desktop music page (used by Music Share, which has its own modal).</summary>
+    private const string DesktopMusicFile = "musicplayer.html";
+
+    /// <summary>
+    /// How many web views stay alive. All tabs (and the alternate stage pages)
+    /// stay resident, so switching never reloads a page and loses its state.
+    /// <see cref="TrimResidentViews"/> drops the hidden ones under memory pressure.
+    /// </summary>
+    private const int MaxResidentViews = 6;
+
+    // Material Design 3 dark-theme tokens for the navigation bar.
+    private static readonly Color SurfaceContainer = Color.FromArgb("#211F26");
+    private static readonly Color ActiveIndicator = Color.FromArgb("#4A4458");
+    private static readonly Color ActiveIcon = Color.FromArgb("#E8DEF8");
+    private static readonly Color InactiveIcon = Color.FromArgb("#CAC4D0");
+    private static readonly Color ActiveLabel = Color.FromArgb("#E6E1E5");
+    private static readonly Color InactiveLabel = Color.FromArgb("#CAC4D0");
 
     private readonly Grid _content = new();
     private readonly Grid _tabBar = new();
-    private readonly Dictionary<string, Button> _buttons = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TabItem> _tabs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HybridWebView> _views = new(StringComparer.Ordinal);
     private readonly LinkedList<string> _recent = new();
     private readonly Dictionary<string, string> _destinationFile = new(StringComparer.Ordinal);
 
+    private string _mode = "SongRequests";
     private string _activeKey = "requests";
+    private string _baseKey = "requests";
     private string _currentFile = "index.html";
+    private bool _suppressNextPlayerOpen;
+
+    // Animated navigation-bar colours (derived from the current song's artwork).
+    private Color _barColor = SurfaceContainer;
+    private Color _pillColor = ActiveIndicator;
+    private Color _iconColor = ActiveIcon;
+    private Color _labelColor = ActiveLabel;
 
     /// <summary>Raised for every message a page sends to the host (page file, raw JSON).</summary>
     public event Action<string, string>? HostMessageReceived;
 
     public MainPage()
     {
-        _destinationFile["requests"] = "index.html";
-        _destinationFile["player"] = "musicplayer.html";
-        _destinationFile["board"] = "soundboard.html";
-        _destinationFile["stage"] = "presentation.html";
-
         BackgroundColor = Color.FromArgb("#121212");
         Title = "SongRequest";
 
@@ -59,16 +81,81 @@ public sealed class MainPage : ContentPage
             },
         };
         root.Add(_content, 0, 0);
-        root.Add(BuildTabBar(), 0, 1);
+        root.Add(_tabBar, 0, 1);
         Content = root;
 
-        Select("requests");
+        _tabBar.ColumnSpacing = 0;
+        _tabBar.Padding = new Thickness(0, 10, 0, 10);
+        _tabBar.BackgroundColor = SurfaceContainer;
+        _tabBar.HeightRequest = 80;
+
+        // The tabs are rebuilt from the operating mode; this shows the default
+        // (request) shell until the startup flow reports the chosen mode.
+        ConfigureMode(StartupMode.SongRequests);
     }
 
     /// <summary>The page file currently shown (used by the shell to route messages).</summary>
     public string CurrentFile => _currentFile;
 
-    /// <summary>Selects a tab by key ("requests", "player", "board", "stage").</summary>
+    /// <summary>The selected tab key (the music page uses it for its initial view).</summary>
+    public string CurrentTabKey => _activeKey;
+
+    /// <summary>The current operating mode (StartupMode name).</summary>
+    public string Mode => _mode;
+
+    /// <summary>
+    /// Rebuilds the navigation for an operating mode. Music mode gets the
+    /// touch-first pages (Home, Library, Player, Queue); the other modes keep the
+    /// request workflow.
+    /// </summary>
+    public void ConfigureMode(StartupMode mode)
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(() => ConfigureMode(mode));
+            return;
+        }
+
+        var name = mode.ToString();
+        if (string.Equals(name, _mode, StringComparison.Ordinal) && _tabs.Count > 0) return;
+
+        _mode = name;
+        var defs = TabsFor(mode);
+
+        _destinationFile.Clear();
+        foreach (var def in defs)
+            _destinationFile[def.Key] = def.File;
+
+        _tabs.Clear();
+        _tabBar.Children.Clear();
+        _tabBar.ColumnDefinitions.Clear();
+
+        for (int i = 0; i < defs.Count; i++)
+            _tabBar.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+
+        for (int i = 0; i < defs.Count; i++)
+            AddTab(defs[i], i);
+
+        // Music starts at home; the startup flow's "show the player" request must
+        // not pull the user out of it (see ConsumeInitialPlayerOpen).
+        _suppressNextPlayerOpen = mode == StartupMode.MusicPlayer;
+
+        _baseKey = defs[0].Key;
+        Select(defs[0].Key);
+    }
+
+    /// <summary>
+    /// True once for the startup flow: the mode was just applied and its first tab
+    /// is already the right screen.
+    /// </summary>
+    public bool ConsumeInitialPlayerOpen()
+    {
+        if (!_suppressNextPlayerOpen) return false;
+        _suppressNextPlayerOpen = false;
+        return true;
+    }
+
+    /// <summary>Selects a tab by key ("home", "library", "player", "queue", …).</summary>
     public void Select(string key)
     {
         if (!MainThread.IsMainThread)
@@ -79,10 +166,41 @@ public sealed class MainPage : ContentPage
             return;
         }
 
-        if (!_destinationFile.ContainsKey(key)) key = "requests";
+        if (!_destinationFile.ContainsKey(key)) key = _tabs.Keys.FirstOrDefault() ?? "requests";
+
+        if (key == "queue")
+        {
+            // The queue is a sidebar: tapping its tab again closes it and returns
+            // to the screen the user came from.
+            if (_activeKey == "queue")
+            {
+                Select(_baseKey);
+                return;
+            }
+
+            _baseKey = _activeKey;
+        }
+        else
+        {
+            _baseKey = key;
+        }
+
         _activeKey = key;
         ShowFile(_destinationFile[key]);
         UpdateTabBar();
+    }
+
+    /// <summary>Closes the queue sidebar by returning to the underlying tab.</summary>
+    public void RestoreBaseTab()
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(RestoreBaseTab);
+            return;
+        }
+
+        if (_activeKey != "queue") return;
+        Select(_baseKey);
     }
 
     /// <summary>Shows a page file, mapping it onto a tab (used for the stage views).</summary>
@@ -115,6 +233,18 @@ public sealed class MainPage : ContentPage
         catch { return false; }
     }
 
+    /// <summary>
+    /// Sends to whichever music page this mode uses (the touch UI, or the desktop
+    /// page in Music Share mode).
+    /// </summary>
+    public bool SendToMusic(string json)
+    {
+        if (_currentFile is MobileMusicFile or DesktopMusicFile)
+            return SendTo(_currentFile, json);
+
+        return SendTo(MobileMusicFile, json) || SendTo(DesktopMusicFile, json);
+    }
+
     /// <summary>Sends a JSON message to the currently visible page.</summary>
     public bool SendToCurrent(string json) => SendTo(_currentFile, json);
 
@@ -130,55 +260,185 @@ public sealed class MainPage : ContentPage
         _tabBar.IsVisible = !immersive;
     }
 
-    private Grid BuildTabBar()
+    /// <summary>
+    /// Tints the navigation bar with the two colours extracted from the song's
+    /// artwork. Null/empty restores the Material defaults.
+    /// </summary>
+    public void SetNavColors(string? primary, string? secondary)
     {
-        _tabBar.ColumnSpacing = 6;
-        _tabBar.Padding = new Thickness(8, 6, 8, 10);
-        _tabBar.BackgroundColor = Color.FromArgb("#1a1a1a");
-
-        for (int i = 0; i < TabOrder.Length; i++)
-            _tabBar.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-
-        for (int i = 0; i < TabOrder.Length; i++)
+        if (!MainThread.IsMainThread)
         {
-            var key = TabOrder[i];
-            var button = new Button
-            {
-                Text = TitleFor(key),
-                FontSize = 12,
-                CornerRadius = 10,
-                HeightRequest = 46,
-                Padding = new Thickness(4, 0),
-                BackgroundColor = Color.FromArgb("#2a2a2a"),
-                TextColor = Color.FromArgb("#a0a0a0"),
-            };
-            var captured = key;
-            button.Clicked += (_, _) => Select(captured);
-
-            _buttons[key] = button;
-            _tabBar.Add(button, i, 0);
+            MainThread.BeginInvokeOnMainThread(() => SetNavColors(primary, secondary));
+            return;
         }
 
-        return _tabBar;
+        var first = ParseColor(primary);
+        var second = ParseColor(secondary) ?? first;
+
+        Color targetBar, targetPill, targetIcon, targetLabel;
+        if (first == null)
+        {
+            targetBar = SurfaceContainer;
+            targetPill = ActiveIndicator;
+            targetIcon = ActiveIcon;
+            targetLabel = ActiveLabel;
+        }
+        else
+        {
+            targetPill = EnsureContrast(first, 0.28, 0.72);
+            targetBar = Mix(SurfaceContainer, second ?? first, 0.22);
+            targetIcon = Luminance(targetPill) > 0.55 ? Color.FromArgb("#141218") : Colors.White;
+            targetLabel = Mix(ActiveLabel, first, 0.30);
+        }
+
+        var fromBar = _barColor;
+        var fromPill = _pillColor;
+        var fromIcon = _iconColor;
+        var fromLabel = _labelColor;
+
+        this.AbortAnimation("navcolors");
+        new Animation(t =>
+        {
+            _barColor = Mix(fromBar, targetBar, t);
+            _pillColor = Mix(fromPill, targetPill, t);
+            _iconColor = Mix(fromIcon, targetIcon, t);
+            _labelColor = Mix(fromLabel, targetLabel, t);
+
+            _tabBar.BackgroundColor = _barColor;
+            foreach (var (key, tab) in _tabs)
+            {
+                var active = key == _activeKey;
+                tab.Indicator.BackgroundColor = active ? _pillColor : Colors.Transparent;
+                tab.Icon.Color = active ? _iconColor : InactiveIcon;
+                tab.Label.TextColor = active ? _labelColor : InactiveLabel;
+            }
+        }, 0, 1).Commit(this, "navcolors", 16, 650, Easing.CubicInOut);
     }
 
-    private static string TitleFor(string key) => key switch
+    // ── Tab bar ─────────────────────────────────────────────────────────────
+
+    private static IReadOnlyList<TabDef> TabsFor(StartupMode mode) => mode switch
     {
-        "player" => "Play",
-        "board" => "Board",
-        "stage" => "Stage",
-        _ => "Requests",
+        StartupMode.MusicPlayer => new[]
+        {
+            new TabDef("home", "Home", MobileMusicFile, "\uf015"),       // fa-house
+            new TabDef("library", "Library", MobileMusicFile, "\uf51f"), // fa-compact-disc
+            new TabDef("player", "Player", MobileMusicFile, "\uf025"),   // fa-headphones
+            new TabDef("queue", "Queue", MobileMusicFile, "\uf0ca"),     // fa-list-ul
+        },
+        // Music Share still uses the desktop player page: its share modal lives there.
+        StartupMode.MusicShare => new[]
+        {
+            new TabDef("player", "Player", DesktopMusicFile, "\uf025"),           // fa-headphones
+            new TabDef("board", "Board", "soundboard.html", "\uf569"),            // fa-drum
+            new TabDef("stage", "Stage", "presentation.html", "\uf26c"),          // fa-tv
+        },
+        StartupMode.Soundboard => new[]
+        {
+            new TabDef("board", "Board", "soundboard.html", "\uf569"),            // fa-drum
+            new TabDef("player", "Player", MobileMusicFile, "\uf025"),            // fa-headphones
+            new TabDef("stage", "Stage", "presentation.html", "\uf26c"),          // fa-tv
+        },
+        _ => new[]
+        {
+            new TabDef("requests", "Requests", "index.html", "\uf0ca"),           // fa-list-ul
+            new TabDef("player", "Player", MobileMusicFile, "\uf025"),            // fa-headphones
+            new TabDef("board", "Board", "soundboard.html", "\uf569"),            // fa-drum
+            new TabDef("stage", "Stage", "presentation.html", "\uf26c"),          // fa-tv
+        },
     };
+
+    private void AddTab(TabDef def, int column)
+    {
+        var icon = new FontImageSource
+        {
+            FontFamily = "FaSolid",
+            Glyph = def.Glyph,
+            Size = 24,
+            Color = InactiveIcon,
+        };
+
+        var indicator = new Border
+        {
+            WidthRequest = 64,
+            HeightRequest = 32,
+            Padding = 0,
+            StrokeThickness = 0,
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            BackgroundColor = Colors.Transparent,
+            HorizontalOptions = LayoutOptions.Center,
+            Content = new Image
+            {
+                Source = icon,
+                WidthRequest = 24,
+                HeightRequest = 24,
+                Aspect = Aspect.AspectFit,
+                HorizontalOptions = LayoutOptions.Center,
+                VerticalOptions = LayoutOptions.Center,
+            },
+        };
+
+        var label = new Label
+        {
+            Text = def.Title,
+            FontSize = 12,
+            TextColor = InactiveLabel,
+            HorizontalTextAlignment = TextAlignment.Center,
+            HorizontalOptions = LayoutOptions.Center,
+            LineBreakMode = LineBreakMode.NoWrap,
+        };
+
+        var item = new Grid
+        {
+            BackgroundColor = Colors.Transparent,
+            Children =
+            {
+                new VerticalStackLayout
+                {
+                    Spacing = 4,
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center,
+                    Children = { indicator, label },
+                },
+            },
+        };
+
+        SemanticProperties.SetDescription(item, def.Title + " tab");
+        AutomationProperties.SetIsInAccessibleTree(item, true);
+
+        var captured = def.Key;
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) =>
+        {
+            Select(captured);
+
+            // M3 has a state-layer ripple; a short press-in animation is the
+            // closest cross-platform equivalent without a native handler.
+            try
+            {
+                await item.ScaleToAsync(0.94, 60, Easing.CubicOut);
+                await item.ScaleToAsync(1.0, 90, Easing.CubicIn);
+            }
+            catch { }
+        };
+        item.GestureRecognizers.Add(tap);
+
+        _tabs[def.Key] = new TabItem { Indicator = indicator, Icon = icon, Label = label };
+        _tabBar.Add(item, column, 0);
+    }
 
     private void UpdateTabBar()
     {
-        foreach (var (key, button) in _buttons)
+        foreach (var (key, tab) in _tabs)
         {
             var active = key == _activeKey;
-            button.BackgroundColor = Color.FromArgb(active ? "#2a5a2a" : "#2a2a2a");
-            button.TextColor = Color.FromArgb(active ? "#ffffff" : "#a0a0a0");
+            tab.Indicator.BackgroundColor = active ? _pillColor : Colors.Transparent;
+            tab.Icon.Color = active ? _iconColor : InactiveIcon;
+            tab.Label.TextColor = active ? _labelColor : InactiveLabel;
         }
     }
+
+    // ── Pages ───────────────────────────────────────────────────────────────
 
     private void ShowFile(string file)
     {
@@ -189,6 +449,20 @@ public sealed class MainPage : ContentPage
 
         view.IsVisible = true;
         _currentFile = file;
+
+        // The music page has several views in one file; tell it which one this tab
+        // shows. (On its first load the page asks with mobileTabReady.)
+        if (string.Equals(file, MobileMusicFile, StringComparison.Ordinal))
+        {
+            var tab = _activeKey is "home" or "library" or "player" or "queue" ? _activeKey : "player";
+            try
+            {
+                view.SendRawMessage(
+                    "{\"type\":\"event\",\"eventName\":\"mobileTab\",\"data\":{\"tab\":\"" + tab +
+                    "\",\"mode\":\"" + _mode + "\"}}");
+            }
+            catch { }
+        }
 
         // Android pauses JavaScript in a hidden web view, so a page can miss host
         // events while another tab is in front (its promise may even time out).
@@ -227,20 +501,144 @@ public sealed class MainPage : ContentPage
         _recent.AddFirst(file);
     }
 
-    /// <summary>Disposes the least recently used views beyond the residency budget.</summary>
+    /// <summary>
+    /// Disposes views beyond the residency budget, preferring an alternate stage
+    /// page over a tab destination: switching to Visualization/Announcement must
+    /// not cost the Requests/Player/Board view (and with it their state).
+    /// </summary>
     private void EvictViews(string keep)
     {
-        while (_recent.Count > MaxResidentViews)
+        while (_views.Count > MaxResidentViews)
         {
-            var oldest = _recent.Last!.Value;
-            if (oldest == keep || oldest == _currentFile) break;
+            var candidates = _recent
+                .Where(file => file != keep && file != _currentFile)
+                .ToList();                      // newest first
 
-            _recent.RemoveLast();
-            if (_views.Remove(oldest, out var view))
+            var victim = candidates.FirstOrDefault(file => !IsTabDestination(file))
+                         ?? candidates.LastOrDefault();
+            if (victim == null) break;
+
+            _recent.Remove(victim);
+            DisposeView(victim);
+        }
+    }
+
+    private bool IsTabDestination(string file)
+        => _destinationFile.Values.Contains(file, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Drops every hidden web view. Called when Android reports memory pressure:
+    /// pages then load again on their next visit (their state is re-requested on
+    /// load), but normal tab switching never does.
+    /// </summary>
+    public void TrimResidentViews()
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(TrimResidentViews);
+            return;
+        }
+
+        foreach (var key in _views.Keys.ToList())
+        {
+            if (string.Equals(key, _currentFile, StringComparison.Ordinal)) continue;
+            DisposeView(key);
+        }
+    }
+
+    private void DisposeView(string key)
+    {
+        if (!_views.Remove(key, out var view)) return;
+
+        _recent.Remove(key);
+        try { _content.Remove(view); } catch { }
+        try { view.Handler?.DisconnectHandler(); } catch { }
+    }
+
+    // ── Colour helpers ──────────────────────────────────────────────────────
+
+    private static Color? ParseColor(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var text = value.Trim();
+
+        try
+        {
+            if (text.StartsWith('#')) return Color.FromArgb(text);
+
+            if (text.StartsWith("rgb", StringComparison.OrdinalIgnoreCase))
             {
-                try { _content.Remove(view); } catch { }
-                try { view.Handler?.DisconnectHandler(); } catch { }
+                var open = text.IndexOf('(');
+                var close = text.IndexOf(')');
+                if (open < 0 || close <= open) return null;
+
+                var parts = text[(open + 1)..close].Split(',');
+                if (parts.Length < 3) return null;
+
+                byte Channel(string part)
+                {
+                    var value = double.Parse(part.Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                    return (byte)Math.Clamp(Math.Round(value), 0, 255);
+                }
+
+                return Color.FromRgb(Channel(parts[0]), Channel(parts[1]), Channel(parts[2]));
             }
         }
+        catch
+        {
+            // Unparsable colour: keep the current scheme.
+        }
+
+        return null;
+    }
+
+    private static Color Mix(Color from, Color to, double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return new Color(
+            (float)(from.Red + (to.Red - from.Red) * t),
+            (float)(from.Green + (to.Green - from.Green) * t),
+            (float)(from.Blue + (to.Blue - from.Blue) * t),
+            1f);
+    }
+
+    private static double Luminance(Color color)
+        => 0.299 * color.Red + 0.587 * color.Green + 0.114 * color.Blue;
+
+    /// <summary>Keeps a song colour readable on the small indicator pill.</summary>
+    private static Color EnsureContrast(Color color, double min, double max)
+    {
+        var luminance = Luminance(color);
+
+        if (luminance < min && luminance > 0.001)
+        {
+            var factor = min / luminance;
+            return new Color(
+                (float)Math.Min(1, color.Red * factor),
+                (float)Math.Min(1, color.Green * factor),
+                (float)Math.Min(1, color.Blue * factor),
+                1f);
+        }
+
+        if (luminance > max)
+        {
+            var factor = max / luminance;
+            return new Color(
+                (float)(color.Red * factor),
+                (float)(color.Green * factor),
+                (float)(color.Blue * factor),
+                1f);
+        }
+
+        return color;
+    }
+
+    private sealed record TabDef(string Key, string Title, string File, string Glyph);
+
+    private sealed class TabItem
+    {
+        public Border Indicator { get; init; } = null!;
+        public FontImageSource Icon { get; init; } = null!;
+        public Label Label { get; init; } = null!;
     }
 }

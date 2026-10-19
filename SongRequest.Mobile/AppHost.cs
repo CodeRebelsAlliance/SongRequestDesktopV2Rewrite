@@ -20,6 +20,9 @@ public sealed class AppHost : IDisposable
 
     public HeadlessHost Host { get; }
     public YoutubeFormInterop Interop { get; }
+
+    /// <summary>The shell page (used by the activity to react to memory pressure).</summary>
+    public MainPage Page => _page;
     public MobileShell Shell { get; }
 
     public AppHost(MainPage page)
@@ -87,12 +90,65 @@ public sealed class AppHost : IDisposable
     {
         try
         {
+            // Shell-level messages of the touch music page (which tab it should
+            // show, the queue sidebar, the navigation-bar colours). They belong to
+            // the mobile shell, not to the shared interop.
+            if (TryHandleShellMessage(file, message)) return;
+
             Interop.HandleMessage(message, json => RunOnUi(() => _page.SendTo(file, json)));
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Interop failed for {file}: {ex}");
         }
+    }
+
+    private bool TryHandleShellMessage(string file, string message)
+    {
+        Newtonsoft.Json.Linq.JObject request;
+        try { request = Newtonsoft.Json.Linq.JObject.Parse(message); }
+        catch { return false; }
+
+        if (request["type"]?.ToString() != "request") return false;
+
+        var method = request["method"]?.ToString();
+        object? result;
+
+        switch (method)
+        {
+            case "mobileReady":
+                result = new { tab = _page.CurrentTabKey, mode = _page.Mode };
+                break;
+
+            case "mobileOpenPlayer":
+                _page.Select("player");
+                result = new { success = true };
+                break;
+
+            case "mobileQueueClosed":
+                _page.RestoreBaseTab();
+                result = new { success = true };
+                break;
+
+            case "setNavColors":
+                _page.SetNavColors(
+                    request["primary"]?.ToString(),
+                    request["secondary"]?.ToString());
+                result = new { success = true };
+                break;
+
+            default:
+                return false;
+        }
+
+        var id = request["id"];
+        if (id != null)
+        {
+            var response = Newtonsoft.Json.JsonConvert.SerializeObject(new { type = "response", id, result });
+            RunOnUi(() => _page.SendTo(file, response));
+        }
+
+        return true;
     }
 
     private static void RunOnUi(Action action)

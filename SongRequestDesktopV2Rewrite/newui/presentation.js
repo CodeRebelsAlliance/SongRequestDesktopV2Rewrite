@@ -30,6 +30,11 @@
   var currentArtist = '';
   var lyricsFontScale = 1.0;
   var lyricsHidden = false;
+  var presentationZoom = 1.0;
+  var ZOOM_MIN = 0.5;
+  var ZOOM_MAX = 2.0;
+  var ZOOM_STEP = 0.1;
+  var ZOOM_STORAGE_KEY = 'sr-presentation-zoom';
   var currentSource = 'player';
   var qrInstance = null;
 
@@ -338,7 +343,63 @@
     presLyrics.style.setProperty('--lyric-prev', prev + 'px');
   }
 
+  // ── Zoom ──
+  // Applied to #presentation-root; the controls themselves stay unscaled so they
+  // remain usable on a TV at any zoom level.
+  function clampZoom(value) {
+    if (!isFinite(value)) return 1.0;
+    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value * 100) / 100));
+  }
+
+  function applyZoom(value, notify) {
+    presentationZoom = clampZoom(value);
+
+    if (presRoot) presRoot.style.setProperty('--pres-zoom', String(presentationZoom));
+
+    var valueEl = document.getElementById('pres-zoom-value');
+    if (valueEl) valueEl.textContent = Math.round(presentationZoom * 100) + '%';
+
+    try { localStorage.setItem(ZOOM_STORAGE_KEY, String(presentationZoom)); } catch (_) { }
+
+    if (notify) {
+      // Persisted by the host, so the TV, the HDMI mirror and the phone agree.
+      SongRequestHost.sendToHost(JSON.stringify({
+        type: 'request',
+        method: 'setPresentationZoom',
+        zoom: presentationZoom
+      }));
+    }
+  }
+
+  function restoreZoom() {
+    var stored = null;
+    try { stored = localStorage.getItem(ZOOM_STORAGE_KEY); } catch (_) { }
+    applyZoom(stored == null ? 1.0 : parseFloat(stored), false);
+  }
+
+  function wireZoomControls() {
+    var out = document.getElementById('pres-zoom-out');
+    var into = document.getElementById('pres-zoom-in');
+    var valueEl = document.getElementById('pres-zoom-value');
+
+    if (out) out.addEventListener('click', function () { applyZoom(presentationZoom - ZOOM_STEP, true); });
+    if (into) into.addEventListener('click', function () { applyZoom(presentationZoom + ZOOM_STEP, true); });
+    if (valueEl) valueEl.addEventListener('click', function () { applyZoom(1.0, true); });
+
+    // Handy with a keyboard/remote that can type: +/- and 0 to reset.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === '+' || e.key === '=') applyZoom(presentationZoom + ZOOM_STEP, true);
+      else if (e.key === '-' || e.key === '_') applyZoom(presentationZoom - ZOOM_STEP, true);
+      else if (e.key === '0') applyZoom(1.0, true);
+    });
+  }
+
   function applyLyricsSettings(data) {
+    if (data.presentationZoom != null) {
+      // The host value wins over the locally stored one: it is the value the TV,
+      // the HDMI mirror and the phone's own stage page share.
+      applyZoom(data.presentationZoom, false);
+    }
     if (data.lyricsFontScale != null) {
       lyricsFontScale = data.lyricsFontScale;
       updateLyricFontSizes();
@@ -470,6 +531,10 @@
           renderQueue(data);
         } else if (name === 'stageServer') {
           showStageServer(data);
+        } else if (name === 'refresh') {
+          // Sent when the page becomes visible again after Android paused its JS.
+          // Re-request the current state (now playing, lyrics, settings).
+          hostSend('presentationReady');
         }
       }
     } catch (_) {}
@@ -527,6 +592,10 @@
   });
 
   updateFullscreenIcon();
+
+  // Zoom before the first paint, then let the host's stored setting confirm it.
+  restoreZoom();
+  wireZoomControls();
 
   // Ready
   hostSend('presentationReady');

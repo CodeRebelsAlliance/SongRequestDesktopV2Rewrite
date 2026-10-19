@@ -57,6 +57,13 @@ public interface ISongRequestHost
     string? GetCachedCreator(string videoId);
     long GetCachedDurationTicks(string videoId);
 
+    /// <summary>
+    /// Raised after a background (automatic request) download produced a playable
+    /// file: (videoId, filePath). The interop uses it for the "add downloads to the
+    /// library automatically" setting, which the fetch loop used to bypass.
+    /// </summary>
+    Action<string, string>? SongDownloaded { get; set; }
+
     Task AddVideoPanelAsync(string videoUrl, DateTime? timestamp = null, string? message = null, bool? isApproved = null);
     Task QueueSongById(string videoId);
     Task PlayNextById(string videoId);

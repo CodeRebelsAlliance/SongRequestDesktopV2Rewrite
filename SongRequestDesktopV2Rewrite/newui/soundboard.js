@@ -91,9 +91,19 @@
   }
 
   // ── State / rendering ──────────────────────────────────────────
+  var lastStateSignature = '';
+
   async function refreshState() {
     try {
-      state = await send('soundboardGetState');
+      var next = await send('soundboardGetState');
+      var signature = JSON.stringify(next);
+
+      // A tab switch/resume must not rebuild an unchanged grid (that flashed the
+      // whole board); state events keep the live parts up to date.
+      if (signature === lastStateSignature) return;
+      lastStateSignature = signature;
+
+      state = next;
       renderToolbar();
       renderGrid();
       renderBottomBar();

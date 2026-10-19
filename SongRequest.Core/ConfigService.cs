@@ -39,6 +39,7 @@ namespace SongRequestDesktopV2Rewrite
         private float _lyricsFontScale = 1.0f;
         private bool _lyricsHidden = false;
         private string _presentationSource = "player";
+        private double _presentationZoom = 1.0;
         private bool _autoStart = false;
         private bool _startMinimized = false;
         private bool _minimizeToTray = false;
@@ -232,6 +233,17 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _presentationSource;
             set => SetField(ref _presentationSource, value);
+        }
+
+        /// <summary>
+        /// Zoom factor for the presentation screen on a TV, an HDMI display and the
+        /// in-app stage tab. Stored with the settings so every screen shows the same
+        /// scale (a TV browser and the HDMI WebView cannot share storage).
+        /// </summary>
+        public double PresentationZoom
+        {
+            get => _presentationZoom;
+            set => SetField(ref _presentationZoom, Math.Clamp(value, 0.5, 2.0));
         }
 
         /// <summary>Start the app automatically at login (see <see cref="AutoStart"/>).</summary>

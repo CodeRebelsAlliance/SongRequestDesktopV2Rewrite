@@ -693,6 +693,55 @@ port; they affect the desktop app too):
   `downloadAndProcess`). The word filter no longer re-registers its click handler
   on every poll.
 
+**Mobile shell polish** ✅:
+- **Tabs keep their state**: all four tab pages (plus the alternate stage pages)
+  stay resident. The old two-view LRU reloaded a page — losing scroll position,
+  search text, active sub-tab and filters — as soon as a third tab had been
+  opened. Hidden views are now only dropped when Android reports memory pressure
+  (`MainActivity.OnTrimMemory`), and when the budget is exceeded the alternate
+  stage pages (visualization/announcement) are evicted before a tab destination.
+- **Material Design 3 navigation bar**: 80dp surface-container bar with four equal
+  destinations, a 64×32 active indicator in the secondary-container role, 24dp
+  icons and 12sp labels (on-surface / on-surface-variant), a short press
+  animation and accessibility labels. Icons use the Font Awesome solid TTF the
+  web UI already vendors (`Resources/Fonts/FaSolid.ttf`, OFL text beside it).
+- **Tab activation no longer rebuilds unchanged pages**: the player feed and the
+  soundboard grid re-render only when the library/state really changed; the
+  presentation page re-requests its current state (now playing, lyrics, settings).
+- **Presentation zoom (50–200%)**: the stage page has on-screen − / 100% / +
+  controls and `+`/`-`/`0` shortcuts. The value is stored in
+  `ConfigService.PresentationZoom`, so the in-app stage tab, the HDMI mirror and
+  a TV browser agree: `/state` carries it, a TV can change it through
+  `POST /command` (the only command the stage server accepts from the LAN), and
+  the in-app page is updated by broadcast. The stage content scales from the
+  top-left (`--pres-zoom`), while the controls stay at normal size.
+
+**Mode-aware mobile UI** ✅:
+- **Operating mode drives the navigation.** `IUiShell.SetOperatingMode(StartupMode)`
+  is applied from `completeSetup`, and `MainPage` rebuilds the bar for it:
+  - Music Player → **Home / Library / Player / Queue** (all one touch-first page),
+  - Song Requests → Requests / Player / Board / Stage,
+  - Soundboard → Board / Player / Stage,
+  - Music Share keeps the desktop player page (its share modal lives there).
+- **`newui/mobilemusic.html` is a purpose-built touch UI** (not the desktop layout in
+  a phone): compact 44px headers, one search bar, horizontally scrolling rows,
+  a compact mini player for browsing, and a right-hand **queue sidebar** (the Queue
+  tab opens it; tapping it again or the scrim closes it and returns to the
+  previous tab).
+- **Expanded player**: lyrics hidden by default; large centred artwork over the
+  animated two-colour background, title/artist below, seek bar below, controls at
+  the bottom. The Lyrics toggle (top right) shrinks the artwork into the top-left,
+  moves title/artist beside it and gives the rest of the screen to the lyrics
+  (synced highlighting + auto-scroll).
+- **Navigation bar colours follow the song**: the page extracts the same two
+  dominant colours the player background uses and sends them to the shell
+  (`setNavColors`); the native M3 bar animates its surface tint, active indicator
+  and active icon/label to them (Material colours when nothing is playing).
+- **Automatic downloads now honour "add to library"**: the fetch loop raised no
+  library import at all (only the manual download button did). `HeadlessHost`
+  raises `SongDownloaded`, the interop imports the song (with cached artwork) and
+  notifies the music page — on both platforms.
+
 **In-app updater (Android) — done ahead of the rest of M8** ✅:
 - `UpdateService` knows the mobile platforms: `CurrentPlatform()` returns
   `android`/`ios`, and the expected release asset is `SongRequest-android.apk`

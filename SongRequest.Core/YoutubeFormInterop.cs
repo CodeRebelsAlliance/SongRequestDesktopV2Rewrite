@@ -142,6 +142,7 @@ public class YoutubeFormInterop
         _ytForm = ytForm;
         _ytService = ytService;
         _ytForm.EventSink = SendEvent;
+        _ytForm.SongDownloaded = TryAutoAddDownloadedSong;
         _libraryService = new LibraryService();
 
         // Marshal host operations through the host (WPF dispatcher today; headless host later).
@@ -294,6 +295,14 @@ public class YoutubeFormInterop
                         SendPresentationCurrentState();
                     });
                     SendResponse(id, new { success = true });
+                    return;
+                }
+                case "setPresentationZoom":
+                {
+                    var requested = msg["zoom"] ?? msg["data"]?["zoom"];
+                    var zoom = requested == null ? 1.0 : requested.ToObject<double>();
+                    SetPresentationZoom(zoom);
+                    SendResponse(id, new { success = true, zoom = Math.Clamp(zoom, 0.5, 2.0) });
                     return;
                 }
                 case "setPresentationSource":
@@ -3006,6 +3015,10 @@ public class YoutubeFormInterop
             {
                 RunOnUi(() =>
                 {
+                    // Mobile shells choose their navigation from the mode before the
+                    // mode itself opens its first window/tab.
+                    try { _ytForm.NewUiRef?.SetOperatingMode(mode); } catch { }
+
                     switch (mode)
                     {
                         case StartupMode.MusicPlayer:
@@ -4488,6 +4501,66 @@ public class YoutubeFormInterop
         return idx >= 0 ? s.Substring(idx + 8) : s;
     }
 
+    /// <summary>
+    /// "Add downloads to the library automatically": applies to the automatic
+    /// request pipeline as well as the manual download button.
+    /// </summary>
+    private void TryAutoAddDownloadedSong(string videoId, string filePath)
+    {
+        if (ConfigService.Instance.Current?.LibraryAutoAddDownloads != true) return;
+        if (string.IsNullOrEmpty(videoId) || string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return;
+
+        try
+        {
+            var data = _ytForm.GetOrCreateVideoData(videoId);
+            var videoUrl = $"https://www.youtube.com/watch?v={videoId}";
+
+            var song = _libraryService.ImportDownloadedSong(
+                filePath, videoId, videoUrl, data.Title, data.Creator);
+
+            if (song == null) return;   // already in the library
+
+            // Artwork from the shared cache (already downloaded for the list).
+            _ = AttachLibraryArtworkAsync(song.Id, videoId);
+            MusicPlayerSendEvent("libraryChanged", new { songId = song.Id });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Auto-add to library failed: {ex.Message}");
+        }
+    }
+
+    private async Task AttachLibraryArtworkAsync(string songId, string videoId)
+    {
+        try
+        {
+            var bytes = await GetOrDownloadThumbnailBytesAsync(videoId).ConfigureAwait(false);
+            if (bytes == null || bytes.Length == 0) return;
+
+            var song = _libraryService.Data.FindSong(songId);
+            if (song == null) return;
+
+            song.ThumbnailPath = _libraryService.SaveSongThumbnail(songId, bytes);
+            _libraryService.Save();
+            MusicPlayerSendEvent("libraryChanged", new { songId });
+        }
+        catch
+        {
+            // Artwork is optional; the song is already in the library.
+        }
+    }
+
+    /// <summary>
+    /// Persists the presentation zoom (0.5–2.0) and tells the open presentation
+    /// page about it. TV/HDMI clients pick it up from the stage server's state.
+    /// </summary>
+    public void SetPresentationZoom(double zoom)
+    {
+        zoom = Math.Clamp(zoom, 0.5, 2.0);
+        ConfigService.Instance.Update(cfg => cfg.PresentationZoom = zoom);
+        PresentationSendEvent("presentationSettings", new { presentationZoom = zoom });
+    }
+
     private void PresentationSendEvent(string eventName, object? data)
     {
         var presSend = _ytForm.NewUiRef?.PresentationSendMessage;
@@ -4512,7 +4585,8 @@ public class YoutubeFormInterop
             lyricsFontScale = (double)(cfg?.LyricsFontScale ?? 1.0f),
             lyricsHidden = cfg?.LyricsHidden ?? false,
             requestUrl = cfg?.RequestUrl ?? "",
-            presentationSource = cfg?.PresentationSource ?? "player"
+            presentationSource = cfg?.PresentationSource ?? "player",
+            presentationZoom = Math.Clamp(cfg?.PresentationZoom ?? 1.0, 0.5, 2.0)
         });
 
         var source = cfg?.PresentationSource ?? "player";

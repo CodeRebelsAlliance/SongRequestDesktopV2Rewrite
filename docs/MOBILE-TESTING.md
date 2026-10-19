@@ -230,6 +230,34 @@ and notification; `adb shell dumpsys activity services` reported
 - [x] Linux smoke test: start the app, expect `[SongRequest] tray: created` and no
       `*.marker` files left in `~/.local/share/SongRequestDesktopV2Rewrite`.
 
+### Shell polish — ✅ verified on the emulator
+
+- [x] Bottom bar renders as an M3 navigation bar (active pill indicator, icon +
+      label, correct colours) and each tab switches instantly.
+- [x] State survives tab switches: type in the Requests search box, visit Play and
+      Board, come back — the text and active chip are still there (the old build
+      reloaded the page).
+- [x] Stage zoom: `−`/`100%`/`+` scale the presentation, the value is stored
+      (`PresentationZoom` in `config.json`), and after a restart the page restores
+      it. `/state` reports it and `POST /command {"method":"setPresentationZoom",
+      "zoom":1.2}` from a browser updates all screens; `/command` ignores every
+      other method.
+- [x] A TV browser (Chrome on the emulator) renders the served page with the
+      zoom control and the stored scale.
+
+### Mode-aware UI — ✅ verified on the emulator
+
+- [x] Choosing **Music Player** at startup switches the bottom bar to
+      Home / Library / Player / Queue, landing on Home with its search bar.
+- [x] Player layout: big centred artwork, title/artist, seek, controls; Lyrics
+      hidden until the top-right toggle is pressed, then artwork shrinks to the
+      top-left and the lyrics area fills the screen.
+- [x] Queue opens as a right-hand sidebar over the current screen; the Queue tab
+      toggles it and closing restores the previous tab.
+- [x] Automatic request downloads appear in the library when
+      *Settings → Library → add downloads automatically* is on (host event
+      `SongDownloaded`).
+
 ## 4. Known toolchain constraints
 
 - **iOS builds need macOS** — the workload is unavailable elsewhere; the

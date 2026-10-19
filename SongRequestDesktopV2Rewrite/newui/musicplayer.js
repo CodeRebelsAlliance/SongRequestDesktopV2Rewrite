@@ -379,6 +379,7 @@
   }
 
   var homeFeedGeneration = 0;
+  var homeFeedLibraryCount = -1;
 
   function loadHomeFeed(force) {
     // A forced reload must win over a request that is still in flight (an
@@ -392,6 +393,7 @@
     if (librarySongCount === 0) {
       // Nothing to fetch yet: show the empty state (with its import button).
       homeFeedData = {};
+      homeFeedLibraryCount = 0;
       if (homeLoadingEl) homeLoadingEl.style.display = 'none';
       if (homeEmptyEl) homeEmptyEl.style.display = '';
       return;
@@ -406,6 +408,7 @@
       if (generation !== homeFeedGeneration) return;   // superseded
       homeFeedLoading = false;
       homeFeedData = feed || {};
+      homeFeedLibraryCount = librarySongCount;
       if (homeLoadingEl) homeLoadingEl.style.display = 'none';
       renderHomeFeed(homeFeedData);
     }).catch(function() {
@@ -946,8 +949,16 @@
       case 'refresh':
         // Sent when this page becomes visible again (Android pauses JS in a
         // hidden web view, so events that arrived meanwhile may have been queued).
-        refreshLibrarySongCount().then(function() { loadHomeFeed(true); });
-        loadRecentlyPlayed();
+        // Do NOT rebuild the feed unconditionally: that reset the scroll position
+        // and flashed the artwork on every tab switch. Reload only when the
+        // library itself changed while the page was hidden; now-playing state is
+        // pushed continuously.
+        (function() {
+          var previousCount = homeFeedLibraryCount;
+          refreshLibrarySongCount().then(function(count) {
+            if (homeFeedData == null || count !== previousCount) loadHomeFeed(true);
+          });
+        })();
         break;
       case 'libraryChanged':
         // An import/scan elsewhere changed the library this feed is built from.

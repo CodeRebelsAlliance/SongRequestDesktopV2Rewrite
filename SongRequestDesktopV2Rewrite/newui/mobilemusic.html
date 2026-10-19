@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Music - SongRequest</title>
+<link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="mobilemusic.css">
+</head>
+<body>
+<div id="mm-app">
+
+  <div id="mm-views">
+
+    <!-- ─────────────── HOME ─────────────── -->
+    <section class="mm-view" id="mm-view-home">
+      <header class="mm-header">
+        <div class="mm-brand"><img src="SRshortLogo.png" alt=""><span>Music</span></div>
+      </header>
+
+      <div class="mm-search">
+        <i class="fas fa-search"></i>
+        <input id="mm-home-search" type="search" placeholder="Search your library" autocomplete="off" spellcheck="false">
+        <button id="mm-home-clear" class="mm-icon-btn" hidden aria-label="Clear search"><i class="fas fa-times"></i></button>
+      </div>
+
+      <div class="mm-scroll" id="mm-home-scroll">
+        <div id="mm-home-results" class="mm-list" hidden></div>
+
+        <div id="mm-home-feed">
+          <div id="mm-home-loading" class="mm-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Loading…</span></div>
+
+          <div id="mm-home-empty" class="mm-empty" hidden>
+            <i class="fas fa-compact-disc"></i>
+            <span>Your library is empty</span>
+            <button id="mm-home-import" class="mm-btn"><i class="fas fa-folder-plus"></i> Import music</button>
+          </div>
+
+          <section class="mm-row" id="mm-row-recent" hidden>
+            <h3>Recently played</h3>
+            <div class="mm-scroller" id="mm-recent"></div>
+          </section>
+
+          <section class="mm-row" id="mm-row-playlists" hidden>
+            <h3>Playlists</h3>
+            <div class="mm-scroller" id="mm-playlists"></div>
+          </section>
+
+          <section class="mm-row" id="mm-row-recommended" hidden>
+            <h3>Recommended</h3>
+            <div class="mm-scroller" id="mm-recommended"></div>
+          </section>
+
+          <section class="mm-row" id="mm-row-new" hidden>
+            <h3>New in your library</h3>
+            <div class="mm-scroller" id="mm-new"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────── LIBRARY ─────────────── -->
+    <section class="mm-view" id="mm-view-library" hidden>
+      <header class="mm-header"><h1>Library</h1></header>
+
+      <div class="mm-chips">
+        <button class="mm-chip is-active" data-lib="songs">Songs</button>
+        <button class="mm-chip" data-lib="recent">Recently played</button>
+        <button class="mm-chip" data-lib="playlists">Playlists</button>
+      </div>
+
+      <div class="mm-search" id="mm-lib-search-wrap">
+        <i class="fas fa-search"></i>
+        <input id="mm-lib-search" type="search" placeholder="Filter songs" autocomplete="off" spellcheck="false">
+      </div>
+
+      <div class="mm-scroll" id="mm-library-scroll">
+        <div id="mm-lib-songs" class="mm-list"></div>
+        <div id="mm-lib-recent" class="mm-list" hidden></div>
+        <div id="mm-lib-playlists" class="mm-list" hidden></div>
+        <div class="mm-more" id="mm-lib-more-wrap" hidden>
+          <button id="mm-lib-more" class="mm-btn">Load more</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────── PLAYER ─────────────── -->
+    <section class="mm-view mm-player" id="mm-view-player" hidden>
+      <div id="mm-player-bg"></div>
+
+      <div class="mm-player-top">
+        <button id="mm-lyrics-toggle" class="mm-pill-btn" aria-pressed="false">
+          <i class="fas fa-align-left"></i><span>Lyrics</span>
+        </button>
+      </div>
+
+      <div class="mm-hero">
+        <div id="mm-art-wrap">
+          <img id="mm-art" alt="" hidden>
+          <i class="fas fa-music" id="mm-art-placeholder"></i>
+        </div>
+        <div class="mm-meta">
+          <div id="mm-title">Nothing playing</div>
+          <div id="mm-artist">—</div>
+        </div>
+      </div>
+
+      <div id="mm-lyrics" class="mm-lyrics" hidden></div>
+
+      <div class="mm-player-bottom">
+        <div class="mm-seek">
+          <span id="mm-cur">0:00</span>
+          <input id="mm-seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+          <span id="mm-total">0:00</span>
+        </div>
+        <div class="mm-controls">
+          <button id="mm-prev" class="mm-icon-btn mm-lg" aria-label="Previous"><i class="fas fa-backward-step"></i></button>
+          <button id="mm-play" class="mm-play-btn" aria-label="Play"><i class="fas fa-play"></i></button>
+          <button id="mm-next" class="mm-icon-btn mm-lg" aria-label="Next"><i class="fas fa-forward-step"></i></button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ─────────────── MINI PLAYER ─────────────── -->
+  <div id="mm-mini" hidden>
+    <img id="mm-mini-art" alt="" hidden>
+    <div class="mm-mini-text">
+      <div id="mm-mini-title">Nothing playing</div>
+      <div id="mm-mini-artist"></div>
+    </div>
+    <button id="mm-mini-play" class="mm-icon-btn" aria-label="Play"><i class="fas fa-play"></i></button>
+    <button id="mm-mini-next" class="mm-icon-btn" aria-label="Next"><i class="fas fa-forward-step"></i></button>
+  </div>
+
+  <!-- ─────────────── QUEUE SIDEBAR ─────────────── -->
+  <div id="mm-queue-scrim" hidden></div>
+  <aside id="mm-queue" hidden aria-label="Queue">
+    <header>
+      <h2>Queue</h2>
+      <button id="mm-queue-close" class="mm-icon-btn" aria-label="Close"><i class="fas fa-times"></i></button>
+    </header>
+    <div class="mm-queue-actions">
+      <button id="mm-queue-clear" class="mm-btn mm-quiet"><i class="fas fa-trash-alt"></i> Clear queue</button>
+    </div>
+    <div class="mm-scroll" id="mm-queue-scroll">
+      <div id="mm-queue-list" class="mm-list"></div>
+    </div>
+  </aside>
+
+</div>
+
+<script src="_framework/hybridwebview.js"></script>
+<script src="hostbridge.js"></script>
+<script src="mobilemusic.js"></script>
+</body>
+</html>

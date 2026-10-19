@@ -47,6 +47,13 @@ public interface IUiShell
     /// </summary>
     bool SetSubWindowFullscreen(string? windowName, bool enabled);
 
+    /// <summary>
+    /// Applies the operating mode chosen at startup (song requests, music player,
+    /// music share, soundboard). Mobile shells rebuild their navigation for it; the
+    /// desktop has fixed windows, so the default implementation does nothing.
+    /// </summary>
+    void SetOperatingMode(StartupMode mode) { }
+
     /// <summary>Closes the whole application (the web UI's Quit buttons).</summary>
     void Close();
 }

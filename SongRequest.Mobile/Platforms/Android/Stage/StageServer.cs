@@ -45,6 +45,12 @@ internal sealed class StageServer : IDisposable
     /// <summary>LAN URL a TV should open, e.g. <c>http://192.168.1.5:8099/</c>.</summary>
     public string? Url { get; private set; }
 
+    /// <summary>
+    /// Called when a TV browser changes the presentation zoom, so the in-app page
+    /// and the HDMI mirror can be updated too.
+    /// </summary>
+    public Action<double>? ZoomChanged { get; set; }
+
     public bool IsRunning => _listener != null;
 
     /// <summary>Starts the server (idempotent) and returns its URL.</summary>
@@ -113,7 +119,7 @@ internal sealed class StageServer : IDisposable
             var request = await ReadRequestAsync(stream).ConfigureAwait(false);
             if (request == null) return;
 
-            var (method, path, query) = request.Value;
+            var (method, path, query, body) = request.Value;
 
             if (method == "GET" && (path == "/" || path == "/index.html"))
             {
@@ -129,8 +135,10 @@ internal sealed class StageServer : IDisposable
             }
             else if (method == "POST" && path == "/command")
             {
-                // The page's requests (ready/fullscreen) need no server-side action:
-                // everything it displays is pushed by the state poll.
+                // Everything the page displays is pushed by the state poll, but the
+                // zoom is a setting the TV itself may change. It is the only command
+                // accepted from the LAN — this port must never be a remote control.
+                HandleCommand(body);
                 await WriteTextAsync(stream, "application/json; charset=utf-8", "{\"success\":true}").ConfigureAwait(false);
             }
             else if (method == "GET")
@@ -151,29 +159,94 @@ internal sealed class StageServer : IDisposable
         }
     }
 
-    private static async Task<(string Method, string Path, string Query)?> ReadRequestAsync(NetworkStream stream)
+    private static async Task<(string Method, string Path, string Query, string Body)?> ReadRequestAsync(NetworkStream stream)
     {
         var buffer = new byte[8192];
-        var text = new StringBuilder();
+        var received = new MemoryStream();
         var deadline = DateTime.UtcNow.AddSeconds(5);
+        var headerEnd = -1;
+        string text = string.Empty;
 
         while (DateTime.UtcNow < deadline)
         {
             int read = await stream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false);
             if (read <= 0) break;
 
-            text.Append(Encoding.ASCII.GetString(buffer, 0, read));
-            if (text.ToString().Contains("\r\n\r\n", StringComparison.Ordinal)) break;
-            if (text.Length > 32 * 1024) break;
+            received.Write(buffer, 0, read);
+            text = Encoding.ASCII.GetString(received.ToArray());
+            headerEnd = text.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+            if (headerEnd >= 0) break;
+            if (received.Length > 32 * 1024) break;
         }
 
-        var first = text.ToString().Split("\r\n")[0].Split(' ');
+        if (headerEnd < 0) return null;
+
+        var lines = text[..headerEnd].Split("\r\n");
+        var first = lines[0].Split(' ');
         if (first.Length < 2) return null;
+
+        // Only the command body is read (bounded): every other request is a GET.
+        var contentLength = 0;
+        foreach (var line in lines)
+        {
+            if (!line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) continue;
+            if (int.TryParse(line["Content-Length:".Length..].Trim(), out var parsed) && parsed > 0)
+                contentLength = Math.Min(parsed, 64 * 1024);
+            break;
+        }
+
+        var body = new MemoryStream();
+        var alreadyRead = received.Length - (headerEnd + 4);
+        if (alreadyRead > 0)
+        {
+            var bytes = received.ToArray();
+            body.Write(bytes, headerEnd + 4, (int)Math.Min(alreadyRead, bytes.Length - (headerEnd + 4)));
+        }
+
+        while (body.Length < contentLength)
+        {
+            int read = await stream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false);
+            if (read <= 0) break;
+            body.Write(buffer, 0, read);
+        }
 
         var target = first[1];
         var q = target.IndexOf('?');
         var path = q >= 0 ? target[..q] : target;
-        return (first[0], path, q >= 0 ? target[(q + 1)..] : string.Empty);
+        var query = q >= 0 ? target[(q + 1)..] : string.Empty;
+
+        var bodyText = body.Length == 0
+            ? string.Empty
+            : Encoding.UTF8.GetString(body.ToArray(), 0, (int)Math.Min(body.Length, contentLength));
+
+        return (first[0], path, query, bodyText);
+    }
+
+    /// <summary>
+    /// Accepts exactly one command from a LAN client: the presentation zoom.
+    /// Everything else still comes from the phone, so the stage port cannot be
+    /// used to control playback, delete requests or change settings.
+    /// </summary>
+    private void HandleCommand(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return;
+
+        try
+        {
+            var message = Newtonsoft.Json.Linq.JObject.Parse(body);
+            if (!string.Equals(message["method"]?.ToString(), "setPresentationZoom", StringComparison.Ordinal)) return;
+
+            var value = message["zoom"] ?? message["data"]?["zoom"];
+            if (value == null) return;
+
+            var zoom = Math.Clamp(value.ToObject<double>(), 0.5, 2.0);
+            ConfigService.Instance.Update(cfg => cfg.PresentationZoom = zoom);
+            ZoomChanged?.Invoke(zoom);
+        }
+        catch
+        {
+            // A malformed command must never take the server down.
+        }
     }
 
     private async Task WriteAssetAsync(NetworkStream stream, string relative)
@@ -291,6 +364,7 @@ internal sealed class StageServer : IDisposable
             {
                 fontScale = ConfigService.Instance.Current?.LyricsFontScale ?? 1.0f,
                 hidden = ConfigService.Instance.Current?.LyricsHidden ?? false,
+                presentationZoom = Math.Clamp(ConfigService.Instance.Current?.PresentationZoom ?? 1.0, 0.5, 2.0),
             },
         };
 

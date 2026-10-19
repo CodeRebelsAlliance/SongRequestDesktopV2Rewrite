@@ -22,6 +22,7 @@ public sealed class HeadlessHost : ISongRequestHost
     public IUiShell? NewUiRef { get; set; }
     public Action? OnDataRefreshed { get; set; }
     public Action<string, object?>? EventSink { get; set; }
+    public Action<string, string>? SongDownloaded { get; set; }
 
     public bool InitialLoadComplete
     {
@@ -201,6 +202,12 @@ public sealed class HeadlessHost : ISongRequestHost
 
                 Progress("downloading", 100, "Download complete");
             }
+
+            // The automatic fetch loop is the normal path for song requests, so it
+            // must honour the "add downloads to the library automatically" setting
+            // too (it used to be applied only by the manual download button).
+            if (DownloadedAudio.IsComplete(mp3))
+                SongDownloaded?.Invoke(videoId, mp3);
 
             if (InitialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true && File.Exists(mp3))
             {

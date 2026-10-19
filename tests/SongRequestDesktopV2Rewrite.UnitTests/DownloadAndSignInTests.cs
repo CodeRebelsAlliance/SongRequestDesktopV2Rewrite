@@ -253,6 +253,36 @@ public class DownloadAndSignInTests
     }
 
     [Fact]
+    public async Task SetPresentationZoom_PersistsAClampedValue()
+    {
+        var saved = ConfigService.Instance.Current!.PresentationZoom;
+        try
+        {
+            var (_, interop, responses) = Create();
+
+            // The stage/TV page sends the zoom it wants; the host stores it for
+            // every screen (TV browser, HDMI mirror, in-app stage tab).
+            var high = await Request(interop, responses, "setPresentationZoom", "z1",
+                new JObject { ["zoom"] = 9 });
+            Assert.Equal(2.0, ConfigService.Instance.Current!.PresentationZoom, 3);
+            Assert.Equal(2.0, high["result"]!["zoom"]!.ToObject<double>(), 3);
+
+            var low = await Request(interop, responses, "setPresentationZoom", "z2",
+                new JObject { ["zoom"] = 0.1 });
+            Assert.Equal(0.5, ConfigService.Instance.Current!.PresentationZoom, 3);
+            Assert.Equal(0.5, low["result"]!["zoom"]!.ToObject<double>(), 3);
+
+            // A missing value falls back to 100%, never to zero/NaN.
+            var missing = await Request(interop, responses, "setPresentationZoom", "z3", new JObject());
+            Assert.Equal(1.0, missing["result"]!["zoom"]!.ToObject<double>(), 3);
+        }
+        finally
+        {
+            ConfigService.Instance.Update(cfg => cfg.PresentationZoom = saved);
+        }
+    }
+
+    [Fact]
     public async Task SignIn_StoresTheHarvestedCookiesAndAppliesThemToTheService()
     {
         var (host, interop, responses) = Create();

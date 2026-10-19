@@ -72,6 +72,18 @@ public class MainActivity : MauiAppCompatActivity
         _folderPick = null;
     }
 
+    /// <summary>
+    /// Android is low on memory: keep the visible page, drop the hidden web views.
+    /// Normal tab switches never evict (see MainPage), only this callback does.
+    /// </summary>
+    public override void OnTrimMemory(TrimMemory level)
+    {
+        base.OnTrimMemory(level);
+
+        if (level >= TrimMemory.RunningLow)
+            AppHost.Current?.Page.TrimResidentViews();
+    }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
