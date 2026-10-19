@@ -55,6 +55,14 @@ adb install -r publish-android/net.bycra.songrequest-Signed.apk
 adb logcat -s SongRequest:D mono-stdout:D   # app + console output
 ```
 
+> **CI note (workload rollout failures).** If `dotnet workload install maui-android`
+> fails with `Version X of package microsoft.net.sdk.*.manifest-10.0.100 is not
+> found in NuGet feeds`, the advertised workload set is ahead of nuget.org. The
+> release workflow switches to manifests mode
+> (`dotnet workload config --update-mode manifests`) and installs with
+> `--skip-manifest-update`, which uses the SDK's bundled manifests. The same
+> command fixes a local machine in that state; `dotnet workload repair` after it.
+
 ### iOS (macOS only)
 
 `net10.0-ios` is only added to `TargetFrameworks` when building on macOS (the

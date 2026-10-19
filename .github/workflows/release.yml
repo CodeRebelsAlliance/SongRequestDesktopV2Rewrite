@@ -268,7 +268,17 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Install the MAUI Android workload
-        run: dotnet workload install maui-android
+        shell: bash
+        run: |
+          # During a .NET servicing rollout the advertised workload *set* can point
+          # at manifests that are not on nuget.org yet, which aborts the install
+          # ("Version X of package ... is not found in NuGet feeds"). Manifests mode
+          # installs from the SDK's bundled, consistent manifests instead;
+          # --skip-manifest-update covers the same gap. The plain install remains a
+          # fallback for future SDKs.
+          dotnet workload config --update-mode manifests
+          dotnet workload install maui-android --skip-manifest-update \
+            || dotnet workload install maui-android
 
       # Fallback: keep the automatically generated debug keystore between runs.
       # A fresh debug key per run is what made Android answer "App not installed".
