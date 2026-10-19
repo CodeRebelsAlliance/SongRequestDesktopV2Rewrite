@@ -283,6 +283,19 @@
       <div id="settings-content" style="flex:1;overflow-y:auto;min-height:0">
         <div id="settings-general" class="settings-panel active">
           <div class="settings-card">
+            <div class="settings-card-title">Operating Mode</div>
+            <div class="settings-hint">Changes what the app is for, live — no restart. On mobile the bottom navigation switches with it.</div>
+            <div class="settings-field">
+              <label>Mode</label>
+              <select id="s-operating-mode" class="settings-input">
+                <option value="SongRequests">Song Requests (DJ / moderation)</option>
+                <option value="MusicPlayer">Music Player (home, library, queue)</option>
+                <option value="MusicShare">Music Share</option>
+                <option value="Soundboard">Soundboard</option>
+              </select>
+            </div>
+          </div>
+          <div class="settings-card">
             <div class="settings-card-title">Runtime</div>
             <div class="settings-hint">Controls how often data is refreshed and how many parallel tasks run.</div>
             <div class="settings-field">

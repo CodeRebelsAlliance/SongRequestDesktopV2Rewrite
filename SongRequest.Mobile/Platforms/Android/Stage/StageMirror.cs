@@ -15,6 +15,40 @@ internal static class StageMirror
     /// <summary>The URL a TV should open, or null while the stage is not running.</summary>
     public static string? Url => _server?.Url;
 
+    /// <summary>QR code (data URL) for the current stage link, if running.</summary>
+    public static string? Qr { get; private set; }
+
+    /// <summary>What the mobile stage console shows.</summary>
+    public static object StatusObject()
+    {
+        var cfg = ConfigService.Instance.Current;
+        var url = _server?.Url;
+
+        return new
+        {
+            running = !string.IsNullOrEmpty(url),
+            url,
+            qr = Qr,
+            zoom = Math.Clamp(cfg?.PresentationZoom ?? 1.0, 0.5, 2.0),
+            presentationSource = cfg?.PresentationSource ?? "player",
+            operatingMode = cfg?.OperatingMode ?? "SongRequests"
+        };
+    }
+
+    /// <summary>Pushes the current stage state to the console and the TV page.</summary>
+    private static void BroadcastStatus()
+    {
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
+        {
+            type = "event",
+            eventName = "stageStatus",
+            data = StatusObject()
+        });
+
+        try { AppHost.Current?.Page.SendTo(MainPage.MobileStageFile, json); } catch { }
+        try { AppHost.Current?.Shell.PresentationSendMessage?.Invoke(json); } catch { }
+    }
+
     /// <summary>Starts the server if needed and pushes the stage to a second display.</summary>
     public static void Publish()
     {
@@ -34,6 +68,8 @@ internal static class StageMirror
             var url = _server.Start();
             if (string.IsNullOrEmpty(url)) return;
 
+            Qr = QrDataUrl(url);
+
             // A connected projector/TV gets the page directly.
             StageDisplay.Show(url);
 
@@ -43,8 +79,10 @@ internal static class StageMirror
             {
                 type = "event",
                 eventName = "stageServer",
-                data = new { url, qr = QrDataUrl(url) },
+                data = new { url, qr = Qr },
             }));
+
+            BroadcastStatus();
         }
         catch (Exception ex)
         {
@@ -56,7 +94,9 @@ internal static class StageMirror
     {
         _server?.Stop();
         _server = null;
+        Qr = null;
         StageDisplay.Hide();
+        BroadcastStatus();
     }
 
     /// <summary>QR code for the TV URL, as a data URL (the phone shows it).</summary>

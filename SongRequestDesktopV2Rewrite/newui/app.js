@@ -427,6 +427,7 @@
       document.getElementById('s-library-extensions').value = (cfg.libraryAllowedExtensions || ['mp3','m4a','wav','flac','ogg','aac','wma','opus']).join(', ');
       document.getElementById('s-library-auto-scan').checked = cfg.libraryAutoScanOnStartup ?? false;
       document.getElementById('s-library-auto-add-downloads').checked = cfg.libraryAutoAddDownloads ?? true;
+      document.getElementById('s-operating-mode').value = cfg.operatingMode || 'SongRequests';
       document.getElementById('s-library-remove-missing').checked = cfg.libraryRemoveMissingOnScan ?? false;
       document.getElementById('s-library-recommendations').checked = cfg.libraryRecommendationsEnabled ?? true;
       document.getElementById('s-log-playback').checked = cfg.logPlayback ?? false;
@@ -481,6 +482,19 @@
     const value = el ? parseInt(el.value, 10) : NaN;
     return Number.isFinite(value) ? value : -1;
   }
+
+  // Switches the operating mode immediately (the mobile shell rebuilds its
+  // navigation; the desktop brings the matching window forward).
+  document.getElementById('s-operating-mode').addEventListener('change', async function () {
+    const mode = this.value;
+    try {
+      await send('setOperatingMode', { mode });
+      toast('Operating mode: ' + this.options[this.selectedIndex].text, 'success');
+      loadData();
+    } catch (e) {
+      toast('Could not switch mode: ' + e.message, 'error');
+    }
+  });
 
   async function saveSettings() {    const statusEl = document.getElementById('settings-status');
     statusEl.textContent = 'Saving...';

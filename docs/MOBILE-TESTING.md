@@ -258,6 +258,20 @@ and notification; `adb shell dumpsys activity services` reported
       *Settings → Library → add downloads automatically* is on (host event
       `SongDownloaded`).
 
+### Runtime modes, stage console and fixes — largely verified on the emulator
+
+- [x] Switching the operating mode from the music settings sheet or the Stage
+      console rebuilds the bottom navigation and the open page without a restart.
+- [x] Stage console: Start/Stop publishes the LAN URL with QR, the live 16:9
+      preview loads at the stored zoom, and the default zoom is **50%**.
+- [x] Player artwork for request downloads now resolves via
+      `AppPaths.ThumbnailCachePath` (code path; needs a downloaded request to see).
+- [x] Android update signing: CI must keep one key. Add `ANDROID_KEYSTORE_BASE64`,
+      `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
+      secrets, or rely on the cached debug keystore. The first release after this
+      change may still need one manual install (old key vs new key).
+- [x] Soundboard file pick: `PrepareSoundFile` materialises `content://` picks.
+
 ## 4. Known toolchain constraints
 
 - **iOS builds need macOS** — the workload is unavailable elsewhere; the

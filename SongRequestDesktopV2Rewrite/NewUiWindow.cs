@@ -821,6 +821,28 @@ public class NewUiWindow : IUiShell
     /// did nothing once the UI moved to WebKitGTK. This drives the native window
     /// instead, which works on every platform. Returns whether a window was found.
     /// </summary>
+    /// <summary>
+    /// Switches the operating mode from Settings. The desktop keeps its separate
+    /// windows, so this just brings the mode's main window forward.
+    /// </summary>
+    public void SetOperatingMode(StartupMode mode)
+    {
+        try
+        {
+            switch (mode)
+            {
+                case StartupMode.MusicPlayer:
+                case StartupMode.MusicShare:
+                    ShowMusicPlayerWindow();
+                    break;
+                case StartupMode.Soundboard:
+                    ShowSoundboardWindow();
+                    break;
+            }
+        }
+        catch { }
+    }
+
     public bool SetSubWindowFullscreen(string? windowName, bool enabled)
     {
         var target = windowName switch

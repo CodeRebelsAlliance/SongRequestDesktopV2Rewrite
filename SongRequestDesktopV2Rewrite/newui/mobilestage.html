@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Stage - SongRequest</title>
+<link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="mobilestage.css">
+</head>
+<body>
+<div id="ms-app">
+  <header class="ms-header">
+    <div>
+      <h1>Stage</h1>
+      <div class="ms-sub">TV, HDMI and projector</div>
+    </div>
+    <span id="ms-status" class="ms-badge">Stopped</span>
+  </header>
+
+  <div class="ms-scroll">
+    <div class="ms-preview" id="ms-preview-wrap">
+      <div class="ms-preview-frame">
+        <iframe id="ms-preview" title="Presentation preview" scrolling="no"></iframe>
+      </div>
+      <div class="ms-preview-empty" id="ms-preview-empty">
+        <i class="fas fa-tv"></i>
+        <span>Start the stage to preview and share it.</span>
+      </div>
+    </div>
+
+    <section class="ms-card">
+      <h3><i class="fas fa-link"></i> TV / HDMI link</h3>
+      <div class="ms-url" id="ms-url">Not running</div>
+      <img id="ms-qr" class="ms-qr" alt="QR code" hidden>
+      <div class="ms-row">
+        <button id="ms-start" class="ms-btn ms-primary"><i class="fas fa-play"></i> Start stage</button>
+        <button id="ms-copy" class="ms-btn" disabled><i class="fas fa-copy"></i> Copy</button>
+      </div>
+      <div class="ms-hint">Open the link on a TV browser, or connect a display over HDMI/USB-C.</div>
+    </section>
+
+    <section class="ms-card">
+      <h3><i class="fas fa-magnifying-glass-plus"></i> Zoom</h3>
+      <div class="ms-zoom">
+        <button id="ms-zoom-out" class="ms-round" aria-label="Zoom out"><i class="fas fa-minus"></i></button>
+        <span id="ms-zoom-value">50%</span>
+        <button id="ms-zoom-in" class="ms-round" aria-label="Zoom in"><i class="fas fa-plus"></i></button>
+      </div>
+      <div class="ms-hint">Scales the presentation on the TV and the HDMI mirror; the phone preview follows.</div>
+    </section>
+
+    <section class="ms-card">
+      <h3><i class="fas fa-arrows-rotate"></i> Operating mode</h3>
+      <div class="ms-seg ms-seg-modes" id="ms-mode">
+        <button data-mode="SongRequests">Requests</button>
+        <button data-mode="MusicPlayer">Music</button>
+        <button data-mode="MusicShare">Share</button>
+        <button data-mode="Soundboard">Board</button>
+      </div>
+      <div class="ms-hint">Switches the whole app for this session — no restart.</div>
+    </section>
+
+    <section class="ms-card">
+      <h3><i class="fas fa-tower-broadcast"></i> Source</h3>
+      <div class="ms-seg" id="ms-source">
+        <button data-source="player" class="is-active">Player</button>
+        <button data-source="musicshare">Music Share</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="_framework/hybridwebview.js"></script>
+<script src="hostbridge.js"></script>
+<script src="mobilestage.js"></script>
+</body>
+</html>

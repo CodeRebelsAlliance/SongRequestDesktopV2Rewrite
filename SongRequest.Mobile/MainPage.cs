@@ -21,8 +21,11 @@ public sealed class MainPage : ContentPage
     /// <summary>The touch-first music page used by every player tab on mobile.</summary>
     public const string MobileMusicFile = "mobilemusic.html";
 
-    /// <summary>The desktop music page (used by Music Share, which has its own modal).</summary>
+    /// <summary>The desktop music page (not used on mobile any more).</summary>
     private const string DesktopMusicFile = "musicplayer.html";
+
+    /// <summary>The mobile stage console (presentation controls + preview).</summary>
+    public const string MobileStageFile = "mobilestage.html";
 
     /// <summary>
     /// How many web views stay alive. All tabs (and the alternate stage pages)
@@ -138,7 +141,7 @@ public sealed class MainPage : ContentPage
 
         // Music starts at home; the startup flow's "show the player" request must
         // not pull the user out of it (see ConsumeInitialPlayerOpen).
-        _suppressNextPlayerOpen = mode == StartupMode.MusicPlayer;
+        _suppressNextPlayerOpen = mode is StartupMode.MusicPlayer or StartupMode.MusicShare;
 
         _baseKey = defs[0].Key;
         Select(defs[0].Key);
@@ -325,26 +328,27 @@ public sealed class MainPage : ContentPage
             new TabDef("library", "Library", MobileMusicFile, "\uf51f"), // fa-compact-disc
             new TabDef("player", "Player", MobileMusicFile, "\uf025"),   // fa-headphones
             new TabDef("queue", "Queue", MobileMusicFile, "\uf0ca"),     // fa-list-ul
+            new TabDef("stage", "Stage", MobileStageFile, "\uf26c"),     // fa-tv
         },
-        // Music Share still uses the desktop player page: its share modal lives there.
         StartupMode.MusicShare => new[]
         {
-            new TabDef("player", "Player", DesktopMusicFile, "\uf025"),           // fa-headphones
-            new TabDef("board", "Board", "soundboard.html", "\uf569"),            // fa-drum
-            new TabDef("stage", "Stage", "presentation.html", "\uf26c"),          // fa-tv
+            new TabDef("share", "Share", MobileMusicFile, "\uf519"),     // fa-tower-broadcast
+            new TabDef("player", "Player", MobileMusicFile, "\uf025"),   // fa-headphones
+            new TabDef("queue", "Queue", MobileMusicFile, "\uf0ca"),     // fa-list-ul
+            new TabDef("stage", "Stage", MobileStageFile, "\uf26c"),     // fa-tv
         },
         StartupMode.Soundboard => new[]
         {
             new TabDef("board", "Board", "soundboard.html", "\uf569"),            // fa-drum
             new TabDef("player", "Player", MobileMusicFile, "\uf025"),            // fa-headphones
-            new TabDef("stage", "Stage", "presentation.html", "\uf26c"),          // fa-tv
+            new TabDef("stage", "Stage", MobileStageFile, "\uf26c"),              // fa-tv
         },
         _ => new[]
         {
             new TabDef("requests", "Requests", "index.html", "\uf0ca"),           // fa-list-ul
             new TabDef("player", "Player", MobileMusicFile, "\uf025"),            // fa-headphones
             new TabDef("board", "Board", "soundboard.html", "\uf569"),            // fa-drum
-            new TabDef("stage", "Stage", "presentation.html", "\uf26c"),          // fa-tv
+            new TabDef("stage", "Stage", MobileStageFile, "\uf26c"),              // fa-tv
         },
     };
 
@@ -454,7 +458,7 @@ public sealed class MainPage : ContentPage
         // shows. (On its first load the page asks with mobileTabReady.)
         if (string.Equals(file, MobileMusicFile, StringComparison.Ordinal))
         {
-            var tab = _activeKey is "home" or "library" or "player" or "queue" ? _activeKey : "player";
+            var tab = _activeKey is "home" or "library" or "player" or "queue" or "share" ? _activeKey : "player";
             try
             {
                 view.SendRawMessage(
@@ -486,6 +490,21 @@ public sealed class MainPage : ContentPage
             HybridRoot = "wwwroot",
         };
         view.RawMessageReceived += (_, e) => HostMessageReceived?.Invoke(file, e.Message ?? string.Empty);
+
+#if ANDROID
+        // The stage console embeds the presentation served over http:// from this
+        // device. The HybridWebView page itself is https://, so Android would block
+        // the frame as mixed content without this.
+        view.HandlerChanged += (_, _) =>
+        {
+            try
+            {
+                if (view.Handler?.PlatformView is Android.Webkit.WebView web)
+                    web.Settings.MixedContentMode = Android.Webkit.MixedContentHandling.AlwaysAllow;
+            }
+            catch { }
+        };
+#endif
 
         _views[file] = view;
         _content.Add(view, 0, 0);

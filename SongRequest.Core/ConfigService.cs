@@ -40,6 +40,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _lyricsHidden = false;
         private string _presentationSource = "player";
         private double _presentationZoom = 1.0;
+        private string _operatingMode = "SongRequests";
         private bool _autoStart = false;
         private bool _startMinimized = false;
         private bool _minimizeToTray = false;
@@ -244,6 +245,23 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _presentationZoom;
             set => SetField(ref _presentationZoom, Math.Clamp(value, 0.5, 2.0));
+        }
+
+        /// <summary>
+        /// Whether the user ever changed the presentation zoom. Mobile hosts use
+        /// this to default to 50% (a phone's HDMI output is much smaller than the
+        /// desktop window) without overriding a deliberate choice.
+        /// </summary>
+        public bool PresentationZoomCustomized { get; set; }
+
+        /// <summary>
+        /// The mode the UI is running in (a <see cref="StartupMode"/> name). Chosen
+        /// at startup and switchable at runtime from Settings without a restart.
+        /// </summary>
+        public string OperatingMode
+        {
+            get => _operatingMode;
+            set => SetField(ref _operatingMode, value);
         }
 
         /// <summary>Start the app automatically at login (see <see cref="AutoStart"/>).</summary>

@@ -74,6 +74,13 @@ public class YoutubeFormInterop
     /// <summary>Same for individually picked files; returns the folder to scan.</summary>
     public Func<string[], Task<string?>>? PrepareImportFiles { get; set; }
 
+    /// <summary>
+    /// Turns one picked file into a readable local path. Mobile pickers hand out
+    /// <c>content://</c> URIs, which the soundboard editor used to pass straight to
+    /// <c>File.Exists</c> — so selecting a sound file never applied.
+    /// </summary>
+    public Func<string, Task<string?>>? PrepareSoundFile { get; set; }
+
     public ISongRequestHost YtForm => _ytForm;
     public LibraryService LibraryService => _libraryService;
 
@@ -295,6 +302,20 @@ public class YoutubeFormInterop
                         SendPresentationCurrentState();
                     });
                     SendResponse(id, new { success = true });
+                    return;
+                }
+                case "setOperatingMode":
+                {
+                    var modeName = msg["mode"]?.ToString() ?? "SongRequests";
+                    if (!Enum.TryParse<StartupMode>(modeName, true, out var requestedMode))
+                    {
+                        SendResponse(id, new { error = "Unknown operating mode" });
+                        return;
+                    }
+
+                    ConfigService.Instance.Update(cfg => cfg.OperatingMode = requestedMode.ToString());
+                    RunOnUi(() => _ytForm.NewUiRef?.SetOperatingMode(requestedMode));
+                    SendResponse(id, new { success = true, mode = requestedMode.ToString() });
                     return;
                 }
                 case "setPresentationZoom":
@@ -1908,19 +1929,20 @@ public class YoutubeFormInterop
             }
             catch { /* no embedded art, fall through */ }
 
-            // 3. Try YouTube thumbnail cache (legacy)
+            // 3. Try the shared YouTube thumbnail cache. This is the only artwork a
+            // download of an audio-only stream has (no embedded cover), and the path
+            // used to be hardcoded relative to the executable — which is wrong on
+            // mobile, where the cache lives under the app's data root.
             var videoId = System.IO.Path.GetFileNameWithoutExtension(songPath);
             if (!string.IsNullOrEmpty(videoId))
             {
-                var cacheDir = System.IO.Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory,
-                    "data", "downloadedvideos", "thumbnail-cache");
-                var cachePath = System.IO.Path.Combine(cacheDir, $"{videoId}.png");
+                var cacheDir = AppPaths.ThumbnailCachePath;
 
-                if (File.Exists(cachePath)) return Thumbnails.GetDataUrl(cachePath);
-
-                var jpgPath = System.IO.Path.Combine(cacheDir, $"{videoId}.jpg");
-                if (File.Exists(jpgPath)) return Thumbnails.GetDataUrl(jpgPath);
+                foreach (var extension in new[] { ".jpg", ".png" })
+                {
+                    var cachePath = System.IO.Path.Combine(cacheDir, videoId + extension);
+                    if (File.Exists(cachePath)) return Thumbnails.GetDataUrl(cachePath);
+                }
             }
         }
         catch { }
@@ -2147,18 +2169,27 @@ public class YoutubeFormInterop
             if (string.IsNullOrEmpty(chosen))
                 return new { cancelled = true };
 
-            // The soundboard copies the file into its own folder below, so a
-            // temporary picker path (mobile hands out cache copies) is fine as long
-            // as it is readable now.
-            if (!System.IO.File.Exists(chosen))
+            // Mobile pickers return content:// URIs, which File.Exists cannot read.
+            // Materialise the pick first (the host copies it to a real file); the
+            // soundboard then copies that into its own folder.
+            var source = chosen;
+            if (!System.IO.File.Exists(source) && PrepareSoundFile != null)
+                source = await PrepareSoundFile(chosen).ConfigureAwait(false);
+
+            if (string.IsNullOrEmpty(source) || !System.IO.File.Exists(source))
                 return new { error = "The selected file could not be read." };
 
-            if (!SoundboardEngine.IsSupportedAudioFile(chosen))
+            if (!SoundboardEngine.IsSupportedAudioFile(source))
                 return new { error = "Unsupported file format." };
 
-            var fileName = SoundboardEngine.CopyIntoSoundboardFolder(chosen);
+            var fileName = SoundboardEngine.CopyIntoSoundboardFolder(source);
             var duration = SoundboardEngine.ReadAudioDuration(
                 Path.Combine(SoundboardConfiguration.GetSoundboardFolder(), fileName));
+
+            if (!string.Equals(source, chosen, StringComparison.Ordinal))
+            {
+                try { System.IO.File.Delete(source); } catch { }
+            }
             return new { success = true, fileName, duration, name = Path.GetFileNameWithoutExtension(fileName) };
         }
         catch (Exception ex)
@@ -2291,6 +2322,8 @@ public class YoutubeFormInterop
             libraryAllowedExtensions = cfg.LibraryAllowedExtensions ?? new List<string>(),
             libraryAutoScanOnStartup = cfg.LibraryAutoScanOnStartup,
             libraryAutoAddDownloads = cfg.LibraryAutoAddDownloads,
+            operatingMode = cfg.OperatingMode ?? "SongRequests",
+            presentationZoom = Math.Clamp(cfg.PresentationZoom, 0.5, 2.0),
             libraryRemoveMissingOnScan = cfg.LibraryRemoveMissingOnScan,
             libraryRecommendationsEnabled = cfg.LibraryRecommendationsEnabled,
             logPlayback = cfg.LogPlayback,
@@ -3009,6 +3042,10 @@ public class YoutubeFormInterop
             // The user has now made the cookie decision (imported or skipped), so
             // automatic downloads may start from here on.
             try { _ytForm.SetupComplete = true; } catch { }
+
+            // Remember the mode so the Settings selector reflects it and a runtime
+            // switch starts from the same place next launch.
+            try { ConfigService.Instance.Update(cfg => cfg.OperatingMode = mode.ToString()); } catch { }
 
             // Apply startup mode for the web UI
             if (_ytForm != null)
@@ -4557,7 +4594,11 @@ public class YoutubeFormInterop
     public void SetPresentationZoom(double zoom)
     {
         zoom = Math.Clamp(zoom, 0.5, 2.0);
-        ConfigService.Instance.Update(cfg => cfg.PresentationZoom = zoom);
+        ConfigService.Instance.Update(cfg =>
+        {
+            cfg.PresentationZoom = zoom;
+            cfg.PresentationZoomCustomized = true;
+        });
         PresentationSendEvent("presentationSettings", new { presentationZoom = zoom });
     }
 

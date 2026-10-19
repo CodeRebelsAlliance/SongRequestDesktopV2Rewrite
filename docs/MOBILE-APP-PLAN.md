@@ -742,6 +742,44 @@ port; they affect the desktop app too):
   raises `SongDownloaded`, the interop imports the song (with cached artwork) and
   notifies the music page — on both platforms.
 
+**Runtime mode switching + mode-specific UI** ✅:
+- The operating mode is now stored (`ConfigService.OperatingMode`), applied from
+  `completeSetup`, and switchable at runtime with `setOperatingMode` (Settings →
+  Operating Mode, the music page's settings sheet, and the Stage console). The
+  mobile navigation rebuilds instantly; the desktop brings the mode's window
+  forward. No restart.
+- Navigation per mode: Music Player → Home/Library/Player/Queue/Stage, Music Share
+  → Share/Player/Queue/Stage, Soundboard → Board/Player/Stage, Song Requests →
+  Requests/Player/Board/Stage.
+- The touch music page gained the player's advanced features: playback sheet
+  (volume, crossfade, normalization, audio output device), Presentation /
+  Visualization / Music Share / Announcements, shuffle + repeat, song actions on
+  long-press (play now / play next / queue / add to playlist / remove), playlist
+  creation and YouTube search + download.
+- Music Share has a real mobile surface (start/stop sharing, session code, join
+  with a 6-digit code, receive audio, volume) instead of the desktop modal.
+- The Stage tab is a dedicated **console** (`mobilestage.html`): live 16:9 preview
+  of the served presentation, TV/HDMI link with QR + copy, zoom (50–200%, 50%
+  default on mobile), source selection and the operating-mode switch. The preview
+  loads the LAN URL from the WebView (mixed content allowed for it).
+- **Fixes in this round**:
+  - Player artwork for downloaded requests: the third artwork fallback still looked
+    in a hardcoded `data/downloadedvideos/thumbnail-cache` relative to the
+    executable; it now uses `AppPaths.ThumbnailCachePath` (`.jpg`/`.png`), which is
+    where mobile stores them. Library songs were unaffected because they have a
+    stored `ThumbnailPath`.
+  - Soundboard file selection: the editor passed the picker's `content://` URI to
+    `File.Exists`; a new `PrepareSoundFile` seam copies it to a readable file with
+    its real name before the soundboard imports it.
+  - Android in-app updates: releases were signed with a fresh debug key on every
+    CI run, so Android rejected them ("App not installed"). CI now uses a release
+    keystore from secrets when available and otherwise caches the debug keystore so
+    it stays stable. The updater also verifies the download (size, zip header),
+    the package name, version code and signing certificate before launching the
+    installer, with actionable messages instead of Android's generic failure.
+  - Mobile presentation default zoom is now 50% (configurable per user; the stage
+    console shows and changes it).
+
 **In-app updater (Android) — done ahead of the rest of M8** ✅:
 - `UpdateService` knows the mobile platforms: `CurrentPlatform()` returns
   `android`/`ios`, and the expected release asset is `SongRequest-android.apk`

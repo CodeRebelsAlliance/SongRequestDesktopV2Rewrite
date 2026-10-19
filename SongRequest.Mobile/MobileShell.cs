@@ -45,11 +45,13 @@ public sealed class MobileShell : IUiShell
     // ── Presentation ─────────────────────────────────────────────────────────
     public void ShowPresentationWindow()
     {
-        _page.ShowFileInTab("presentation.html", "stage");
+        // The stage tab is the mobile console: link/QR, zoom, source and a live
+        // preview. Starting it publishes the presentation to TV/HDMI.
+        _page.ShowFileInTab(MainPage.MobileStageFile, "stage");
 
 #if ANDROID
-        // Serve the same page to a TV browser, and mirror it onto an HDMI display
-        // when one is connected.
+        // Serve the page to a TV browser and mirror it onto an HDMI display when
+        // one is connected.
         StageMirror.Publish();
 #endif
     }

@@ -95,6 +95,71 @@ internal static class AndroidFilePickers
             }
         });
 
+    /// <summary>
+    /// Materialises a single picked file (a <c>content://</c> URI from
+    /// <see cref="PickFilesAsync"/>) into a readable local file with its real name,
+    /// for consumers like the soundboard editor that need a path.
+    /// </summary>
+    public static Task<string?> PrepareSoundFileAsync(string picked)
+        => Task.Run(() =>
+        {
+            try
+            {
+                if (File.Exists(picked)) return (string?)picked;
+                if (string.IsNullOrWhiteSpace(picked) ||
+                    !picked.StartsWith("content://", StringComparison.OrdinalIgnoreCase))
+                    return null;
+
+                var resolver = Android.App.Application.Context.ContentResolver;
+                var uri = Android.Net.Uri.Parse(picked);
+                if (resolver == null || uri == null) return null;
+
+                var name = Sanitize(QueryDocumentDisplayName(resolver, uri) ??
+                                     uri.LastPathSegment ?? "sound");
+                var extension = Path.GetExtension(name);
+                if (string.IsNullOrEmpty(extension)) extension = ".mp3";
+
+                var directory = Path.Combine(
+                    Android.App.Application.Context.CacheDir?.AbsolutePath ?? AppPaths.DataRoot,
+                    "soundboard-picks");
+                Directory.CreateDirectory(directory);
+
+                var destination = Path.Combine(
+                    directory,
+                    Path.GetFileNameWithoutExtension(name) + "-" + Guid.NewGuid().ToString("N")[..6] + extension);
+
+                using (var input = resolver.OpenInputStream(uri))
+                {
+                    if (input == null) return null;
+                    using var output = File.Create(destination);
+                    input.CopyTo(output);
+                }
+
+                return (string?)destination;
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Debug("SongRequest", $"sound file import failed: {ex.Message}");
+                return null;
+            }
+        });
+
+    /// <summary>Display name of a single SAF document (not a tree).</summary>
+    private static string? QueryDocumentDisplayName(ContentResolver resolver, Android.Net.Uri uri)
+    {
+        try
+        {
+            using var cursor = resolver.Query(uri, new[] { IOpenableColumns.DisplayName }, null, null, null);
+            if (cursor != null && cursor.MoveToFirst())
+            {
+                var index = cursor.GetColumnIndex(IOpenableColumns.DisplayName);
+                if (index >= 0) return cursor.GetString(index);
+            }
+        }
+        catch { }
+        return null;
+    }
+
     /// <summary>Copies a SAF tree (recursively) into the import folder.</summary>
     public static Task<string?> PrepareFolderAsync(string treeUri)
         => Task.Run(() =>

@@ -70,6 +70,9 @@ public sealed class AppHost : IDisposable
         Interop.PrepareImportFiles = files => AndroidFilePickers.PrepareFilesAsync(files);
         Interop.PrepareImportFolder = uri => AndroidFilePickers.PrepareFolderAsync(uri);
 
+        // The soundboard editor picks a single file; it needs a real path too.
+        Interop.PrepareSoundFile = picked => AndroidFilePickers.PrepareSoundFileAsync(picked);
+
         // The legacy synchronous dialog (queueing loose files) can only block off
         // the UI thread; the library import above is the supported path.
         Interop.ShowOpenFileDialog = (title, _, _) =>
@@ -136,6 +139,38 @@ public sealed class AppHost : IDisposable
                     request["secondary"]?.ToString());
                 result = new { success = true };
                 break;
+
+            case "stageStatus":
+            {
+#if ANDROID
+                result = StageMirror.StatusObject();
+#else
+                result = new { running = false };
+#endif
+                break;
+            }
+
+            case "stageStart":
+            {
+#if ANDROID
+                StageMirror.Publish();
+                result = StageMirror.StatusObject();
+#else
+                result = new { running = false, error = "The stage is Android-only." };
+#endif
+                break;
+            }
+
+            case "stageStop":
+            {
+#if ANDROID
+                StageMirror.Stop();
+                result = StageMirror.StatusObject();
+#else
+                result = new { running = false };
+#endif
+                break;
+            }
 
             default:
                 return false;

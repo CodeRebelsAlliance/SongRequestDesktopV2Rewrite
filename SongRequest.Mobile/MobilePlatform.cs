@@ -21,6 +21,20 @@ internal static class MobilePlatform
 {
     public static void Register()
     {
+        // A phone or tablet feeding a TV/HDMI display is much smaller than the
+        // desktop window, so the presentation starts at 50% unless the user has
+        // already chosen a zoom.
+        try
+        {
+            var cfg = ConfigService.Instance.Current;
+            if (cfg != null && !cfg.PresentationZoomCustomized)
+                ConfigService.Instance.Update(c => c.PresentationZoom = 0.5);
+        }
+        catch
+        {
+            // Defaults are optional; never block startup.
+        }
+
 #if ANDROID
         // Android updates itself from the release APK: download it, then let the
         // system package installer take over (the user confirms there).

@@ -16,6 +16,7 @@
     <section class="mm-view" id="mm-view-home">
       <header class="mm-header">
         <div class="mm-brand"><img src="SRshortLogo.png" alt=""><span>Music</span></div>
+        <button id="mm-home-settings" class="mm-icon-btn" aria-label="Settings"><i class="fas fa-gear"></i></button>
       </header>
 
       <div class="mm-search">
@@ -61,7 +62,10 @@
 
     <!-- ─────────────── LIBRARY ─────────────── -->
     <section class="mm-view" id="mm-view-library" hidden>
-      <header class="mm-header"><h1>Library</h1></header>
+      <header class="mm-header">
+        <h1>Library</h1>
+        <button id="mm-library-settings" class="mm-icon-btn" aria-label="Settings"><i class="fas fa-gear"></i></button>
+      </header>
 
       <div class="mm-chips">
         <button class="mm-chip is-active" data-lib="songs">Songs</button>
@@ -81,6 +85,35 @@
         <div class="mm-more" id="mm-lib-more-wrap" hidden>
           <button id="mm-lib-more" class="mm-btn">Load more</button>
         </div>
+        <div class="mm-more" id="mm-playlist-new-wrap" hidden>
+          <button id="mm-playlist-new" class="mm-btn"><i class="fas fa-plus"></i> New playlist</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────── SHARE ─────────────── -->
+    <section class="mm-view" id="mm-view-share" hidden>
+      <header class="mm-header"><h1>Music Share</h1></header>
+      <div class="mm-scroll">
+        <div class="mm-share-status" id="mm-share-status">Idle</div>
+        <div class="mm-share-card">
+          <h3>Share this player</h3>
+          <p>Others can follow the current track or receive the audio on their phone.</p>
+          <div id="mm-share-code" class="mm-share-code" hidden></div>
+          <label class="mm-check"><input type="checkbox" id="mm-share-metadata-only" checked> Metadata only</label>
+          <button id="mm-share-start" class="mm-btn mm-share-primary"><i class="fas fa-tower-broadcast"></i> Start sharing</button>
+        </div>
+        <div class="mm-share-card">
+          <h3>Join a session</h3>
+          <input id="mm-share-join-code" class="mm-share-input" inputmode="numeric" maxlength="6" placeholder="6-digit code">
+          <label class="mm-check"><input type="checkbox" id="mm-share-receive-audio" checked> Receive audio</label>
+          <div class="mm-share-volume">
+            <i class="fas fa-volume-low"></i>
+            <input id="mm-share-volume" type="range" min="0" max="100" value="100">
+            <i class="fas fa-volume-high"></i>
+          </div>
+          <button id="mm-share-join" class="mm-btn"><i class="fas fa-right-to-bracket"></i> Connect</button>
+        </div>
       </div>
     </section>
 
@@ -89,6 +122,7 @@
       <div id="mm-player-bg"></div>
 
       <div class="mm-player-top">
+        <button id="mm-more" class="mm-icon-btn" aria-label="Player options"><i class="fas fa-ellipsis-vertical"></i></button>
         <button id="mm-lyrics-toggle" class="mm-pill-btn" aria-pressed="false">
           <i class="fas fa-align-left"></i><span>Lyrics</span>
         </button>
@@ -114,9 +148,11 @@
           <span id="mm-total">0:00</span>
         </div>
         <div class="mm-controls">
+          <button id="mm-shuffle" class="mm-icon-btn" aria-label="Shuffle queue"><i class="fas fa-shuffle"></i></button>
           <button id="mm-prev" class="mm-icon-btn mm-lg" aria-label="Previous"><i class="fas fa-backward-step"></i></button>
           <button id="mm-play" class="mm-play-btn" aria-label="Play"><i class="fas fa-play"></i></button>
           <button id="mm-next" class="mm-icon-btn mm-lg" aria-label="Next"><i class="fas fa-forward-step"></i></button>
+          <button id="mm-repeat" class="mm-icon-btn" aria-label="Repeat"><i class="fas fa-repeat"></i></button>
         </div>
       </div>
     </section>
@@ -142,12 +178,19 @@
       <button id="mm-queue-close" class="mm-icon-btn" aria-label="Close"><i class="fas fa-times"></i></button>
     </header>
     <div class="mm-queue-actions">
-      <button id="mm-queue-clear" class="mm-btn mm-quiet"><i class="fas fa-trash-alt"></i> Clear queue</button>
+      <button id="mm-queue-shuffle" class="mm-btn mm-quiet"><i class="fas fa-shuffle"></i> Shuffle</button>
+      <button id="mm-queue-clear" class="mm-btn mm-quiet"><i class="fas fa-trash-alt"></i> Clear</button>
     </div>
     <div class="mm-scroll" id="mm-queue-scroll">
       <div id="mm-queue-list" class="mm-list"></div>
     </div>
   </aside>
+
+  <div id="mm-sheet-scrim" hidden></div>
+  <div id="mm-sheet" hidden>
+    <div class="mm-sheet-handle"></div>
+    <div class="mm-sheet-body" id="mm-sheet-body"></div>
+  </div>
 
 </div>
 
