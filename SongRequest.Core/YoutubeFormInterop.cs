@@ -141,6 +141,7 @@ public class YoutubeFormInterop
     {
         _ytForm = ytForm;
         _ytService = ytService;
+        _ytForm.EventSink = SendEvent;
         _libraryService = new LibraryService();
 
         // Marshal host operations through the host (WPF dispatcher today; headless host later).
@@ -1178,11 +1179,33 @@ public class YoutubeFormInterop
     private async Task<object> GetLyricsAsync(string? videoId, string? videoUrl)
     {
         if (string.IsNullOrEmpty(videoId)) return new { error = "No videoId" };
+
+        var cachedData = _ytForm.GetOrCreateVideoData(videoId);
+
+        // Lyrics were looked up before (found or not): answer from the cache. The
+        // lyrics panel used to hit lyrics.ovh — and fall back to a full YouTube
+        // description fetch — every time it was opened.
+        if (cachedData.LyricsFetched)
+        {
+            return new
+            {
+                lyrics = cachedData.LyricsText ?? string.Empty,
+                title = cachedData.Title ?? string.Empty,
+                artist = cachedData.Creator ?? string.Empty,
+                cached = true
+            };
+        }
+
         try
         {
             var title = _ytForm.GetCachedTitle(videoId) ?? "";
             var artist = _ytForm.GetCachedCreator(videoId) ?? "";
             var lyrics = await _ytService.GetLyricsAsync(artist, title, videoId).ConfigureAwait(false);
+
+            cachedData.LyricsText = lyrics ?? string.Empty;
+            cachedData.LyricsFetched = true;
+            _ytForm.SaveVideoDataCache();
+
             return new { lyrics = lyrics ?? "", title, artist };
         }
         catch (Exception ex)
@@ -1191,6 +1214,15 @@ public class YoutubeFormInterop
             {
                 var subtitles = await _ytService.TryGetSubtitlesAsync(videoId).ConfigureAwait(false);
                 var subtitleText = subtitles?.PlainText ?? "";
+
+                cachedData.LyricsText = subtitleText;
+                cachedData.LyricsFetched = true;
+                cachedData.SubtitleText = subtitleText;
+                if (!string.IsNullOrWhiteSpace(subtitles?.TimedLrcText))
+                    cachedData.SubtitleTimedText = subtitles!.TimedLrcText!;
+                cachedData.SubtitlesFetched = true;
+                _ytForm.SaveVideoDataCache();
+
                 return new { lyrics = subtitleText, source = "subtitles" };
             }
             catch
@@ -1212,27 +1244,62 @@ public class YoutubeFormInterop
         if (string.IsNullOrEmpty(videoId)) return new { error = "No videoId" };
         try
         {
-            var cachePath = Path.Combine("data", "downloadedvideos", "thumbnail-cache", $"{videoId}.png");
-            if (File.Exists(cachePath))
-            {
-                var bytes = await File.ReadAllBytesAsync(cachePath).ConfigureAwait(false);
-                return new { mime = "image/png", data = Convert.ToBase64String(bytes) };
-            }
-            var thumbUrl = await _ytService.GetThumbnailUrlAsync(videoId).ConfigureAwait(false);
-            if (!string.IsNullOrEmpty(thumbUrl))
-            {
-                using var client = new System.Net.Http.HttpClient();
-                var bytes = await client.GetByteArrayAsync(thumbUrl).ConfigureAwait(false);
-                Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-                await File.WriteAllBytesAsync(cachePath, bytes).ConfigureAwait(false);
-                return new { mime = "image/jpeg", data = Convert.ToBase64String(bytes) };
-            }
-            return new { error = "No thumbnail" };
+            var bytes = await GetOrDownloadThumbnailBytesAsync(videoId).ConfigureAwait(false);
+            if (bytes == null || bytes.Length == 0) return new { error = "No thumbnail" };
+            return new { mime = "image/jpeg", data = Convert.ToBase64String(bytes) };
         }
         catch (Exception ex)
         {
             return new { error = ex.Message };
         }
+    }
+
+    /// <summary>In-flight thumbnail downloads, so duplicate cards share one request.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<byte[]?>> ThumbnailFetches = new();
+
+    /// <summary>
+    /// Thumbnail bytes from the on-disk cache, downloaded (and cached) only when
+    /// missing. Shared by the lists, the download pipeline and the library import,
+    /// so one video's artwork is fetched exactly once. The previous code used three
+    /// different folders/spellings and re-downloaded the image in each stage.
+    /// </summary>
+    private async Task<byte[]?> GetOrDownloadThumbnailBytesAsync(string videoId)
+    {
+        var directory = AppPaths.ThumbnailCachePath;
+
+        foreach (var name in new[] { videoId + ".jpg", videoId + ".png" })
+        {
+            try
+            {
+                var path = Path.Combine(directory, name);
+                if (!File.Exists(path)) continue;
+                var cached = await File.ReadAllBytesAsync(path).ConfigureAwait(false);
+                if (cached.Length > 0) return cached;
+            }
+            catch
+            {
+                // Unreadable cache entry: fall through to a fresh download.
+            }
+        }
+
+        var bytes = await ThumbnailFetches
+            .GetOrAdd(videoId, id => _ytService.DownloadThumbnailBytesAsync(id))
+            .ConfigureAwait(false);
+        ThumbnailFetches.TryRemove(videoId, out _);
+
+        if (bytes == null || bytes.Length == 0) return null;
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            await File.WriteAllBytesAsync(Path.Combine(directory, videoId + ".jpg"), bytes).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A read-only folder still lets the caller use the bytes for this pass.
+        }
+
+        return bytes;
     }
 
     private async Task<object> DownloadVideoAsync(string? videoUrl)
@@ -1263,7 +1330,7 @@ public class YoutubeFormInterop
     {
         if (string.IsNullOrEmpty(videoId)) return new { downloaded = false };
         var mp3Path = DownloadedAudio.PathFor(videoId);
-        return new { downloaded = File.Exists(mp3Path) };
+        return new { downloaded = DownloadedAudio.IsComplete(mp3Path) };
     }
 
     private async Task<object> DownloadAndProcessSongAsync(string? videoId, string? action)
@@ -1287,19 +1354,44 @@ public class YoutubeFormInterop
         await _ytForm.DownloadSemaphore.WaitAsync();
         try
         {
-            // Stage 1: Metadata
-            SendProgress("metadata", 0, "Fetching metadata...");
-            var (title, length, creator) = await _ytService.GetVideoMetadataAsync(videoUrl).ConfigureAwait(false);
+            // Re-check after waiting for the semaphore: another path (the fetch
+            // loop, a second click) may have finished this video in the meantime,
+            // and the path computed before the wait could belong to another
+            // container than the file that now exists.
+            mp3Path = DownloadedAudio.PathFor(videoId, downloadPath);
 
             var cachedData = _ytForm.GetOrCreateVideoData(videoId);
-            cachedData.Title = title ?? string.Empty;
-            cachedData.Creator = creator ?? string.Empty;
-            cachedData.DurationTicks = length.Ticks;
-            _ytForm.SaveVideoDataCache();
 
-            SendProgress("metadata", 100, title ?? videoId);
+            // Stage 1: Metadata — reuse the cache. Re-processing a request (a poll
+            // after a download, the user pressing Queue on an existing song) used to
+            // cost a full YouTube metadata request every time.
+            string title;
+            string creator;
+            TimeSpan length;
+            if (!string.IsNullOrWhiteSpace(cachedData.Title) && cachedData.DurationTicks > 0)
+            {
+                title = cachedData.Title;
+                creator = cachedData.Creator ?? string.Empty;
+                length = TimeSpan.FromTicks(cachedData.DurationTicks);
+                SendProgress("metadata", 100, title);
+            }
+            else
+            {
+                SendProgress("metadata", 0, "Fetching metadata...");
+                var metadata = await _ytService.GetVideoMetadataAsync(videoUrl).ConfigureAwait(false);
+                title = metadata.Title ?? string.Empty;
+                creator = metadata.Creator ?? string.Empty;
+                length = metadata.Length;
 
-            if (File.Exists(mp3Path))
+                cachedData.Title = title;
+                cachedData.Creator = creator;
+                cachedData.DurationTicks = length.Ticks;
+                _ytForm.SaveVideoDataCache();
+
+                SendProgress("metadata", 100, title.Length > 0 ? title : videoId);
+            }
+
+            if (DownloadedAudio.IsComplete(mp3Path))
             {
                 // Already downloaded — skip to post-processing
                 SendProgress("downloading", 100, "Already downloaded");
@@ -1325,53 +1417,44 @@ public class YoutubeFormInterop
                 }
             }
 
-            // Stage 3: Thumbnail
+            // Stage 3: Thumbnail — read it from the cache when it is already there.
+            // The old code downloaded the image (and its URL, via a full metadata
+            // request) on every pass, and did it a second time in stage 5.
             SendProgress("thumbnail", 0, "Fetching thumbnail...");
+            byte[]? thumbnailBytes = null;
             try
             {
-                var thumbUrl = await _ytService.GetThumbnailUrlAsync(videoUrl).ConfigureAwait(false);
-                if (!string.IsNullOrEmpty(thumbUrl))
-                {
-                    using var httpClient = new System.Net.Http.HttpClient();
-                    var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl).ConfigureAwait(false);
-                    var cacheDir = Path.Combine("data", "downloadedvideos", "thumbnail-cache");
-                    Directory.CreateDirectory(cacheDir);
-                    var jpgPath = Path.Combine(cacheDir, $"{videoId}.jpg");
-                    await File.WriteAllBytesAsync(jpgPath, thumbBytes).ConfigureAwait(false);
-
-                    // Also save to library if auto-add is enabled
-                    if (ConfigService.Instance.Current?.LibraryAutoAddDownloads == true)
-                    {
-                        var libSong = _libraryService.Data.Songs.FirstOrDefault(s => s.YouTubeId == videoId);
-                        if (libSong != null)
-                        {
-                            _libraryService.SaveSongThumbnail(libSong.Id, thumbBytes);
-                        }
-                    }
-                }
-                SendProgress("thumbnail", 100, "Thumbnail cached");
+                thumbnailBytes = await GetOrDownloadThumbnailBytesAsync(videoId).ConfigureAwait(false);
+                SendProgress("thumbnail", 100,
+                    thumbnailBytes != null && thumbnailBytes.Length > 0 ? "Thumbnail cached" : "Thumbnail unavailable");
             }
             catch
             {
                 SendProgress("thumbnail", 100, "Thumbnail skipped");
             }
 
-            // Stage 4: Subtitles
+            // Stage 4: Subtitles — cached results (including "this video has no
+            // captions") are reused instead of being looked up again.
             SendProgress("subtitles", 0, "Caching subtitles...");
-            try
+            if (cachedData.SubtitlesFetched)
             {
-                var subtitleResult = await _ytService.TryGetSubtitlesAsync(videoUrl).ConfigureAwait(false);
-                if (subtitleResult != null && (!string.IsNullOrWhiteSpace(subtitleResult.PlainText) || !string.IsNullOrWhiteSpace(subtitleResult.TimedLrcText)))
-                {
-                    cachedData.SubtitleText = subtitleResult.PlainText ?? string.Empty;
-                    cachedData.SubtitleTimedText = subtitleResult.TimedLrcText ?? string.Empty;
-                    _ytForm.SaveVideoDataCache();
-                }
                 SendProgress("subtitles", 100, "Subtitles cached");
             }
-            catch
+            else
             {
-                SendProgress("subtitles", 100, "Subtitles skipped");
+                try
+                {
+                    var subtitleResult = await _ytService.TryGetSubtitlesAsync(videoUrl).ConfigureAwait(false);
+                    cachedData.SubtitleText = subtitleResult?.PlainText ?? string.Empty;
+                    cachedData.SubtitleTimedText = subtitleResult?.TimedLrcText ?? string.Empty;
+                    cachedData.SubtitlesFetched = true;
+                    _ytForm.SaveVideoDataCache();
+                    SendProgress("subtitles", 100, "Subtitles cached");
+                }
+                catch
+                {
+                    SendProgress("subtitles", 100, "Subtitles skipped");
+                }
             }
 
             // Stage 5: Auto-add to library
@@ -1383,12 +1466,12 @@ public class YoutubeFormInterop
                 {
                     try
                     {
-                        var thumbUrl = await _ytService.GetThumbnailUrlAsync(videoUrl).ConfigureAwait(false);
-                        if (!string.IsNullOrEmpty(thumbUrl))
+                        // Reuse the bytes cached in stage 3: the old code asked
+                        // YouTube for the URL again and downloaded the image a
+                        // second time.
+                        if (thumbnailBytes != null && thumbnailBytes.Length > 0)
                         {
-                            using var httpClient = new System.Net.Http.HttpClient();
-                            var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl).ConfigureAwait(false);
-                            var thumbPath = _libraryService.SaveSongThumbnail(libSong.Id, thumbBytes);
+                            var thumbPath = _libraryService.SaveSongThumbnail(libSong.Id, thumbnailBytes);
                             libSong.ThumbnailPath = thumbPath;
                         }
                     }
@@ -2506,7 +2589,16 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("normalizeVolume", out var nv)) cfg.NormalizeVolume = nv.ToObject<bool>();
                 if (settings.TryGetValue("useCaptionLyricsFallback", out var cl)) cfg.UseCaptionLyricsFallback = cl.ToObject<bool>();
                 if (settings.TryGetValue("enableAnnouncements", out var ea)) cfg.EnableAnnouncements = ea.ToObject<bool>();
-                if (settings.TryGetValue("bearerToken", out var bt)) cfg.BearerToken = bt.ToString();
+                if (settings.TryGetValue("bearerToken", out var bt))
+                {
+                    // The header must be "<scheme> <token>". A token pasted without
+                    // "Bearer " (easy to do on a phone) produced an invalid
+                    // Authorization header and a 401 that looked like a bad token.
+                    var token = (bt?.ToString() ?? string.Empty).Trim();
+                    if (token.Length > 0 && !token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                        token = "Bearer " + token;
+                    cfg.BearerToken = token;
+                }
                 if (settings.TryGetValue("defaultSorting", out var ds)) cfg.DefaultSorting = ds.ToString();
                 if (settings.TryGetValue("defaultSubmitMethod", out var dsm))
                 {
@@ -4161,11 +4253,9 @@ public class YoutubeFormInterop
 
                 try
                 {
-                    var thumbUrl = await _ytService.GetThumbnailUrlAsync(videoUrl);
-                    if (!string.IsNullOrEmpty(thumbUrl))
+                    var thumbBytes = await GetOrDownloadThumbnailBytesAsync(youTubeId);
+                    if (thumbBytes != null && thumbBytes.Length > 0)
                     {
-                        using var httpClient = new HttpClient();
-                        var thumbBytes = await httpClient.GetByteArrayAsync(thumbUrl);
                         var thumbPath = _libraryService.SaveSongThumbnail(libSong.Id, thumbBytes);
                         libSong.ThumbnailPath = thumbPath;
                     }

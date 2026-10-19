@@ -21,6 +21,7 @@ public sealed class HeadlessHost : ISongRequestHost
     public YoutubeService YoutubeService { get; }
     public IUiShell? NewUiRef { get; set; }
     public Action? OnDataRefreshed { get; set; }
+    public Action<string, object?>? EventSink { get; set; }
 
     public bool InitialLoadComplete
     {
@@ -123,11 +124,17 @@ public sealed class HeadlessHost : ISongRequestHost
     /// Processes a newly sent-in request: fetch metadata, download the audio,
     /// cache it and (in Autopilot mode) queue it. No WPF panels.
     /// </summary>
+    /// <summary>How often a failed automatic download is retried in one run.</summary>
+    private const int MaxDownloadAttempts = 3;
+
+    private readonly ConcurrentDictionary<string, int> _downloadAttempts = new(StringComparer.OrdinalIgnoreCase);
+
     public async Task AddVideoPanelAsync(string videoUrl, DateTime? timestamp = null, string? message = null, bool? isApproved = null)
     {
+        string? videoId = null;
         try
         {
-            var videoId = YoutubeService.ExtractVideoId(videoUrl);
+            videoId = YoutubeService.ExtractVideoId(videoUrl);
             if (string.IsNullOrWhiteSpace(videoId) || videoId == "404") return;
 
             // Never touch YouTube before the user has decided about cookies (or when
@@ -144,21 +151,44 @@ public sealed class HeadlessHost : ISongRequestHost
             var data = GetOrCreateVideoData(videoId);
             data.IsApproved = isApproved ?? false;
 
+            void Progress(string stage, double progress, string? text = null)
+                => EventSink?.Invoke("downloadProgress", new { videoId, stage, progress, message = text });
+
             if (string.IsNullOrWhiteSpace(data.Title))
             {
+                Progress("metadata", 0, "Fetching metadata...");
                 var (title, length, creator) = await YoutubeService.GetVideoMetadataAsync(videoUrl).ConfigureAwait(false);
                 data.Title = title ?? videoId;
                 data.Creator = creator ?? "";
                 data.DurationTicks = length.Ticks;
                 SaveVideoDataCache();
+                Progress("metadata", 100, data.Title);
             }
 
             var mp3 = DownloadedAudio.PathFor(videoId);
-            if (!File.Exists(mp3))
+            if (!DownloadedAudio.IsComplete(mp3))
             {
+                // Bounded retries: a video that is permanently unavailable used to be
+                // retried on every poll (or not at all, depending on the marker).
+                var attempt = _downloadAttempts.AddOrUpdate(videoId, 1, (_, current) => current + 1);
+                if (attempt > MaxDownloadAttempts)
+                {
+                    fetchedYtids.Add(videoId);
+                    return;
+                }
+
+                Progress("downloading", 0, "Downloading...");
+
                 await DownloadSemaphore.WaitAsync().ConfigureAwait(false);
                 try
                 {
+                    // Re-check after waiting: another path (the UI's download button,
+                    // the previous queue entry) may have finished the same video while
+                    // this call sat on the semaphore. Without this the file was
+                    // downloaded a second time and overwritten.
+                    mp3 = DownloadedAudio.PathFor(videoId);
+                    if (DownloadedAudio.IsComplete(mp3)) return;
+
                     if (!ProcessingVideos.TryAdd(videoId, 0))
                         return;
                     try { await YoutubeService.DownloadAndConvertVideoAsync(videoUrl, AppPaths.DownloadPath).ConfigureAwait(false); }
@@ -168,6 +198,8 @@ public sealed class HeadlessHost : ISongRequestHost
                 {
                     DownloadSemaphore.Release();
                 }
+
+                Progress("downloading", 100, "Download complete");
             }
 
             if (InitialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true && File.Exists(mp3))
@@ -175,7 +207,26 @@ public sealed class HeadlessHost : ISongRequestHost
                 var song = CreateSong(videoId);
                 if (song != null) Music.AddSongExternal(song);
             }
+
+            Progress("complete", 100, data.Title);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Retry on a later fetch while the attempt budget lasts.
+            if (videoId != null)
+            {
+                var attempt = _downloadAttempts.TryGetValue(videoId, out var count) ? count : 0;
+                if (attempt >= MaxDownloadAttempts) fetchedYtids.Add(videoId);
+                else fetchedYtids.Remove(videoId);
+            }
+
+            EventSink?.Invoke("downloadProgress", new
+            {
+                videoId,
+                stage = "error",
+                progress = 0,
+                message = ex.Message
+            });
+        }
     }
 }

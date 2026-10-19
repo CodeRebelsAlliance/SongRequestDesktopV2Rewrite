@@ -142,6 +142,11 @@ namespace SongRequestDesktopV2Rewrite
                 throw new Exception("Invalid YouTube URL. Unable to extract video ID.");
             }
 
+            // Idempotent: an existing download (in any container we have used) is
+            // returned as is instead of being fetched and overwritten again.
+            var existing = DownloadedAudio.Existing(videoId, downloadPath);
+            if (DownloadedAudio.IsComplete(existing)) return existing!;
+
             var streamManifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
             var audioStreams = streamManifest.GetAudioOnlyStreams();
             if (audioStreams == null || !audioStreams.Any())
@@ -165,6 +170,31 @@ namespace SongRequestDesktopV2Rewrite
             if (string.IsNullOrEmpty(videoId))
             {
                 throw new Exception("Invalid YouTube URL. Unable to extract video ID.");
+            }
+
+            try
+            {
+                return await DownloadDirectAsync(videoId, downloadPath, progress).ConfigureAwait(false);
+            }
+            catch (YoutubeExplode.Exceptions.YoutubeExplodeException) when (YtDlpDownloader.IsAvailable)
+            {
+                // YouTube refuses some videos to the plain web client ("Video is not
+                // available"), regardless of cookies. yt-dlp solves the current player
+                // challenges, so let it fetch the audio into the same path.
+                var targetPath = DownloadedAudio.PathFor(videoId, downloadPath);
+                var error = await YtDlpDownloader.DownloadAudioAsync(videoId, targetPath, progress).ConfigureAwait(false);
+                if (error != null) throw new Exception(error);
+                return targetPath;
+            }
+        }
+
+        private async Task<string> DownloadDirectAsync(string videoId, string downloadPath, IProgress<double>? progress)
+        {
+            var existing = DownloadedAudio.Existing(videoId, downloadPath);
+            if (DownloadedAudio.IsComplete(existing))
+            {
+                progress?.Report(1);
+                return existing!;
             }
 
             var streamManifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
@@ -398,10 +428,48 @@ namespace SongRequestDesktopV2Rewrite
             return video.Description;
         }
 
-        public async Task<string> GetThumbnailUrlAsync(string videoUrl)
+        /// <summary>
+        /// The well-known thumbnail URL for a video id. Thumbnails live on a static
+        /// image host, so this needs no YouTube metadata request — the old version
+        /// called <c>Videos.GetAsync</c> for *every* thumbnail, turning a grid of
+        /// cards into a burst of full metadata requests.
+        /// </summary>
+        public static string GetThumbnailUrl(string videoId, bool highQuality = true)
         {
-            var video = await _youtubeClient.Videos.GetAsync(videoUrl);
-            return video.Thumbnails.GetWithHighestResolution().Url;
+            if (string.IsNullOrWhiteSpace(videoId)) return string.Empty;
+            return highQuality
+                ? $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg"
+                : $"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg";
+        }
+
+        /// <summary>
+        /// Fetches a thumbnail's bytes, preferring the high-resolution image and
+        /// falling back to the always-present 480x360 version. Null when neither works.
+        /// </summary>
+        public async Task<byte[]?> DownloadThumbnailBytesAsync(string videoId, System.Threading.CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(videoId)) return null;
+
+            foreach (var url in new[] { GetThumbnailUrl(videoId, true), GetThumbnailUrl(videoId, false) })
+            {
+                try
+                {
+                    var bytes = await _httpClient.GetByteArrayAsync(url, cancellationToken).ConfigureAwait(false);
+                    if (bytes.Length > 0) return bytes;
+                }
+                catch
+                {
+                    // 404 for videos without a max-resolution image: try the next one.
+                }
+            }
+
+            return null;
+        }
+
+        public Task<string> GetThumbnailUrlAsync(string videoUrl)
+        {
+            var videoId = GetYouTubeVideoId(videoUrl);
+            return Task.FromResult(string.IsNullOrWhiteSpace(videoId) ? string.Empty : GetThumbnailUrl(videoId));
         }
 
         public async Task<List<SearchResult>> SearchAsync(string query, int maxResults = 10)

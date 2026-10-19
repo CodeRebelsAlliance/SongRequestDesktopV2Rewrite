@@ -186,7 +186,7 @@ public class LibraryImportTests
     }
 
     [Fact]
-    public void LibraryJson_StoresImportedSongsPortably_AndResolvesThemOnLoad()
+    public async Task LibraryJson_StoresImportedSongsPortably_AndResolvesThemOnLoad()
     {
         using var sandbox = new Sandbox();
         var songPath = Path.Combine(sandbox.Music, "tone.wav");
@@ -195,7 +195,7 @@ public class LibraryImportTests
         using (var library = new LibraryService())
         {
             library.Data.Config.ScanFolders.Add(sandbox.Music);
-            library.ScanAsync().GetAwaiter().GetResult();
+            await library.ScanAsync();
             Assert.Single(library.Data.Songs);
         }
 
@@ -207,6 +207,45 @@ public class LibraryImportTests
         // Loading resolves it against the current root.
         using var reloaded = new LibraryService();
         Assert.Equal(songPath, reloaded.Data.Songs.Single().FilePath);
+    }
+
+    [Fact]
+    public async Task Save_KeepsTheInMemoryPathsAbsolute_WhileStoringThemPortably()
+    {
+        // Regression: Save() rewrites paths to "~/…" for the file and used to leave
+        // ThumbnailPath like that in memory, so every thumbnail stopped resolving
+        // after the first save (ThumbnailStore reads the path straight from disk).
+        using var sandbox = new Sandbox();
+        var songPath = Path.Combine(sandbox.Music, "tone.wav");
+        WriteWav(songPath);
+
+        using var library = new LibraryService();
+        library.Data.Config.ScanFolders.Add(sandbox.Music);
+        await library.ScanAsync();
+
+        var song = Assert.Single(library.Data.Songs);
+        var thumbnail = Path.Combine(sandbox.Root, "library", "thumbnails", "cover.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(thumbnail)!);
+        File.WriteAllBytes(thumbnail, new byte[] { 1, 2, 3 });
+        song.ThumbnailPath = thumbnail;
+
+        library.Save();
+
+        // In memory: absolute (the player and ThumbnailStore need real paths).
+        Assert.Equal(songPath, song.FilePath);
+        Assert.Equal(thumbnail, song.ThumbnailPath);
+
+        // On disk: portable, so a moved sandbox still resolves.
+        var json = JObject.Parse(File.ReadAllText(Path.Combine(AppPaths.LibraryDataDir, "library.json")));
+        var stored = json["Songs"]!.First!;
+        Assert.Equal("~/music/tone.wav", stored["FilePath"]!.ToString());
+        Assert.StartsWith("~/library/thumbnails/", stored["ThumbnailPath"]!.ToString());
+
+        // And a fresh instance resolves both back to the absolute paths.
+        using var reloaded = new LibraryService();
+        var again = Assert.Single(reloaded.Data.Songs);
+        Assert.Equal(songPath, again.FilePath);
+        Assert.Equal(thumbnail, again.ThumbnailPath);
     }
 
     [Fact]

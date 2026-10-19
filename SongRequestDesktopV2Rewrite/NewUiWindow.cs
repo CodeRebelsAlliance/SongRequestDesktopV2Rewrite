@@ -406,8 +406,6 @@ public class NewUiWindow : IUiShell
             // A GTK/AppIndicator crash here is native and cannot be caught, so if the
             // last starts never got as far as the webview, skip the tray this time and
             // remember it (the user can re-enable it later; the app must stay launchable).
-            if (!wantsTray) return;
-
             if (StartupGuard.TrayDisabled
                 || (StartupGuard.CrashRecoveryThisRun && StartupGuard.TrayUsedLastRun))
             {
@@ -425,12 +423,14 @@ public class NewUiWindow : IUiShell
             if (!tray.IsSupported)
             {
                 tray.Dispose();
+                StartupGuard.ClearTrayUsed();
                 return;
             }
 
             tray.CommandInvoked += (_, command) => HandleTrayCommand(w, command);
             tray.Show();
             _tray = tray;
+            ConfigurationLog("tray: created");
         }
         catch
         {

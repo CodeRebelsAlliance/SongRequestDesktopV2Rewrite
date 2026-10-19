@@ -20,6 +20,22 @@ public class VideoData
     public string ThumbnailPath { get; set; } = string.Empty;
     public string SubtitleText { get; set; } = string.Empty;
     public string SubtitleTimedText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether captions were already looked up. Without this, a video with no
+    /// captions looked like "not cached yet" and every re-process asked YouTube
+    /// again.
+    /// </summary>
+    public bool SubtitlesFetched { get; set; }
+
+    /// <summary>Lyrics looked up for this video (any provider), cached verbatim.</summary>
+    public string LyricsText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether lyrics were already looked up. Cached separately from the text so a
+    /// "nothing found" result is not retried on every panel open.
+    /// </summary>
+    public bool LyricsFetched { get; set; }
 }
 
 /// <summary>

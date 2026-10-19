@@ -122,9 +122,14 @@ public class DownloadAndSignInTests
         YoutubeFormInterop interop,
         ConcurrentQueue<string> responses,
         string method,
-        string id = "s1")
+        string id = "s1",
+        JObject? payload = null)
     {
         var msg = new JObject { ["type"] = "request", ["id"] = id, ["method"] = method };
+        if (payload != null)
+            foreach (var property in payload.Properties())
+                msg[property.Name] = property.Value;
+
         interop.HandleMessage(msg.ToString(Formatting.None));
 
         for (int i = 0; i < 400; i++)
@@ -139,6 +144,112 @@ public class DownloadAndSignInTests
         }
 
         throw new TimeoutException($"No response for '{method}'");
+    }
+
+    [Fact]
+    public async Task DownloadVideoAsync_ReusesAnExistingFile()
+    {
+        using var sandbox = new Sandbox();
+        var existing = Path.Combine(sandbox.Downloads, "dQw4w9WgXcQ.mp3");
+        var payload = new byte[64 * 1024];
+        payload[0] = 1;
+        await File.WriteAllBytesAsync(existing, payload);
+
+        // No cookies, no network: an existing file must be returned before YouTube
+        // is contacted at all (this used to re-download and overwrite it).
+        var service = new YoutubeService(Array.Empty<Cookie>());
+        var path = await service.DownloadVideoAsync("https://www.youtube.com/watch?v=dQw4w9WgXcQ", sandbox.Downloads);
+
+        Assert.Equal(existing, path);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(existing));
+    }
+
+    [Fact]
+    public void ThumbnailUrl_IsDerivedFromTheId_WithoutMetadataRequests()
+    {
+        const string id = "dQw4w9WgXcQ";
+        Assert.Equal($"https://i.ytimg.com/vi/{id}/maxresdefault.jpg", YoutubeService.GetThumbnailUrl(id));
+        Assert.Equal($"https://i.ytimg.com/vi/{id}/hqdefault.jpg", YoutubeService.GetThumbnailUrl(id, highQuality: false));
+        Assert.Equal(string.Empty, YoutubeService.GetThumbnailUrl(""));
+    }
+
+    [Fact]
+    public async Task GetThumbnail_ServesTheCachedImage()
+    {
+        using var sandbox = new Sandbox();
+        var directory = AppPaths.ThumbnailCachePath;
+        Directory.CreateDirectory(directory);
+        var bytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 7, 8, 9 };
+        await File.WriteAllBytesAsync(Path.Combine(directory, "thumbcache1.jpg"), bytes);
+
+        var (_, interop, responses) = Create();
+        var response = await Request(interop, responses, "getThumbnail", "t1", new JObject { ["videoId"] = "thumbcache1" });
+
+        Assert.Equal(Convert.ToBase64String(bytes), response["result"]!["data"]!.ToString());
+        Assert.Equal("image/jpeg", response["result"]!["mime"]!.ToString());
+    }
+
+    [Fact]
+    public async Task GetLyrics_ReturnsFindingsFromTheCache()
+    {
+        using var sandbox = new Sandbox();
+        var (host, interop, responses) = Create();
+
+        var data = host.Engine.Cache.GetOrCreate("lyriccache1");
+        data.Title = "Cached Song";
+        data.Creator = "Cached Artist";
+        data.LyricsText = "cached words";
+        data.LyricsFetched = true;
+
+        var response = await Request(interop, responses, "getLyrics", "l1", new JObject { ["videoId"] = "lyriccache1" });
+
+        Assert.Equal("cached words", response["result"]!["lyrics"]!.ToString());
+        Assert.True(response["result"]!["cached"]!.ToObject<bool>());
+    }
+
+    [Fact]
+    public async Task DownloadAndProcess_ReusesEveryCache_ForAnAlreadyDownloadedSong()
+    {
+        using var sandbox = new Sandbox();
+        var cfg = ConfigService.Instance.Current!;
+        var autoAdd = cfg.LibraryAutoAddDownloads;
+        cfg.LibraryAutoAddDownloads = false;
+
+        try
+        {
+            const string videoId = "cachedvid01";   // 11 chars, deliberately not a real video
+
+            var existing = Path.Combine(sandbox.Downloads, videoId + ".mp3");
+            var payload = new byte[64 * 1024];
+            payload[0] = 1;
+            await File.WriteAllBytesAsync(existing, payload);
+
+            var (host, interop, responses) = Create();
+
+            var data = host.Engine.Cache.GetOrCreate(videoId);
+            data.Title = "Cached Song";
+            data.Creator = "Cached Artist";
+            data.DurationTicks = TimeSpan.FromSeconds(42).Ticks;
+            data.SubtitlesFetched = true;
+
+            var thumbDirectory = AppPaths.ThumbnailCachePath;
+            Directory.CreateDirectory(thumbDirectory);
+            await File.WriteAllBytesAsync(Path.Combine(thumbDirectory, videoId + ".jpg"), new byte[] { 0xFF, 0xD8 });
+
+            // Every stage is cached: metadata, audio, artwork and lyrics. A single
+            // network call would fail for this non-existent video, so success proves
+            // nothing was fetched again.
+            var response = await Request(interop, responses, "downloadAndProcess", "d1",
+                new JObject { ["ytid"] = videoId, ["action"] = "queue" });
+
+            Assert.True(response["result"]!["success"]!.ToObject<bool>());
+            Assert.Equal(existing, response["result"]!["path"]!.ToString());
+            Assert.Equal(payload, await File.ReadAllBytesAsync(existing));
+        }
+        finally
+        {
+            cfg.LibraryAutoAddDownloads = autoAdd;
+        }
     }
 
     [Fact]

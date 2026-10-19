@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 
@@ -154,6 +155,29 @@ public static class YoutubeCookieService
             }
         }
         return kept;
+    }
+
+    /// <summary>
+    /// Writes the cookies as a Netscape cookies.txt file, which is what yt-dlp reads
+    /// (used by the download fallback when YouTube challenges the plain client).
+    /// </summary>
+    public static void SaveNetscapeFile(IReadOnlyList<Cookie> cookies, string path)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# Netscape HTTP Cookie File");
+        foreach (var cookie in cookies)
+        {
+            var domain = string.IsNullOrWhiteSpace(cookie.Domain) ? ".youtube.com" : cookie.Domain;
+            var includeSubdomains = domain.StartsWith('.') ? "TRUE" : "FALSE";
+            var secure = cookie.Secure ? "TRUE" : "FALSE";
+            var expiry = cookie.Expires == default ? 0 : new DateTimeOffset(cookie.Expires.ToUniversalTime()).ToUnixTimeSeconds();
+            var pathValue = string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path;
+
+            builder.AppendLine(string.Join('\t', domain, includeSubdomains, pathValue, secure,
+                expiry, cookie.Name, cookie.Value));
+        }
+
+        File.WriteAllText(path, builder.ToString());
     }
 
     /// <summary>Last few non-empty lines of yt-dlp's stderr, for the error message.</summary>

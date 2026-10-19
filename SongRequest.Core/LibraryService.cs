@@ -100,10 +100,10 @@ namespace SongRequestDesktopV2Rewrite
 
                     // Persist paths under the data root portably ("~/…"), leaving
                     // the user's own folders absolute.
-                    var portable = new List<string>(_data.Songs.Count);
+                    var portable = new List<(string FilePath, string? ThumbnailPath)>(_data.Songs.Count);
                     foreach (var song in _data.Songs)
                     {
-                        portable.Add(song.FilePath);
+                        portable.Add((song.FilePath, song.ThumbnailPath));
                         song.FilePath = AppPaths.ToPortablePath(song.FilePath);
                         song.ThumbnailPath = AppPaths.ToPortablePath(song.ThumbnailPath);
                     }
@@ -115,10 +115,15 @@ namespace SongRequestDesktopV2Rewrite
                     }
                     finally
                     {
-                        // The in-memory model keeps absolute paths (the player opens
-                        // them directly).
-                        for (int i = 0; i < _data.Songs.Count; i++)
-                            _data.Songs[i].FilePath = portable[i];
+                        // The in-memory model keeps absolute paths: the player opens
+                        // them, and ThumbnailStore reads them straight from disk. Both
+                        // properties must be restored — leaving ThumbnailPath as "~/…"
+                        // made every thumbnail disappear after the first save.
+                        for (int i = 0; i < _data.Songs.Count && i < portable.Count; i++)
+                        {
+                            _data.Songs[i].FilePath = portable[i].FilePath;
+                            _data.Songs[i].ThumbnailPath = portable[i].ThumbnailPath;
+                        }
                     }
                 }
                 catch (Exception ex)

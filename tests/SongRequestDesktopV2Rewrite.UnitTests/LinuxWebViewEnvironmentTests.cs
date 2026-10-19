@@ -238,15 +238,41 @@ public class LinuxWebViewEnvironmentTests : IDisposable
 
 public class StartupGuardTests : IDisposable
 {
-    public StartupGuardTests() => Cleanup();
+    private readonly string _previousLocalData = AppPaths.LocalAppDataDir;
 
-    public void Dispose() => Cleanup();
-
-    private void Cleanup()
+    public StartupGuardTests()
     {
-        foreach (var path in new[] { StartupGuard.MarkerPath, StartupGuard.SafeModePath })
+        // Isolate the guard's markers: it must never touch the developer's (or a
+        // test runner's) real state — a leftover marker disables the tray.
+        var dir = Path.Combine(TestSupport.NewTempDir("guard"), "local");
+        Directory.CreateDirectory(dir);
+        AppPaths.LocalAppDataDir = dir;
+        Cleanup();
+    }
+
+    public void Dispose()
+    {
+        Cleanup();
+        AppPaths.LocalAppDataDir = _previousLocalData;
+    }
+
+    private static void Cleanup()
+    {
+        foreach (var name in new[]
+                 {
+                     StartupGuard.MarkerFileName,
+                     StartupGuard.SafeModeFileName,
+                     StartupGuard.TrayDisabledFileName,
+                     "safe-mode-ok.marker",
+                     "tray-used.marker",
+                 })
         {
-            try { if (File.Exists(path)) File.Delete(path); } catch { }
+            try
+            {
+                var path = Path.Combine(AppPaths.LocalAppDataDir, name);
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch { }
         }
     }
 
@@ -329,6 +355,56 @@ public class StartupGuardTests : IDisposable
 
         StartupGuard.ClearTrayUsed();
         Assert.False(StartupGuard.TrayUsedLastRun);
+    }
+
+    [Fact]
+    public void Complete_ForgetsThatATrayWasUsed()
+    {
+        StartupGuard.NoteTrayUsed();
+        Assert.True(StartupGuard.TrayUsedLastRun);
+
+        // The UI rendered and the tray was set up: the tray did not crash, so a
+        // later unrelated crash loop must not blame it.
+        StartupGuard.Complete();
+
+        Assert.False(StartupGuard.TrayUsedLastRun);
+    }
+
+    [Fact]
+    public void SafeMode_IsRetriedAfterAFewCleanStarts()
+    {
+        StartupGuard.ClearSafeMode();
+        StartupGuard.EnterSafeMode();
+        Assert.True(StartupGuard.SafeModePersisted);
+
+        for (int i = 1; i < StartupGuard.SafeModeRecoveryStarts; i++)
+        {
+            StartupGuard.Complete();
+            Assert.True(StartupGuard.SafeModePersisted);
+        }
+
+        // The last clean start asks for the hardware path again.
+        StartupGuard.Complete();
+        Assert.False(StartupGuard.SafeModePersisted);
+    }
+
+    [Fact]
+    public void ClearSafeMode_ResetsTheRecoveryCounter()
+    {
+        StartupGuard.ClearSafeMode();
+        StartupGuard.EnterSafeMode();
+        StartupGuard.Complete();       // one clean start on the old marker
+        StartupGuard.ClearSafeMode();  // --gpu
+
+        StartupGuard.EnterSafeMode();  // a new crash loop
+        for (int i = 1; i < StartupGuard.SafeModeRecoveryStarts; i++)
+        {
+            StartupGuard.Complete();
+            Assert.True(StartupGuard.SafeModePersisted, "the old counter must not count towards the new safe mode");
+        }
+
+        StartupGuard.Complete();
+        Assert.False(StartupGuard.SafeModePersisted);
     }
 
     [Fact]

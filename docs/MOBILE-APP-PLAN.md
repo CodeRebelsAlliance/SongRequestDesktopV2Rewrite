@@ -623,6 +623,76 @@ and docs, excluding app-store review time.
 
 ### M8 — Release engineering, QA, polish · 2–3 w
 
+**Post-porting regression fixes** ✅:
+- **Thumbnails stopped loading after the first library save** (both platforms): the
+  portable-path change rewrote `ThumbnailPath` to `~/…` for the file but restored
+  only `FilePath` in memory, so `ThumbnailStore` (which reads the path from disk)
+  found nothing until a restart. Both paths are restored now; a regression test
+  covers the save→memory→reload round trip. Existing `library.json` files were
+  written correctly, so a restart (or this build) brings the artwork back.
+- **Desktop YouTube downloads of some videos failed with
+  `VideoUnavailableException`** ("unauthenticated"): the cookies were in fact
+  applied correctly (verified: the app imports 23 cookies including `SID`,
+  and the same requests fail with the *full* 671-cookie jar too). YouTube now
+  serves those videos only to clients that solve its current player challenges —
+  `dQw4w9WgXcQ` still downloads fine with no cookies at all. The app therefore
+  falls back to **yt-dlp** (already bundled for cookie import) when the direct
+  client reports a video unavailable, reusing the app's cookies and reporting its
+  progress into the same UI. Without yt-dlp (mobile), the original error stands.
+- **Mobile showed "Authentication Required" with a correct token**: a token pasted
+  without the `Bearer ` scheme (easy on a phone keyboard) produced an invalid
+  `Authorization` header and a 401; saving settings also never cleared the overlay
+  (a successful reload does not hide it). Tokens are normalised to
+  `Bearer <token>` when saved, and saving settings clears the overlay before
+  reloading.
+
+**Tray, download-cache and UI-refresh fixes** ✅ (found while hardening the
+port; they affect the desktop app too):
+- **Linux tray icon disappeared after a crash/forced exit**: the crash guard wrote
+  a `tray-disabled.marker` when a start that had *ever* created a tray was
+  interrupted twice — the "a tray was used" marker from an old successful run was
+  never cleared, so an unrelated crash loop disabled the tray permanently. A clean
+  start now clears that marker (`StartupGuard.Complete`), `--gpu` clears both the
+  safe-mode and tray markers, and a clean tray creation is logged
+  (`[SongRequest] tray: created`). The settings toggle still re-enables it.
+- **Safe mode was permanent**: once the webview had crashed twice in a row, the
+  software-rendered path (DMA-BUF and compositing disabled — noticeably less
+  smooth) stayed on until `--gpu` was passed. It is now retried after
+  `SafeModeRecoveryStarts` (3) clean starts; a renewed crash re-enters it.
+- **Download pipeline no longer re-does cached work**:
+  - Audio: every download entry point (`DownloadAndProcess`, `AddVideoPanel`, the
+    library/music-player import) first checks for an existing file in every
+    container ever used, and re-checks it *after* waiting for the download
+    semaphore — two paths for the same request could previously both download and
+    overwrite. Stub files left by an interrupted download (< 16 KiB) are treated as
+    missing so they heal instead of being played forever.
+  - Metadata: reused from `VideoCache` when title + duration are known (one
+    `Videos.GetAsync` per request instead of one per pass).
+  - Thumbnails: one cache (`AppPaths.ThumbnailCachePath`, `.jpg`) shared by the
+    song lists, download pipeline and library import; the deterministic
+    `i.ytimg.com` URL replaces a full metadata request per card, duplicate cards
+    coalesce their in-flight fetch, and the image is downloaded once per video
+    (stage 5 no longer fetches it again).
+  - Lyrics/captions: `VideoData.LyricsText`/`LyricsFetched`,
+    `SubtitleText`/`SubtitleTimedText`/`SubtitlesFetched` make repeat lookups
+    instant — including "no captions", which used to be retried every time.
+- **Automatic send-in downloads report progress**: the fetch loop's download
+  (`AddVideoPanelAsync`) now emits the same `downloadProgress` events as a manual
+  queue action (metadata/downloading/complete/error) through a new
+  `ISongRequestHost.EventSink` wired to the interop, so a new request no longer
+  downloads silently. Failed downloads retry on later polls, bounded to three
+  attempts per run.
+- **Send-in list refresh is now stable**: the 30 s poll and the host `refresh`
+  events (which fire on every metadata cache save) rebuilt all three lists, which
+  flickered, reloaded artwork and reset scroll. Host refreshes are debounced, a
+  reload requested during a fetch is queued instead of dropped, a list is only
+  re-rendered when its rows/search/sort actually changed, background refreshes no
+  longer write status/log lines, download progress updates every card of the same
+  request, action buttons ignore a second click while their request is in flight,
+  and a long download no longer trips the 60 s request timeout (30 min for
+  `downloadAndProcess`). The word filter no longer re-registers its click handler
+  on every poll.
+
 **In-app updater (Android) — done ahead of the rest of M8** ✅:
 - `UpdateService` knows the mobile platforms: `CurrentPlatform()` returns
   `android`/`ios`, and the expected release asset is `SongRequest-android.apk`

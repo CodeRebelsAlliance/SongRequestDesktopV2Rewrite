@@ -61,6 +61,23 @@ internal static class DownloadedAudio
         return null;
     }
 
+    /// <summary>
+    /// Whether a downloaded file looks usable rather than a stub left by an
+    /// interrupted download. Without this check a failed stream would be treated
+    /// as "already downloaded" forever and never heal.
+    /// </summary>
+    public static bool IsComplete(string? path)
+    {
+        try
+        {
+            return !string.IsNullOrEmpty(path) && File.Exists(path) && new FileInfo(path).Length >= 16 * 1024;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>Where a download of this video should go.</summary>
     public static string PathFor(string videoId, string? folder = null)
     {

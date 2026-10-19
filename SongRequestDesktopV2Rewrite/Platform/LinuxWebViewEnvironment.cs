@@ -132,9 +132,12 @@ public static class LinuxWebViewEnvironment
 
         if (preferGpu)
         {
-            // Explicit opt-in to the GPU path also clears a persisted safe mode.
+            // Explicit opt-in to the GPU path also clears a persisted safe mode and
+            // a tray the crash guard switched off — "--gpu" means "give me the
+            // normal configuration again".
             safeMode = false;
             StartupGuard.ClearSafeMode();
+            StartupGuard.ClearTrayDisabled();
         }
 
         var nvidia = readEnvironment("__NV_DRIVER_PRESENT") == "1" || NvidiaDriverDetected(isLinux);

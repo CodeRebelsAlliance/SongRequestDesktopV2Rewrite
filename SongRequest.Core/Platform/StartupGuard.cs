@@ -26,8 +26,18 @@ public static class StartupGuard
     internal const string SafeModeFileName = "safe-mode.marker";
     internal const string TrayDisabledFileName = "tray-disabled.marker";
 
+    private const string SafeModeOkFileName = "safe-mode-ok.marker";
+
     /// <summary>How many unfinished starts in a row before safe mode kicks in.</summary>
     internal const int FailureThreshold = 2;
+
+    /// <summary>
+    /// How many clean starts in safe mode before the GPU path is tried again.
+    /// Safe mode was previously permanent until <c>--gpu</c>: one bad day (a
+    /// Wayland crash, or a start interrupted twice during an update) left the
+    /// webview software-rendered — visibly less smooth — forever.
+    /// </summary>
+    internal const int SafeModeRecoveryStarts = 3;
 
     internal static string MarkerPath => Path.Combine(AppPaths.LocalAppDataDir, MarkerFileName);
 
@@ -79,7 +89,24 @@ public static class StartupGuard
     }
 
     /// <summary>Clears the marker once the webview is confirmed to be rendering.</summary>
-    public static void Complete() => Delete(MarkerPath);
+    public static void Complete()
+    {
+        Delete(MarkerPath);
+
+        // A start that reached a rendered UI proves the previous crash was not
+        // caused by the tray: forgetting "a tray was used" means a later, unrelated
+        // crash loop cannot leave the tray switched off for good.
+        ClearTrayUsed();
+
+        // Safe mode is sticky, but not forever: after a few clean starts in it, try
+        // the hardware path again. If that crashes, the failure counter re-enters
+        // safe mode as before.
+        if (SafeModePersisted && Increment(SafeModeOkPath) >= SafeModeRecoveryStarts)
+        {
+            ClearSafeMode();
+            Delete(SafeModeOkPath);
+        }
+    }
 
     /// <summary>True when this run recovered from repeated unfinished starts.</summary>
     public static bool CrashRecoveryThisRun { get; private set; }
@@ -99,7 +126,33 @@ public static class StartupGuard
     }
 
     /// <summary>Forgets safe mode (used by <c>--gpu</c>).</summary>
-    public static void ClearSafeMode() => Delete(SafeModePath);
+    public static void ClearSafeMode()
+    {
+        Delete(SafeModePath);
+        Delete(SafeModeOkPath);
+    }
+
+    private static string SafeModeOkPath => Path.Combine(AppPaths.LocalAppDataDir, SafeModeOkFileName);
+
+    /// <summary>Increments a counter marker and returns the new value.</summary>
+    private static int Increment(string path)
+    {
+        try
+        {
+            var current = 0;
+            if (File.Exists(path))
+                int.TryParse(File.ReadAllText(path).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out current);
+
+            var next = current + 1;
+            Directory.CreateDirectory(AppPaths.LocalAppDataDir);
+            File.WriteAllText(path, next.ToString(CultureInfo.InvariantCulture));
+            return next;
+        }
+        catch
+        {
+            return int.MaxValue; // Never block recovery on bookkeeping.
+        }
+    }
 
     private static string TrayDisabledPath => Path.Combine(AppPaths.LocalAppDataDir, TrayDisabledFileName);
 

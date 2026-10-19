@@ -207,6 +207,29 @@ and notification; `adb shell dumpsys activity services` reported
       emulator session was abandoned), and the "install unknown apps" prompt on a
       device that has never allowed it.
 
+### Post-porting regressions — ✅ covered
+
+- [x] Library artwork survives saves (unit test: save → in-memory paths stay
+      absolute → disk stays portable → reload resolves).
+- [x] Bearer tokens are normalised to `Bearer <token>` on save (unit test), and
+      saving settings clears the auth overlay.
+- [x] YouTube downloads of challenge-protected videos fall back to yt-dlp with
+      progress (verified end-to-end: a video that fails through the direct client
+      downloads through the fallback).
+
+### Downloads, tray and UI refresh — ✅ covered
+
+- [x] An existing download is reused (unit test: `DownloadVideoAsync` returns the
+      file before YouTube is contacted; the whole pipeline succeeds from cache for
+      a downloaded song with no network).
+- [x] Thumbnails are served from `AppPaths.ThumbnailCachePath` (unit test), and the
+      thumbnail URL is derived from the id (no metadata request).
+- [x] Lyrics come from `VideoData` when already looked up (unit test).
+- [x] A clean start clears the "tray was used" marker; safe mode is retried after
+      three clean starts (unit tests).
+- [x] Linux smoke test: start the app, expect `[SongRequest] tray: created` and no
+      `*.marker` files left in `~/.local/share/SongRequestDesktopV2Rewrite`.
+
 ## 4. Known toolchain constraints
 
 - **iOS builds need macOS** — the workload is unavailable elsewhere; the

@@ -8,6 +8,8 @@
   let badWords = [];
   let _fetchingLock = false;
   let _fetchStartTime = 0;
+  let _reloadPending = false;
+  let _refreshTimer = null;
   const thumbCache = {};
   let _authOverlayVisible = false;
   let _authBrowsers = [];
@@ -18,14 +20,18 @@
     }
   }
 
-  function send(method, params) {
+  function send(method, params, options) {
     return new Promise((resolve, reject) => {
       const id = ++requestId;
+      // Downloads legitimately run for minutes; the old fixed 60 s timeout turned
+      // a slow (but healthy) download into an error toast and a server-unreachable
+      // overlay while the download kept running in the background.
+      const timeoutMs = (options && options.timeout) || 60000;
       pending[id] = { resolve, reject, timeout: setTimeout(() => {
         delete pending[id];
         if (!_authOverlayVisible) showAuthOverlay('server');
         reject(new Error('Request timeout: ' + method));
-      }, 60000) };
+      }, timeoutMs) };
       const msg = JSON.stringify({ type: 'request', id, method, ...params });
       postMessageToHost(msg);
     });
@@ -102,7 +108,7 @@
   SongRequestHost.registerHostMessageHandler(handleIncoming);
 
   function handleEvent(eventName, data) {
-    if (eventName === 'refresh') loadData();
+    if (eventName === 'refresh') requestRefresh();
     else if (eventName === 'libraryScanProgress') onLibraryScanProgress(data);
     else if (eventName === 'libraryScanCompleted') onLibraryScanCompleted(data);
     else if (eventName === 'downloadProgress') onDownloadProgress(data);
@@ -146,8 +152,12 @@
     st.message = data.message || '';
     st.time = Date.now();
 
-    const card = document.querySelector('.song-card[data-ytid="' + vid + '"]');
-    if (!card) return;
+    // The same request is visible in more than one list; update all its cards.
+    const cards = document.querySelectorAll('.song-card[data-ytid="' + vid + '"]');
+    cards.forEach(c => updateDownloadCard(c, data));
+  }
+
+  function updateDownloadCard(card, data) {
     const info = card.querySelector('.info');
     if (!info) return;
 
@@ -286,6 +296,9 @@
   // Connection status
   function setConnectionStatus(state, msg) {
     const el = document.getElementById('connection-status');
+    const marker = state + '|' + msg;
+    if (el.dataset.statusMarker === marker) return;
+    el.dataset.statusMarker = marker;
     el.className = 'status-' + state;
     el.innerHTML = '<i class="fas fa-circle"></i> ' + msg;
   }
@@ -517,6 +530,10 @@
 
       statusEl.textContent = 'Saved successfully.';
       toast('Settings saved', 'success');
+
+      // A corrected token/address should clear the auth/server overlay: hide it
+      // before reloading, because a successful reload never hides it by itself.
+      hideAuthOverlay();
       loadData();
       hideSettings();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
@@ -1430,22 +1447,33 @@
   document.getElementById('startup-quit').addEventListener('click', quitApplication);
 
   // Main data loading
-  async function loadData() {
+  // Host "refresh" events arrive in bursts (every metadata cache save during a
+  // download). Coalesce them so one download cannot trigger a stream of full
+  // reloads, each rebuilding every list.
+  function requestRefresh() {
+    if (_refreshTimer) return;
+    _refreshTimer = setTimeout(() => {
+      _refreshTimer = null;
+      loadData({ silent: true });
+    }, 600);
+  }
+
+  async function loadData(options) {
+    const silent = !!(options && options.silent);
+
     if (_fetchingLock) {
-      // Force-reset if stale (>35 seconds)
-      if (_fetchStartTime && Date.now() - _fetchStartTime > 35000) {
-        _fetchingLock = false;
-        log('Stale fetch lock reset', 'warn');
-      } else {
-        log('Fetch already in progress, skipping...', 'info');
-        return;
-      }
+      // Never drop the request: the caller may be showing a row it just approved.
+      // Run one more load when the fetch in flight finishes.
+      _reloadPending = true;
+      return;
     }
+
     _fetchingLock = true;
     _fetchStartTime = Date.now();
-    _fetchingLock = true;
-    setStatus('Fetching data...');
-    log('Fetching data from server...', 'info');
+    if (!silent) {
+      setStatus('Fetching data...');
+      log('Fetching data from server...', 'info');
+    }
     try {
       const result = await send('fetchData');
       database = result.database || [];
@@ -1457,21 +1485,25 @@
         renderSongList('blacklist');
       });
       setStatus('Ready - ' + database.length + ' videos loaded');
-      log('Loaded ' + database.length + ' videos, ' + blacklist.length + ' blacklisted', 'success');
+      if (!silent) log('Loaded ' + database.length + ' videos, ' + blacklist.length + ' blacklisted', 'success');
       setConnectionStatus('connected', 'Connected');
     } catch (e) {
       setStatus('Error: ' + e.message);
       log('Failed to fetch data: ' + e.message, 'error');
-      toast('Failed to fetch data: ' + e.message, 'error');
+      if (!silent) toast('Failed to fetch data: ' + e.message, 'error');
       setConnectionStatus('disconnected', 'Disconnected');
     } finally {
       _fetchingLock = false;
+      if (_reloadPending) {
+        _reloadPending = false;
+        setTimeout(() => loadData({ silent: true }), 250);
+      }
     }
     // Config fetch is optional; don't let it block subsequent loads
     try {
       const cfgResult = await send('config');
       if (cfgResult) {
-        log('Config loaded', 'success');
+        if (!silent) log('Config loaded', 'success');
         const badge = document.getElementById('autopilot-badge');
         if (badge) badge.style.display = cfgResult.autoEnqueue ? 'inline-flex' : 'none';
         const vpill = document.getElementById('volume-pill');
@@ -1532,6 +1564,16 @@
       return ((a.sentInTimestamp || 0) - (b.sentInTimestamp || 0)) * cmp;
     });
 
+    // Skip the rebuild when the rendered rows would be identical: the 30 s poll
+    // and the host's refresh events used to replace every card each time, which
+    // looked like flickering, reloaded artwork and reset the scroll position.
+    const signature = listName + '|' + search + '|' + sort + '|' + JSON.stringify(
+      videos.map(v => [v.ytid, v.title, v.creator, v.isApproved, v.message || '', v.durationTicks || 0, v.sentInTimestamp || 0])
+    );
+    if (container.dataset.renderSignature === signature) return;
+    container.dataset.renderSignature = signature;
+
+    const scrollTop = container.scrollTop;
     const fragment = document.createDocumentFragment();
     for (const v of videos) {
       const card = document.createElement('div');
@@ -1604,34 +1646,13 @@
       fragment.appendChild(card);
     }
     container.replaceChildren(fragment);
+    container.scrollTop = scrollTop;
 
     // Re-apply active download progress states to newly rendered cards
     for (const [vid, st] of Object.entries(downloadStates)) {
       if (Date.now() - st.time > 30000) continue;
       const card = container.querySelector('.song-card[data-ytid="' + vid + '"]');
-      if (!card) continue;
-      const info = card.querySelector('.info');
-      if (!info) continue;
-
-      const progWrap = document.createElement('div');
-      progWrap.className = 'dl-progress';
-      const bar = document.createElement('div');
-      bar.className = 'dl-bar';
-      const fill = document.createElement('div');
-      fill.className = 'dl-fill';
-      fill.style.width = Math.min(st.progress || 0, 100) + '%';
-      const colorMap = { metadata: '#5fa8e0', downloading: '#4caf50', thumbnail: '#e0a85f', subtitles: '#a85fe0' };
-      fill.style.background = colorMap[st.stage] || '#888';
-      bar.appendChild(fill);
-      const label = document.createElement('div');
-      label.className = 'dl-label';
-      const iconMap = { metadata: 'fa-tag', downloading: 'fa-download', thumbnail: 'fa-image', subtitles: 'fa-closed-captioning' };
-      const icon = iconMap[st.stage] || 'fa-spinner fa-spin';
-      const color = colorMap[st.stage] || '#888';
-      label.innerHTML = '<i class="fas ' + icon + '" style="color:' + color + '"></i> ' + escapeHtml(st.message || st.stage);
-      progWrap.appendChild(bar);
-      progWrap.appendChild(label);
-      info.appendChild(progWrap);
+      if (card) updateDownloadCard(card, st);
     }
   }
 
@@ -1660,10 +1681,16 @@
 
   function handleSongAction(e) {
     const btn = e.target.closest('button');
-    if (!btn) return;
+    if (!btn || btn.disabled) return;
     const action = btn.dataset.action;
     const ytid = btn.dataset.ytid;
     if (!action || !ytid) return;
+
+    // A second click while the first request was in flight toggled the row twice
+    // (approve then unapprove) and looked like the UI resetting itself.
+    btn.disabled = true;
+    setTimeout(() => { btn.disabled = false; }, 1200);
+
     doAction(action, ytid);
   }
 
@@ -1680,7 +1707,7 @@
           // Not downloaded — trigger full download pipeline
           const act = action === 'playNext' ? 'playNext' : 'queue';
           setStatus('Downloading ' + ytid + '...');
-          return send('downloadAndProcess', { ytid, action: act });
+          return send('downloadAndProcess', { ytid, action: act }, { timeout: 30 * 60 * 1000 });
         }
       }).then(() => {
         const msg = action === 'queueSong' ? 'Queued' : 'Playing Next';
@@ -1726,24 +1753,36 @@
 
   function renderWordFilter() {
     const list = document.getElementById('wordfilter-list');
+
+    // Re-render only on a real change: this ran every 30 s and re-registered its
+    // click handler each time, so one Delete could fire several requests.
+    const signature = JSON.stringify(badWords);
+    if (list.dataset.renderSignature === signature) return;
+    list.dataset.renderSignature = signature;
+
     list.innerHTML = '';
     for (const w of badWords) {
       const li = document.createElement('li');
       li.innerHTML = '<span>' + escapeHtml(w) + '</span><button data-word="' + escapeHtml(w) + '"><i class="fas fa-trash-alt"></i> Delete</button>';
       list.appendChild(li);
     }
-    list.addEventListener('click', e => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      const word = btn.dataset.word;
-      if (!word) return;
-      send('deleteBadWord', { word }).then(() => {
-        toast('Deleted bad word', 'success');
-        loadWordFilter();
-        loadData();
-      }).catch(e => toast('Failed: ' + e.message, 'error'));
-    });
   }
+
+  document.getElementById('wordfilter-list').addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn || btn.disabled) return;
+    const word = btn.dataset.word;
+    if (!word) return;
+    btn.disabled = true;
+    send('deleteBadWord', { word }).then(() => {
+      toast('Deleted bad word', 'success');
+      loadWordFilter();
+      loadData();
+    }).catch(e => {
+      btn.disabled = false;
+      toast('Failed: ' + e.message, 'error');
+    });
+  });
 
   async function addBadWord() {
     const input = document.getElementById('wordfilter-input');

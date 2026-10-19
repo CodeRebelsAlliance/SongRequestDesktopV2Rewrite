@@ -26,6 +26,13 @@ public interface ISongRequestHost
 
     Action? OnDataRefreshed { get; set; }
 
+    /// <summary>
+    /// Sink for engine events that must reach the web UI (e.g. download progress
+    /// from the automatic request download, which has no interop message of its
+    /// own). Set by the interop.
+    /// </summary>
+    Action<string, object?>? EventSink { get; set; }
+
     bool InitialLoadComplete { get; set; }
 
     /// <summary>
