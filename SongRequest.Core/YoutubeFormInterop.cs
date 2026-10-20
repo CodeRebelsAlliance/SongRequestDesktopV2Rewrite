@@ -60,6 +60,9 @@ public class YoutubeFormInterop
     /// </summary>
     public Func<string, Task<string[]?>>? PickFilesAsync { get; set; }
 
+    /// <summary>Single audio-file picker for the soundboard editor.</summary>
+    public Func<string, Task<string?>>? PickSoundFile { get; set; }
+
     public Func<string, Task<string?>>? PickFolderAsync { get; set; }
 
     /// <summary>
@@ -2174,12 +2177,20 @@ public class YoutubeFormInterop
     {
         try
         {
-            var files = PickFilesAsync != null
-                ? await PickFilesAsync("Select Sound File").ConfigureAwait(false)
-                : ShowOpenFileDialog?.Invoke("Select Sound File",
-                    "*.mp3;*.wav;*.m4a;*.aac;*.ogg;*.flac;*.wma", false);
+            string? chosen;
+            if (PickSoundFile != null)
+            {
+                chosen = await PickSoundFile("Select Sound File").ConfigureAwait(false);
+            }
+            else
+            {
+                var files = PickFilesAsync != null
+                    ? await PickFilesAsync("Select Sound File").ConfigureAwait(false)
+                    : ShowOpenFileDialog?.Invoke("Select Sound File",
+                        "*.mp3;*.wav;*.m4a;*.aac;*.ogg;*.flac;*.wma", false);
 
-            var chosen = files != null && files.Length > 0 ? files[0] : null;
+                chosen = files != null && files.Length > 0 ? files[0] : null;
+            }
 
             if (string.IsNullOrEmpty(chosen))
                 return new { cancelled = true };

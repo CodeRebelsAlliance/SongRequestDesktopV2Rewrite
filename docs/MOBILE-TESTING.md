@@ -290,14 +290,22 @@ and notification; `adb shell dumpsys activity services` reported
 - [x] `node --test tests/js` covers the new bridge diff (`stagebridge.test.js`)
       and the mobile page wiring (`mobilepages.test.js`).
 - [x] Desktop regression suite green with the new pages: 511 unit, 43/44
-      integration (1 environment skip, FFmpeg/cookies), 45 JS tests; mobile
+      integration (1 environment skip, FFmpeg/cookies), 47 JS tests; mobile
       Android Release build 0 warnings.
 - [x] **Requests (device)**: Requests/Pending/Blacklist/Word Filter/Dashboard
-      tabs scroll as chips; a card's actions scroll horizontally; Submit Song,
-      Settings, About and the startup launch flow open as full-height sheets.
-- [x] **Soundboard (device)**: pads are touch-sized, the toolbar is icon-first and
-      scrollable, long-press opens the action sheet, and the Edit/Pages/Grid/Keys/
-      MIDI dialogs fill the screen; swipe left/right changes page.
+      tabs scroll as chips; tapping a card opens the M3 action sheet; Submit Song,
+      Settings, About and the startup launch flow open as full-screen pages with
+      a back button.
+- [x] **Soundboard (device)**: pads are touch-sized, the board has an app bar and
+      page bar, long-press opens the action sheet, and Edit sound / Pages / Grid
+      size / MIDI / Shortcuts / Assign / Key capture are real pages with back
+      navigation; swipe left/right changes page.
+- [x] **Sound file picker (device)**: Browse opens a single audio picker
+      (`audio/*`), the picked provider file is materialised into the cache, and
+      Save applies it to the pad (title auto-filled when empty).
+- [x] **Artwork (device)**: change track while on Home/Library; the mini player
+      artwork updates immediately, and opening the Player tab shows the same
+      artwork without switching away first.
 - [x] **Playlists (device)**: tap a playlist → detail view; Play/Shuffle, move
       entries up/down, remove, rename, add songs and delete all round-trip
       through `getPlaylist` / `reorderPlaylistEntry` / `updatePlaylist` /
@@ -308,7 +316,7 @@ and notification; `adb shell dumpsys activity services` reported
       Next keeps its thumbnails without flicker/tick rebuilds, lyrics highlight
       advances, and the request QR renders (server-generated data URL, no CDN).
 - [ ] Still to check on real hardware: HDMI second display, a TV browser over
-      Wi-Fi, long-press timing on low-end phones and the MIDI assign sheet with a
+      Wi-Fi, long-press timing on low-end phones and the MIDI assign page with a
       physical controller.
 
 ## 4. Known toolchain constraints

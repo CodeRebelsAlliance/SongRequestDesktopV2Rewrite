@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Android.Content;
 using Android.Provider;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Devices;
 using Microsoft.Maui.Storage;
 using SongRequestDesktopV2Rewrite;
 
@@ -27,6 +28,20 @@ internal static class AndroidFilePickers
     private static readonly string[] AudioExtensions =
         { ".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma" };
 
+    /// <summary>
+    /// Explicit audio filter. The parameterless picker defaults to every file on
+    /// some Android providers, and some DocumentsUI implementations then hide
+    /// audio or hand back an unusable pick. `audio/*` is understood everywhere.
+    /// </summary>
+    private static readonly FilePickerFileType AudioFileTypes = new(
+        new Dictionary<DevicePlatform, IEnumerable<string>>
+        {
+            [DevicePlatform.Android] = new[] { "audio/*" },
+            [DevicePlatform.iOS] = new[] { "public.audio", "public.mp3", "com.microsoft.waveform-audio" },
+            [DevicePlatform.MacCatalyst] = new[] { "public.audio", "public.mp3", "com.microsoft.waveform-audio" },
+            [DevicePlatform.WinUI] = AudioExtensions,
+        });
+
     /// <summary>Where imported music lands (and the folder that gets scanned).</summary>
     public static string ImportDirectory => Path.Combine(AppPaths.DataRoot, "music");
 
@@ -39,6 +54,7 @@ internal static class AndroidFilePickers
             var results = await FilePicker.Default.PickMultipleAsync(new PickOptions
             {
                 PickerTitle = title,
+                FileTypes = AudioFileTypes,
             }).ConfigureAwait(true);
 
             var paths = results?
@@ -51,6 +67,57 @@ internal static class AndroidFilePickers
         catch (Exception ex)
         {
             Android.Util.Log.Debug("SongRequest", $"file picker failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Picks exactly one audio file for the soundboard. Unlike the multi-file
+    /// library picker, it materialises a provider result with no usable
+    /// <c>FullPath</c> straight into the cache, so the caller always gets a
+    /// readable path.
+    /// </summary>
+    public static async Task<string?> PickSoundFileAsync(string title)
+    {
+        try
+        {
+            var result = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = title,
+                FileTypes = AudioFileTypes,
+            }).ConfigureAwait(true);
+
+            if (result == null) return null;
+
+            if (!string.IsNullOrWhiteSpace(result.FullPath) && File.Exists(result.FullPath))
+                return result.FullPath;
+
+            if (!string.IsNullOrWhiteSpace(result.FullPath) &&
+                result.FullPath.StartsWith("content://", StringComparison.OrdinalIgnoreCase))
+                return result.FullPath;
+
+            // Some providers return an empty FullPath but a readable stream.
+            var name = Sanitize(result.FileName ?? "sound.mp3");
+            var extension = Path.GetExtension(name);
+            if (string.IsNullOrEmpty(extension)) extension = ".mp3";
+
+            var directory = Path.Combine(
+                Android.App.Application.Context.CacheDir?.AbsolutePath ?? AppPaths.DataRoot,
+                "soundboard-picks");
+            Directory.CreateDirectory(directory);
+
+            var destination = Path.Combine(
+                directory,
+                Path.GetFileNameWithoutExtension(name) + "-" + Guid.NewGuid().ToString("N")[..6] + extension);
+
+            using var input = await result.OpenReadAsync().ConfigureAwait(false);
+            using var output = File.Create(destination);
+            await input.CopyToAsync(output).ConfigureAwait(false);
+            return destination;
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"sound picker failed: {ex.Message}");
             return null;
         }
     }

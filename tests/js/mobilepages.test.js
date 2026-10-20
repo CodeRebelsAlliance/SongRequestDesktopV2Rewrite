@@ -22,15 +22,38 @@ test('mobile requests page loads its own layout and keeps the full desktop featu
   }
 });
 
-test('mobile soundboard page loads its own layout and the shared soundboard logic', () => {
+test('mobile soundboard page is a page-based Material UI', () => {
   const html = read('mobilesoundboard.html');
   assert.match(html, /mobilesoundboard\.css/);
-  assert.match(html, /soundboard\.js/);
   assert.match(html, /mobilesoundboard\.js/);
 
-  for (const id of ['sb-grid', 'sb-edit-modal', 'sb-pages-modal', 'sb-midi-modal', 'sb-keys-modal']) {
+  for (const id of ['msb-grid', 'msb-view-edit', 'msb-view-pages', 'msb-view-grid', 'msb-view-midi', 'msb-view-keys', 'msb-view-assign']) {
     assert.ok(html.includes(`id="${id}"`), `missing #${id}`);
   }
+  // Editing is a page, not a modal dialog.
+  assert.ok(!html.includes('sb-edit-modal'), 'old soundboard modal markup must be gone');
+});
+
+test('mobile player applies the new artwork after resetting the previous song', () => {
+  const js = read('mobilemusic.js');
+  const start = js.indexOf('function onNowPlaying');
+  assert.notEqual(start, -1);
+  const body = js.slice(start, js.indexOf('function bindTapList', start));
+  const reset = body.indexOf('if (newSong) {');
+  const artwork = body.indexOf('setArt(data.thumbnail)');
+  assert.ok(reset >= 0 && artwork >= 0, 'expected reset + setArt in onNowPlaying');
+  assert.ok(reset < artwork, 'newSong reset must run before the new thumbnail is assigned');
+});
+
+test('soundboard uses a dedicated single audio file picker', () => {
+  const root = path.join(__dirname, '..', '..');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  const pickers = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'Platforms', 'Android', 'AndroidFilePickers.cs'), 'utf8');
+
+  assert.match(interop, /PickSoundFile/);
+  assert.match(interop, /BrowseSoundboardFileAsync/);
+  assert.match(pickers, /PickSoundFileAsync/);
+  assert.match(pickers, /audio\/\*/);
 });
 
 test('mobile music page exposes repeat state and playlist browsing', () => {

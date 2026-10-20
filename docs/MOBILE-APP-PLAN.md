@@ -818,15 +818,23 @@ port; they affect the desktop app too):
   `mobilerequests.css`/`.js`). It keeps the complete desktop feature set — All
   Songs / Pending / Blacklist, search + sort, approve/unapprove/blacklist/delete,
   queue/play-next, Submit Song (URL and YouTube search), the word filter, the
-  dashboard/console, Settings, About/updates and the startup flow — restyled as
-  M3 cards, chip tabs, full-height sheets and safe-area-aware bars. Mobile mode
-  only ever loads this page; the desktop keeps `index.html` untouched.
-- **Soundboard** now has `mobilesoundboard.html` (+
-  `mobilesoundboard.css`/`.js`) over the same `soundboard.js`: touch-sized pads,
-  scrollable icon-first toolbar, a bottom action sheet for Edit / Clear MIDI /
-  Delete (long-press), full-height edit/pages/grid/keys/MIDI sheets, swipe
-  between pages, master volume/output device and Stop All. Again the desktop page
-  is unchanged.
+  dashboard/console, Settings, About/updates and the startup flow. Cards open a
+  Material bottom action sheet; dialogs (Settings, Submit, About, key/MIDI
+  capture) are full-screen pages with an app bar and back button, not modal
+  boxes. The desktop keeps `index.html` untouched.
+- **Soundboard** is now a real Material page app (`mobilesoundboard.html` +
+  `mobilesoundboard.css`/`.js`): app bar, page chips, touch pads, a single bottom
+  action sheet, and **dedicated pages** for editing a sound, managing pages,
+  grid size, MIDI, keyboard shortcuts, MIDI assign and key capture. It supports
+  all desktop features (file/YouTube import, colours, icons, fades, playback
+  modes, per-pad volume/device, MIDI mapping/assign/feedback, pages, grid,
+  shortcuts, master volume, output device, stop all) and swipe paging.
+- The soundboard file picker now uses a dedicated single-file, `audio/*` picker
+  and materialises provider results with no usable `FullPath`; selecting a sound
+  file applies on mobile.
+- Player artwork now resets **before** the new thumbnail is applied, so the
+  expanded player and the mini player update immediately on a song change
+  instead of waiting for a tab switch/state catch-up.
 - Both pages are wired into `MainPage` (Requests/Board destinations in the
   request and soundboard modes) and the host routes broadcast events and
   soundboard playback to them.

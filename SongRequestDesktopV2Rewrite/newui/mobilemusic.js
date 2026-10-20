@@ -843,10 +843,30 @@
       now.artist = data.artist || '';
       titleEl.textContent = now.title || 'Nothing playing';
       artistEl.textContent = now.artist || '—';
-      updateMini();
+    }
+
+    if (newSong) {
+      // Reset the previous song *before* applying the new artwork. The host sends
+      // the title and thumbnail in the same event; resetting afterwards wiped the
+      // freshly loaded image, which only reappeared after a later state catch-up
+      // (tab switch / opening the player tab).
+      now.art = '';
+      artEl.removeAttribute('src');
+      artEl.hidden = true;
+      $('mm-art-placeholder').hidden = false;
+      miniArt.removeAttribute('src');
+      miniArt.hidden = true;
+      lastColors = '';
+      if (!data.thumbnail) applyMusicColors(null);
+
+      lyrics.synced = [];
+      lyrics.plain = [];
+      lyrics.active = -1;
+      lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Loading lyrics…</span></div>';
     }
 
     if (data.thumbnail) setArt(data.thumbnail);
+    updateMini();
 
     if (data.totalTime != null) {
       now.total = data.totalTime;
@@ -865,23 +885,7 @@
       setPlayingUi(now.playing);
     }
 
-    if (newSong) {
-      // Clear the previous song's artwork/colours; the same event normally carries
-      // the new thumbnail right after this.
-      now.art = '';
-      artEl.removeAttribute('src');
-      artEl.hidden = true;
-      $('mm-art-placeholder').hidden = false;
-      miniArt.removeAttribute('src');
-      miniArt.hidden = true;
-      if (!data.thumbnail) applyMusicColors(null);
-
-      lyrics.synced = [];
-      lyrics.plain = [];
-      lyrics.active = -1;
-      lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Loading lyrics…</span></div>';
-      updatePlayer();
-    }
+    if (newSong) updatePlayer();
   }
 
   // ── Wiring ───────────────────────────────────────────────

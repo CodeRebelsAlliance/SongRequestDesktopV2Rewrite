@@ -71,6 +71,7 @@ public sealed class AppHost : IDisposable
         // them into the app sandbox, which is what the scanner can read.
         Interop.PickFilesAsync = title => AndroidFilePickers.PickFilesAsync(title);
         Interop.PickFolderAsync = title => AndroidFilePickers.PickFolderAsync(title);
+        Interop.PickSoundFile = title => AndroidFilePickers.PickSoundFileAsync(title);
         Interop.PrepareImportFiles = files => AndroidFilePickers.PrepareFilesAsync(files);
         Interop.PrepareImportFolder = uri => AndroidFilePickers.PrepareFolderAsync(uri);
 
