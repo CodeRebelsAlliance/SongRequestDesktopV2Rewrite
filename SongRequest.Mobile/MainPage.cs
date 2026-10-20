@@ -67,6 +67,8 @@ public sealed class MainPage : ContentPage
     private Color _pillColor = ActiveIndicator;
     private Color _iconColor = ActiveIcon;
     private Color _labelColor = ActiveLabel;
+    private string? _themePrimary;
+    private string? _themeSecondary;
 
     /// <summary>Raised for every message a page sends to the host (page file, raw JSON).</summary>
     public event Action<string, string>? HostMessageReceived;
@@ -301,6 +303,8 @@ public sealed class MainPage : ContentPage
 
         var first = ParseColor(primary);
         var second = ParseColor(secondary) ?? first;
+        _themePrimary = first != null ? primary : null;
+        _themeSecondary = second != null ? (secondary ?? primary) : null;
 
         Color targetBar, targetPill, targetIcon, targetLabel;
         if (first == null)
@@ -340,6 +344,37 @@ public sealed class MainPage : ContentPage
                 tab.Label.TextColor = active ? _labelColor : InactiveLabel;
             }
         }, 0, 1).Commit(this, "navcolors", 16, 650, Easing.CubicInOut);
+
+        BroadcastThemeColors(_themePrimary, _themeSecondary);
+    }
+
+    /// <summary>
+    /// Sends the artwork palette to every resident page so their Material accents
+    /// follow the current song, not just the native navigation bar.
+    /// </summary>
+    public void BroadcastThemeColors(string? primary, string? secondary)
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(() => BroadcastThemeColors(primary, secondary));
+            return;
+        }
+
+        try
+        {
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                type = "event",
+                eventName = "mobileThemeColors",
+                data = new { primary, secondary }
+            });
+
+            foreach (var view in _views.Values)
+            {
+                try { view.SendRawMessage(json); } catch { }
+            }
+        }
+        catch { }
     }
 
     // ── Tab bar ─────────────────────────────────────────────────────────────
@@ -496,6 +531,21 @@ public sealed class MainPage : ContentPage
         // refresh simply ignore the event.
         try { view.SendRawMessage("{\"type\":\"event\",\"eventName\":\"refresh\"}"); }
         catch { }
+
+        // A page created after the last song started still needs the current palette.
+        if (_themePrimary != null)
+        {
+            try
+            {
+                view.SendRawMessage(Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    type = "event",
+                    eventName = "mobileThemeColors",
+                    data = new { primary = _themePrimary, secondary = _themeSecondary }
+                }));
+            }
+            catch { }
+        }
     }
 
     private HybridWebView EnsureView(string file)

@@ -197,6 +197,9 @@ namespace SongRequestDesktopV2Rewrite
         public string Name { get; set; } = "Untitled Playlist";
         public string? Description { get; set; }
         public string? Emoji { get; set; }
+
+        /// <summary>Font Awesome icon class (e.g. "fa-list") used by both UIs.</summary>
+        public string? Icon { get; set; }
         public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
         public DateTime LastModifiedUtc { get; set; } = DateTime.UtcNow;
 

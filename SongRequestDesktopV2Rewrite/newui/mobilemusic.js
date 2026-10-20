@@ -61,6 +61,16 @@
     setTimeout(function () { if (el.parentNode) el.remove(); }, 2700);
   }
 
+  function plIconName(name) {
+    return window.SongRequestPlaylistIcons
+      ? window.SongRequestPlaylistIcons.normalize(name)
+      : (name && /^fa-[a-z0-9-]+$/.test(name) ? name : 'fa-list');
+  }
+
+  function plIconHtml(name) {
+    return '<i class="fas ' + plIconName(name) + '"></i>';
+  }
+
   // ── Host bridge ──────────────────────────────────────────
   var pending = {};
   var requestId = 0;
@@ -113,7 +123,7 @@
   var currentTab = 'home';
   var lyricsOpen = false;
 
-  var now = { title: '', artist: '', art: '', playing: false, time: 0, total: 0 };
+  var now = { title: '', artist: '', art: '', playing: false, time: 0, total: 0, quality: null, lyricsSource: '' };
   var seeking = false;
   var seekDragging = false;
 
@@ -121,6 +131,7 @@
   var playlistQueue = [];
   var currentPlaylist = null;
   var playlistReturnTab = 'library';
+  var playlistIconSelection = 'fa-list';
 
   var feed = null;
   var feedAt = 0;
@@ -282,10 +293,10 @@
   }
 
   function playlistCard(list) {
-    return '<button class="mm-card" data-playlist-id="' + esc(list.id || '') + '">' +
-      '<div class="mm-card-art">' + (list.thumbnail ? '<img src="' + esc(list.thumbnail) + '" alt="">' : '<i class="fas fa-list"></i>') + '</div>' +
-      '<div class="mm-card-title">' + esc(list.emoji ? list.emoji + ' ' : '') + esc(list.name || 'Playlist') + '</div>' +
-      '<div class="mm-card-sub">' + (list.songCount || 0) + ' songs</div>' +
+    return '<button class="mm-card' + (list.isDynamic ? ' is-dynamic' : '') + '" data-playlist-id="' + esc(list.id || '') + '">' +
+      '<div class="mm-card-art">' + (list.thumbnail ? '<img src="' + esc(list.thumbnail) + '" alt="">' : plIconHtml(list.icon)) + '</div>' +
+      '<div class="mm-card-title">' + esc(list.name || 'Playlist') + '</div>' +
+      '<div class="mm-card-sub">' + (list.songCount || 0) + ' songs' + (list.isDynamic ? ' · Auto' : '') + '</div>' +
       '</button>';
   }
 
@@ -389,11 +400,11 @@
   function renderPlaylists() {
     $('mm-lib-playlists').innerHTML = playlists.length
       ? playlists.map(function (list) {
-          return '<button class="mm-song" data-playlist-id="' + esc(list.id || '') + '">' +
-            '<div class="mm-thumb">' + (list.thumbnail ? '<img src="' + esc(list.thumbnail) + '" alt="">' : '<i class="fas fa-list"></i>') + '</div>' +
+          return '<button class="mm-song' + (list.isDynamic ? ' is-dynamic' : '') + '" data-playlist-id="' + esc(list.id || '') + '">' +
+            '<div class="mm-thumb mm-playlist-icon">' + (list.thumbnail ? '<img src="' + esc(list.thumbnail) + '" alt="">' : plIconHtml(list.icon)) + '</div>' +
             '<div class="mm-song-text">' +
-              '<div class="mm-song-title">' + esc(list.emoji ? list.emoji + ' ' : '') + esc(list.name || 'Playlist') + '</div>' +
-              '<div class="mm-song-sub">' + (list.songCount || 0) + ' songs</div>' +
+              '<div class="mm-song-title">' + esc(list.name || 'Playlist') + '</div>' +
+              '<div class="mm-song-sub">' + (list.songCount || 0) + ' songs' + (list.isDynamic ? ' · Auto' : '') + '</div>' +
             '</div>' +
             '<i class="fas fa-play mm-song-dur"></i>' +
             '</button>';
@@ -439,8 +450,7 @@
   function renderPlaylist() {
     if (!currentPlaylist) return;
 
-    $('mm-playlist-title').textContent =
-      (currentPlaylist.emoji ? currentPlaylist.emoji + ' ' : '') + (currentPlaylist.name || 'Playlist');
+    $('mm-playlist-title').innerHTML = plIconHtml(currentPlaylist.icon) + ' ' + esc(currentPlaylist.name || 'Playlist');
     var subtitle = (currentPlaylist.songs ? currentPlaylist.songs.length : 0) + ' songs';
     if (currentPlaylist.isDynamic && currentPlaylist.description) subtitle += ' · ' + currentPlaylist.description;
     $('mm-playlist-sub').textContent = subtitle;
@@ -502,14 +512,27 @@
     if (!currentPlaylist) return;
     var dynamic = !!currentPlaylist.isDynamic;
     openSheet(
-      '<h3>' + esc((currentPlaylist.emoji ? currentPlaylist.emoji + ' ' : '') + (currentPlaylist.name || 'Playlist')) + '</h3>' +
+      '<h3>' + plIconHtml(currentPlaylist.icon) + ' ' + esc(currentPlaylist.name || 'Playlist') + '</h3>' +
       '<button class="mm-sheet-action" data-playlist-action="queue"><i class="fas fa-list"></i> Queue playlist</button>' +
       (dynamic
         ? '<div class="mm-sheet-empty">' + esc(currentPlaylist.description || 'This playlist updates automatically.') + '</div>'
         : '<button class="mm-sheet-action" data-playlist-action="rename"><i class="fas fa-pen"></i> Rename playlist</button>' +
+          '<button class="mm-sheet-action" data-playlist-action="icon"><i class="fas fa-icons"></i> Change icon</button>' +
           '<button class="mm-sheet-action" data-playlist-action="add"><i class="fas fa-plus"></i> Add songs from library</button>' +
           '<button class="mm-sheet-action is-danger" data-playlist-action="delete"><i class="fas fa-trash-alt"></i> Delete playlist</button>')
     );
+  }
+
+  function renderPlaylistIconPicker() {
+    var picker = $('mm-playlist-icon-picker');
+    if (!picker) return;
+    if (!window.SongRequestPlaylistIcons) {
+      picker.innerHTML = '<div class="mm-sheet-empty">Icon browser unavailable.</div>';
+      return;
+    }
+    window.SongRequestPlaylistIcons.renderPicker(picker, playlistIconSelection, function (name) {
+      playlistIconSelection = name;
+    });
   }
 
   function onPlaylistAction(action) {
@@ -534,11 +557,26 @@
     }
 
     if (action === 'rename') {
+      playlistIconSelection = plIconName(currentPlaylist.icon);
       openSheet(
-        '<h3>Rename playlist</h3>' +
+        '<h3>Edit playlist</h3>' +
         '<input id="mm-playlist-rename" class="mm-sheet-input" value="' + esc(currentPlaylist.name || '') + '" placeholder="Playlist name">' +
-        '<button id="mm-playlist-rename-save" class="mm-btn mm-share-primary" style="width:100%;margin-top:12px">Save name</button>'
+        '<div class="mm-icon-heading">Icon</div>' +
+        '<div id="mm-playlist-icon-picker" class="mm-icon-picker"></div>' +
+        '<button id="mm-playlist-rename-save" class="mm-btn mm-share-primary" style="width:100%;margin-top:12px">Save changes</button>'
       );
+      renderPlaylistIconPicker();
+      return;
+    }
+
+    if (action === 'icon') {
+      playlistIconSelection = plIconName(currentPlaylist.icon);
+      openSheet(
+        '<h3>Playlist icon</h3>' +
+        '<div id="mm-playlist-icon-picker" class="mm-icon-picker"></div>' +
+        '<button id="mm-playlist-icon-save" class="mm-btn mm-share-primary" style="width:100%;margin-top:12px">Save icon</button>'
+      );
+      renderPlaylistIconPicker();
       return;
     }
 
@@ -585,6 +623,67 @@
     artistEl.textContent = now.artist || '—';
     updateSeekUi();
     setPlayingUi(now.playing);
+  }
+
+  function formatFromPath(path) {
+    if (!path) return '';
+    var clean = String(path).split('?')[0];
+    var dot = clean.lastIndexOf('.');
+    if (dot < 0) return '';
+    return clean.slice(dot + 1).toUpperCase();
+  }
+
+  function setQuality(fileType, bitrateKbps, songPath) {
+    var format = String(fileType || '').trim().toUpperCase();
+    if (!format) format = formatFromPath(songPath);
+    var bitrate = Number(bitrateKbps) || 0;
+
+    if (!format && bitrate <= 0) {
+      now.quality = null;
+      refreshOptionsMeta();
+      return;
+    }
+
+    var lossless = ['FLAC', 'WAV', 'ALAC', 'AIFF', 'APE', 'DSF'].indexOf(format) >= 0;
+    var text = format || 'Audio';
+    if (lossless) text += ' · Lossless';
+    else if (bitrate > 0) text += ' · ' + bitrate + ' kbps';
+
+    var tier = 'is-unknown';
+    if (lossless) tier = 'is-lossless';
+    else if (bitrate >= 256) tier = 'is-high';
+    else if (bitrate >= 160) tier = 'is-good';
+    else if (bitrate > 0) tier = 'is-low';
+
+    now.quality = { text: text, tier: tier };
+    refreshOptionsMeta();
+  }
+
+  function setLyricsSource(provider) {
+    now.lyricsSource = String(provider || '').trim();
+    refreshOptionsMeta();
+  }
+
+  function qualityBadgeHtml() {
+    if (!now.quality) return '';
+    return '<span class="mm-badge mm-quality ' + now.quality.tier + '">' +
+      '<i class="fas fa-signal"></i><span>' + esc(now.quality.text) + '</span></span>';
+  }
+
+  function lyricsBadgeHtml() {
+    if (!now.lyricsSource) return '';
+    return '<span class="mm-badge mm-lyrics-source">' +
+      '<i class="fas fa-align-left"></i><span>' + esc(now.lyricsSource) + '</span></span>';
+  }
+
+  function optionsMetaHtml() {
+    var html = qualityBadgeHtml() + lyricsBadgeHtml();
+    return html || '<div class="mm-sheet-empty">No audio metadata available yet.</div>';
+  }
+
+  function refreshOptionsMeta() {
+    var host = $('mm-options-meta');
+    if (host) host.innerHTML = optionsMetaHtml();
   }
 
   function updateMini() {
@@ -639,6 +738,7 @@
     lyrics.synced = (data && data.syncedLyrics) || [];
     lyrics.plain = (data && data.plainLyrics) || [];
     lyrics.active = -1;
+    setLyricsSource(data && data.provider ? data.provider : '');
 
     if (!lyrics.synced.length && !lyrics.plain.length) {
       lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-music"></i><span>No lyrics available</span></div>';
@@ -822,11 +922,24 @@
       playerView.style.setProperty('--mm-a1', '#1e1e1e');
       playerView.style.setProperty('--mm-a2', '#1e1e1e');
       playerView.style.setProperty('--mm-a3', '#1a1a1a');
+      if (window.SongRequestTheme) {
+        document.documentElement.style.removeProperty('--mm-primary');
+        document.documentElement.style.removeProperty('--mm-primary-soft');
+        document.documentElement.style.removeProperty('--mm-accent-soft');
+        document.documentElement.style.removeProperty('--mm-surface');
+        document.documentElement.style.removeProperty('--mm-surface-2');
+      }
       send('setNavColors', {});
       return;
     }
 
-    var signature = hex(colors.primary) + hex(colors.secondary);
+    var palettePrimary = hex(colors.primary);
+    var paletteSecondary = hex(colors.secondary);
+    if (window.SongRequestTheme) {
+      window.SongRequestTheme.apply({ primary: palettePrimary, secondary: paletteSecondary }, 'mm', '#1d1b20', '#26232c');
+    }
+
+    var signature = palettePrimary + paletteSecondary;
     if (signature === lastColors) return;
     lastColors = signature;
 
@@ -893,6 +1006,10 @@
       case 'libraryScanCompleted':
         finishImport(data);
         break;
+
+      case 'mobileThemeColors':
+        if (window.SongRequestTheme) window.SongRequestTheme.apply(data, 'mm', '#1d1b20', '#26232c');
+        break;
     }
   }
 
@@ -921,10 +1038,18 @@
       lastColors = '';
       if (!data.thumbnail) applyMusicColors(null);
 
+      now.quality = null;
+      now.lyricsSource = '';
+      refreshOptionsMeta();
+
       lyrics.synced = [];
       lyrics.plain = [];
       lyrics.active = -1;
       lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Loading lyrics…</span></div>';
+    }
+
+    if (data.fileType || data.bitrateKbps || data.songPath || data.currentSongPath) {
+      setQuality(data.fileType, data.bitrateKbps, data.currentSongPath || data.songPath);
     }
 
     if (data.thumbnail) setArt(data.thumbnail);
@@ -1166,6 +1291,8 @@
 
       request('getSettings').then(function (cfg) {
         openSheet(
+          '<h3>Track</h3>' +
+          '<div id="mm-options-meta" class="mm-track-meta">' + optionsMetaHtml() + '</div>' +
           '<h3>Playback</h3>' +
           '<div class="mm-sheet-row"><div class="mm-sheet-label">Volume</div>' +
             '<input id="mm-menu-volume" type="range" min="0" max="100" value="' + Math.round(playback.volume * 100) + '"></div>' +
@@ -1465,16 +1592,20 @@
 
       html += '<div style="display:flex;gap:8px;margin-top:12px">' +
         '<input id="mm-new-playlist-name" class="mm-sheet-input" placeholder="New playlist">' +
-        '<button id="mm-create-playlist-inline" class="mm-btn">Create</button></div>';
+        '<button id="mm-create-playlist-inline" class="mm-btn">Create</button></div>' +
+        '<div class="mm-icon-heading">Icon</div>' +
+        '<div id="mm-playlist-icon-picker" class="mm-icon-picker"></div>';
 
+      playlistIconSelection = 'fa-list';
       openSheet(html);
+      renderPlaylistIconPicker();
       sheetBody.dataset.songId = songId;
     }).catch(function () { });
   }
 
   function createPlaylist(name, songId) {
     if (!name) return;
-    request('createPlaylist', { name: name }).then(function (result) {
+    request('createPlaylist', { name: name, icon: playlistIconSelection || 'fa-list' }).then(function (result) {
       if (result && result.error) { toast(result.error, 'error'); return; }
       if (songId && result && result.id) send('addSongToPlaylist', { playlistId: result.id, songId: songId });
       toast('Playlist created', 'success');
@@ -1628,11 +1759,35 @@
       var input = $('mm-playlist-rename');
       var name = input ? input.value.trim() : '';
       if (!name || !currentPlaylist) { toast('Enter a playlist name', 'error'); return; }
-      request('updatePlaylist', { playlistId: currentPlaylist.id, name: name }).then(function (result) {
+      request('updatePlaylist', {
+        playlistId: currentPlaylist.id,
+        name: name,
+        icon: playlistIconSelection || 'fa-list'
+      }).then(function (result) {
         if (result && result.error) { toast(result.error, 'error'); return; }
         currentPlaylist.name = name;
+        currentPlaylist.icon = playlistIconSelection || 'fa-list';
         renderPlaylist();
-        toast('Playlist renamed', 'success');
+        toast('Playlist updated', 'success');
+        closeSheet();
+        feed = null;
+        feedAt = 0;
+        if (lib.mode === 'playlists') loadLibrary(true);
+      }).catch(function (error) { toast(error.message, 'error'); });
+      return;
+    }
+
+    var iconSave = event.target.closest('#mm-playlist-icon-save');
+    if (iconSave) {
+      if (!currentPlaylist) return;
+      request('updatePlaylist', {
+        playlistId: currentPlaylist.id,
+        icon: playlistIconSelection || 'fa-list'
+      }).then(function (result) {
+        if (result && result.error) { toast(result.error, 'error'); return; }
+        currentPlaylist.icon = playlistIconSelection || 'fa-list';
+        renderPlaylist();
+        toast('Playlist icon updated', 'success');
         closeSheet();
         feed = null;
         feedAt = 0;
@@ -1678,11 +1833,15 @@
   });
 
   $('mm-playlist-new').addEventListener('click', function () {
+    playlistIconSelection = 'fa-list';
     openSheet(
       '<h3>New playlist</h3>' +
       '<input id="mm-new-playlist-name" class="mm-sheet-input" placeholder="Playlist name">' +
+      '<div class="mm-icon-heading">Icon</div>' +
+      '<div id="mm-playlist-icon-picker" class="mm-icon-picker"></div>' +
       '<button id="mm-create-playlist-inline" class="mm-btn" style="margin-top:12px;width:100%">Create playlist</button>'
     );
+    renderPlaylistIconPicker();
   });
 
   // Playlist detail: browse songs, reorder them, remove entries, play/shuffle.

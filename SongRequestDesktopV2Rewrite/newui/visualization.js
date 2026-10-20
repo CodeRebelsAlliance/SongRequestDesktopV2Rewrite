@@ -7,6 +7,8 @@
       const msg = JSON.parse(json);
       if (msg.type === 'event' && msg.eventName === 'audioSamples') {
         decodeFrame(msg.data);
+      } else if (msg.type === 'event' && msg.eventName === 'mobileThemeColors') {
+        if (window.SongRequestTheme) window.SongRequestTheme.apply(msg.data || {}, 'vz', '#1d1b20', '#26232c');
       }
     } catch (e) { console.error('Parse error:', e); }
   }

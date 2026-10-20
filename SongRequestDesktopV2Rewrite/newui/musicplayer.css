@@ -1692,3 +1692,78 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .pres-dropdown-item:hover { background: #3a3a3a; color: #fff; }
 .pres-dropdown-item.active { color: #5b8def; }
 .pres-dropdown-item i { width: 14px; text-align: center; font-size: 11px; }
+
+/* ── Playlist icons / dynamic playlists ─────────────────── */
+.playlist-icon-heading {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.playlist-icon-picker {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 10px;
+  background: #181818;
+  border: 1px solid #333;
+}
+
+.playlist-icon-choice {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid #3a3a3a;
+  background: #242424;
+  color: #bbb;
+  cursor: pointer;
+  font-size: 14px;
+}
+.playlist-icon-choice:hover { background: #303030; color: #fff; }
+.playlist-icon-choice.is-selected {
+  background: #2a4a7a;
+  border-color: #5b8def;
+  color: #dbe9ff;
+}
+
+.home-playlist-icon {
+  font-size: 38px;
+  color: #5b8def;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.playlist-card.is-dynamic,
+.home-playlist-card.is-dynamic,
+.playlist-item.is-dynamic {
+  border-color: rgba(91, 141, 239, 0.45);
+}
+
+.playlist-card.is-dynamic .playlist-card-thumb,
+.home-playlist-card.is-dynamic .home-card-thumb,
+.playlist-item.is-dynamic i {
+  color: #7fb0ff;
+}
+
+.playlist-auto-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(91, 141, 239, 0.16);
+  color: #9cc4ff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

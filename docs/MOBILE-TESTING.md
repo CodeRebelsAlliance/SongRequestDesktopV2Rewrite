@@ -290,7 +290,7 @@ and notification; `adb shell dumpsys activity services` reported
 - [x] `node --test tests/js` covers the new bridge diff (`stagebridge.test.js`)
       and the mobile page wiring (`mobilepages.test.js`).
 - [x] Desktop regression suite green with the new pages: 515 unit, 44/45
-      integration (1 environment skip, FFmpeg/cookies), 62 JS tests; mobile
+      integration (1 environment skip, FFmpeg/cookies), 65 JS tests; mobile
       Android Release build 0 warnings.
 - [x] **Requests (device)**: Requests/Pending/Blacklist/Word Filter/Dashboard
       tabs scroll as chips; tapping a card opens the M3 action sheet; Submit Song,
@@ -372,6 +372,16 @@ and notification; `adb shell dumpsys activity services` reported
       (progress + installer hand-off) instead of continuing into launch/auth while
       the APK is still downloading.
 - [x] **Visualization chips**: mode selectors use the compact icon+label row.
+- [x] **Theme palette**: switching tracks tints the music, requests, soundboard,
+      stage and visualization surfaces/accents; the native navbar changes too.
+- [x] **Playlist icons**: create/edit a playlist through the Font Awesome icon
+      browser on desktop and mobile; emojis are no longer shown. Dynamic mixes
+      are highlighted and labelled Auto.
+- [x] **Lyrics order**: embedded/LRC → cached LRCLIB → live LRCLIB (cached) →
+      cached YouTube captions; player, prefetch and presentation use the same
+      order. Sent-in downloads cache captions.
+- [x] **Player metadata**: the Options sheet shows a colour-coded audio
+      format/bitrate badge and the lyrics source.
 - [ ] Still to check on real hardware: HDMI second display, a TV browser over
       Wi-Fi, long-press timing on low-end phones and the MIDI assign page with a
       physical controller.

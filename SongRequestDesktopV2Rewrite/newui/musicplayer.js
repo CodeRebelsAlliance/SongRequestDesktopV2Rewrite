@@ -260,14 +260,12 @@
     var thumbs = item.thumbnail
       ? '<div class="home-card-playlist-thumb"><img src="' + escHtml(item.thumbnail) + '" alt=""><div class="ph"><i class="fas fa-music"></i></div>' +
         '<div class="ph"><i class="fas fa-music"></i></div><div class="ph"><i class="fas fa-list"></i></div></div>'
-      : (item.emoji
-          ? '<span style="font-size:38px">' + escHtml(item.emoji) + '</span>'
-          : '<i class="fas fa-list"></i>');
+      : '<span class="home-playlist-icon">' + plIconHtml(item.icon) + '</span>';
     var played = item.isDynamic
       ? (item.description || 'Dynamic playlist')
       : (item.lastPlayedUtc ? 'Played ' + homeRelativeTime(item.lastPlayedUtc) : 'Never played');
     var count = item.songCount + ' song' + (item.songCount === 1 ? '' : 's');
-    return '<div class="home-card home-playlist-card" data-playlistid="' + escHtml(item.id || '') + '">' +
+    return '<div class="home-card home-playlist-card' + (item.isDynamic ? ' is-dynamic' : '') + '" data-playlistid="' + escHtml(item.id || '') + '">' +
       '<div class="home-card-thumb">' + thumbs +
         '<button class="home-card-play" data-play="1" title="Play playlist"><i class="fas fa-play"></i></button>' +
       '</div>' +
@@ -2093,6 +2091,10 @@
   function showPlaylistContextMenu(e, playlistId) {
     plCtxPlaylistId = playlistId;
     plCtxMenu.dataset.playlistId = playlistId;
+    var pl = allPlaylists.find(function(p) { return p.id === playlistId; });
+    var dynamic = !!(pl && pl.isDynamic);
+    var deleteItem = plCtxMenu.querySelector('[data-action="deletePlaylist"]');
+    if (deleteItem) deleteItem.style.display = dynamic ? 'none' : '';
     plCtxMenu.style.display = 'block';
     var menuW = plCtxMenu.offsetWidth;
     var menuH = plCtxMenu.offsetHeight;
@@ -2117,6 +2119,7 @@
     if (!id) return;
     if (action === 'playPlaylist') hostSend('playPlaylist', { playlistId: id });
     else if (action === 'shufflePlaylist') hostSend('shufflePlaylist', { playlistId: id });
+    else if (action === 'queuePlaylist') hostSend('queuePlaylist', { playlistId: id });
     else if (action === 'deletePlaylist') hostSend('deletePlaylist', { playlistId: id });
     hidePlaylistContextMenu();
     if (action === 'deletePlaylist') {
@@ -2564,6 +2567,16 @@
   var currentPlaylistId = null;
   var currentPlaylistDynamic = false;
 
+  function plIconName(name) {
+    return window.SongRequestPlaylistIcons
+      ? window.SongRequestPlaylistIcons.normalize(name)
+      : (name && /^fa-[a-z0-9-]+$/.test(name) ? name : 'fa-list');
+  }
+
+  function plIconHtml(name) {
+    return '<i class="fas ' + plIconName(name) + '"></i>';
+  }
+
   function loadPlaylists() {
     hostRequest('getPlaylists', {}).then(function(result) {
       allPlaylists = (result && result.playlists) || [];
@@ -2579,10 +2592,9 @@
     for (var i = 0; i < allPlaylists.length; i++) {
       var pl = allPlaylists[i];
       var div = document.createElement('div');
-      div.className = 'playlist-item' + (currentPlaylistId === pl.id ? ' active' : '');
+      div.className = 'playlist-item' + (currentPlaylistId === pl.id ? ' active' : '') + (pl.isDynamic ? ' is-dynamic' : '');
       div.dataset.id = pl.id;
-      var emoji = pl.emoji || '';
-      var iconHtml = emoji ? '<span style="width:16px;text-align:center">' + escHtml(emoji) + '</span>' : '<i class="fas fa-list"></i>';
+      var iconHtml = plIconHtml(pl.icon);
       div.innerHTML = iconHtml + ' ' + escHtml(pl.name) + ' <span class="playlist-item-count" style="margin-left:auto;color:#666;font-size:11px">' + pl.songCount + '</span>';
       div.addEventListener('click', (function(id) {
         return function() { openPlaylistDetail(id); };
@@ -2607,12 +2619,12 @@
     for (var i = 0; i < allPlaylists.length; i++) {
       var pl = allPlaylists[i];
       var card = document.createElement('div');
-      card.className = 'playlist-card';
-      var emoji = pl.emoji || '';
-      var thumbContent = emoji ? '<span style="font-size:40px">' + escHtml(emoji) + '</span>' : '<i class="fas fa-list"></i>';
+      card.className = 'playlist-card' + (pl.isDynamic ? ' is-dynamic' : '');
+      var thumbContent = plIconHtml(pl.icon);
       card.innerHTML = '<div class="playlist-card-thumb">' + thumbContent + '</div>' +
         '<div class="playlist-card-name">' + escHtml(pl.name) + '</div>' +
-        '<div class="playlist-card-count">' + pl.songCount + ' song' + (pl.songCount !== 1 ? 's' : '') + '</div>';
+        '<div class="playlist-card-count">' + pl.songCount + ' song' + (pl.songCount !== 1 ? 's' : '') +
+        (pl.isDynamic ? ' · <span class="playlist-auto-badge">Auto</span>' : '') + '</div>';
       card.addEventListener('click', (function(id) {
         return function() { openPlaylistDetail(id); };
       })(pl.id));
@@ -2640,8 +2652,8 @@
     hostRequest('getPlaylist', { playlistId: playlistId }).then(function(result) {
       if (!result || result.error) return;
       currentPlaylistDynamic = !!result.isDynamic;
-      document.getElementById('playlist-detail-title').textContent = (result.emoji ? result.emoji + ' ' : '') + result.name;
-      document.getElementById('playlist-detail-count').textContent = result.songCount + ' song' + (result.songCount !== 1 ? 's' : '');
+      document.getElementById('playlist-detail-title').innerHTML = plIconHtml(result.icon) + ' ' + escHtml(result.name);
+      document.getElementById('playlist-detail-count').textContent = result.songCount + ' song' + (result.songCount !== 1 ? 's' : '') + (result.isDynamic ? ' · Auto playlist' : '');
       var deleteBtn = document.getElementById('playlist-detail-delete');
       if (deleteBtn) deleteBtn.style.display = currentPlaylistDynamic ? 'none' : '';
       var sortSelect = document.getElementById('playlist-detail-sort');
@@ -2863,15 +2875,27 @@
   // ── Create playlist modal ─────────────────────────────
   var createPlModal = document.getElementById('create-playlist-modal');
   var createPlName = document.getElementById('create-playlist-name');
-  var createPlEmoji = document.getElementById('create-playlist-emoji');
+  var createPlIcon = document.getElementById('create-playlist-icon');
+  var createPlIconPicker = document.getElementById('create-playlist-icon-picker');
   var createPlOk = document.getElementById('create-playlist-ok');
   var createPlCancel = document.getElementById('create-playlist-cancel');
   var createPlClose = document.getElementById('create-playlist-close');
   var createPlBtn = document.getElementById('btn-create-playlist');
+  var createPlSelectedIcon = 'fa-list';
+
+  function renderCreatePlaylistIcons() {
+    if (!createPlIconPicker || !window.SongRequestPlaylistIcons) return;
+    window.SongRequestPlaylistIcons.renderPicker(createPlIconPicker, createPlSelectedIcon, function (name) {
+      createPlSelectedIcon = name;
+      if (createPlIcon) createPlIcon.value = name;
+    });
+  }
 
   function openCreatePlaylistModal() {
     if (createPlName) createPlName.value = '';
-    if (createPlEmoji) createPlEmoji.value = '';
+    createPlSelectedIcon = 'fa-list';
+    if (createPlIcon) createPlIcon.value = createPlSelectedIcon;
+    renderCreatePlaylistIcons();
     if (createPlModal) createPlModal.style.display = '';
     setTimeout(function() { if (createPlName) createPlName.focus(); }, 100);
   }
@@ -2885,8 +2909,8 @@
   if (createPlOk) createPlOk.addEventListener('click', function() {
     var name = (createPlName.value || '').trim();
     if (!name) { createPlName.style.borderColor = '#e74c3c'; return; }
-    var emoji = (createPlEmoji.value || '').trim() || undefined;
-    hostRequest('createPlaylist', { name: name, emoji: emoji }).then(function(result) {
+    var icon = (createPlIcon && createPlIcon.value) || createPlSelectedIcon || 'fa-list';
+    hostRequest('createPlaylist', { name: name, icon: icon }).then(function(result) {
       if (result && result.success) {
         closeCreatePlaylistModal();
         loadPlaylists();
@@ -2909,8 +2933,7 @@
       var btn = document.createElement('button');
       btn.className = 'context-submenu-item';
       btn.dataset.playlistId = pl.id;
-      var emoji = pl.emoji || '';
-      btn.innerHTML = (emoji ? '<span>' + escHtml(emoji) + '</span>' : '<i class="fas fa-list"></i>') + ' ' + escHtml(pl.name);
+      btn.innerHTML = plIconHtml(pl.icon) + ' ' + escHtml(pl.name);
       btn.addEventListener('click', (function(plId) {
         return function(ev) {
           ev.stopPropagation();

@@ -12,6 +12,8 @@
   --ms-text: #ece7f0;
   --ms-muted: #a9a4b3;
   --ms-primary: #d0bcff;
+  --ms-primary-soft: rgba(208, 188, 255, 0.20);
+  --ms-accent-soft: #40384f;
   --ms-outline: rgba(255, 255, 255, 0.08);
 }
 
@@ -167,7 +169,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ms-btn:disabled { opacity: 0.45; }
 .ms-btn:active:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
 
-.ms-primary { background: #40384f; color: #f4efff; border-color: transparent; }
+.ms-primary { background: var(--ms-accent-soft, #40384f); color: #f4efff; border-color: transparent; }
 
 .ms-hint { margin-top: 10px; font-size: 12px; line-height: 1.4; color: var(--ms-muted); }
 
@@ -222,7 +224,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 
 .ms-seg button.is-active {
-  background: #40384f;
+  background: var(--ms-accent-soft, #40384f);
   color: #f4efff;
 }
 

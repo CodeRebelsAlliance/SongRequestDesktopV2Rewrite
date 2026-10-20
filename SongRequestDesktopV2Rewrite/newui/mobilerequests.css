@@ -13,6 +13,8 @@
   --mr-text: #ece7f0;
   --mr-muted: #a9a4b3;
   --mr-primary: #d0bcff;
+  --mr-primary-soft: rgba(208, 188, 255, 0.20);
+  --mr-accent-soft: #40384f;
   --mr-primary-ink: #381e72;
   --mr-outline: rgba(255, 255, 255, 0.08);
   --mr-danger: #ffb4ab;
@@ -126,7 +128,7 @@ button { background: none; border: 0; cursor: pointer; }
 #tabbar .tab-btn span { line-height: 1.1; overflow: hidden; text-overflow: ellipsis; }
 
 #tabbar .tab-btn.active {
-  background: #40384f;
+  background: var(--mr-accent-soft, #40384f);
   border-color: transparent;
   color: #f5f0ff;
 }
@@ -420,7 +422,7 @@ select option { background-color: var(--mr-surface-2); color: var(--mr-text); }
 
 .settings-tab.active,
 .modal-tab-btn.active {
-  background: #40384f;
+  background: var(--mr-accent-soft, #40384f);
   color: #f5f0ff;
   border-color: transparent;
 }

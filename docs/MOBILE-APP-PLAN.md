@@ -928,6 +928,27 @@ port; they affect the desktop app too):
   remains on the update panel and offers “Continue without updating” only after
   the installer has been opened.
 
+- **Artwork-aware Material theme**: the host now broadcasts the current artwork
+  palette (`mobileThemeColors`) to every resident page. Mobile music, requests,
+  soundboard, stage and visualization all tint their surfaces, accents, chips and
+  controls from it, not just the native navigation bar.
+- **Playlist icons**: playlist emojis are replaced by Font Awesome icons on both
+  platforms. Creation/edit uses a shared icon browser (`playlisticons.js`), with
+  icons also shown in the sidebar/grid/home rows. Dynamic mixes are highlighted
+  with a distinct accent and an “Auto” badge; the populated home/playlist rows
+  expose the Auto state.
+- **Lyrics pipeline (both platforms)**: one shared resolution order is now used by
+  playback, prefetch and presentation — embedded tag lyrics → sidecar `.lrc` →
+  persisted LRCLIB cache → live LRCLIB (cached on success) → cached YouTube
+  captions. The sent-in download pipeline caches captions; direct/library
+  downloads do not. The metadata-cache path bug and provider label for plain
+  lyrics were fixed.
+
+- **Player metadata parity**: the mobile player’s **Options** sheet shows the audio
+  format/bitrate as a colour-coded badge (lossless, high, good, low) and the
+  lyrics provider/source (Embedded, LRC File, LRCLIB, YouTube captions), matching
+  the desktop player information without cluttering the player header.
+
 **Milestone totals for the chosen full-parity programme:** Android-only through
 M6 ≈ 16–22 dev-weeks; +iOS ≈ 19–26; +M8 ≈ 21–29. (M0–M2 alone — shared core,
 mobile shell, native audio — is a usable "control the queue and play from the

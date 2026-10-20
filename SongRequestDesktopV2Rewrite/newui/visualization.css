@@ -34,6 +34,8 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ge
   --vz-text: #ece7f0;
   --vz-muted: #a9a4b3;
   --vz-primary: #d0bcff;
+  --vz-primary-soft: rgba(208, 188, 255, 0.20);
+  --vz-accent-soft: #40384f;
   --vz-outline: rgba(255, 255, 255, 0.08);
 }
 
@@ -108,7 +110,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ge
 }
 :root[data-shell="mobile"] .viz-mode i { font-size: 13px; }
 :root[data-shell="mobile"] .viz-mode.active {
-  background: #40384f;
+  background: var(--vz-accent-soft, #40384f);
   border-color: transparent;
   color: #f5f0ff;
 }

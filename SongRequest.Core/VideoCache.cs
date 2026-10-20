@@ -38,6 +38,12 @@ public class VideoData
     /// <summary>Lyrics looked up for this video (any provider), cached verbatim.</summary>
     public string LyricsText { get; set; } = string.Empty;
 
+    /// <summary>LRCLIB synced lyrics (LRC text), when a lookup found them.</summary>
+    public string LyricsSyncedText { get; set; } = string.Empty;
+
+    /// <summary>Provider of the cached lyrics (currently "LRCLIB").</summary>
+    public string LyricsProvider { get; set; } = string.Empty;
+
     /// <summary>
     /// Whether lyrics were already looked up. Cached separately from the text so a
     /// "nothing found" result is not retried on every panel open.

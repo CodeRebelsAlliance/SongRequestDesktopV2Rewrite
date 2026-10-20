@@ -11,9 +11,10 @@ public class LibraryServiceTests
         TestSupport.ResetLibrary();
         using var lib = new LibraryService();
 
-        var playlist = lib.CreatePlaylist("Roadtrip", "\U0001F697");
+        var playlist = lib.CreatePlaylist("Roadtrip", "\U0001F697", "fa-car");
 
         Assert.Equal("Roadtrip", playlist.Name);
+        Assert.Equal("fa-car", playlist.Icon);
         Assert.Single(lib.GetPlaylistsSummary());
         Assert.NotNull(lib.GetPlaylist(playlist.Id));
     }
@@ -107,11 +108,12 @@ public class LibraryServiceTests
     {
         TestSupport.ResetLibrary();
         using var lib = new LibraryService();
-        var playlist = lib.CreatePlaylist("Old", "x");
+        var playlist = lib.CreatePlaylist("Old", "x", "fa-list");
 
-        Assert.True(lib.UpdatePlaylist(playlist.Id, "New", "y"));
+        Assert.True(lib.UpdatePlaylist(playlist.Id, "New", "y", "fa-music"));
         Assert.Equal("New", lib.GetPlaylist(playlist.Id)!.Name);
         Assert.Equal("y", lib.GetPlaylist(playlist.Id)!.Emoji);
+        Assert.Equal("fa-music", lib.GetPlaylist(playlist.Id)!.Icon);
 
         Assert.True(lib.DeletePlaylist(playlist.Id));
         Assert.Null(lib.GetPlaylist(playlist.Id));

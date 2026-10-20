@@ -110,6 +110,9 @@
 
   function handleEvent(eventName, data) {
     if (eventName === 'refresh') requestRefresh();
+    else if (eventName === 'mobileThemeColors') {
+      if (window.SongRequestTheme) window.SongRequestTheme.apply(data, 'mr', '#1d1b20', '#26232c');
+    }
     else if (eventName === 'libraryScanProgress') onLibraryScanProgress(data);
     else if (eventName === 'libraryScanCompleted') onLibraryScanCompleted(data);
     else if (eventName === 'downloadProgress') onDownloadProgress(data);
