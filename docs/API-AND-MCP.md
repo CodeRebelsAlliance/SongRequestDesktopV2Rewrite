@@ -313,7 +313,7 @@ Without a `subscribe`, every event is delivered. Sending
 ### Server → client
 
 ```json
-{ "type": "hello", "version": "6.5", "protocol": 1, "status": { "...": "..." } }
+{ "type": "hello", "version": "6.6", "protocol": 1, "status": { "...": "..." } }
 ```
 
 ```json

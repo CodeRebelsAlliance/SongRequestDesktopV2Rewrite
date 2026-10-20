@@ -142,7 +142,7 @@
   var playlists = [];
   var recentAt = 0;
 
-  var lyrics = { synced: [], plain: [], active: -1 };
+  var lyrics = { synced: [], plain: [], active: -1, syncOffset: 0, fontScale: 1, hidden: false };
   var lastColors = '';
 
   // ── Element refs ─────────────────────────────────────────
@@ -167,6 +167,12 @@
   var artistEl = $('mm-artist');
   var lyricsEl = $('mm-lyrics');
   var lyricsToggle = $('mm-lyrics-toggle');
+  var lyricsSettingsToggle = $('mm-lyrics-settings-toggle');
+  var lyricsSettings = $('mm-lyrics-settings');
+  var syncValueEl = $('mm-sync-value');
+  var syncResetEl = $('mm-sync-reset');
+  var fontValueEl = $('mm-font-value');
+  var fontResetEl = $('mm-font-reset');
   var playBtn = $('mm-play');
   var repeatBtn = $('mm-repeat');
   var queueToggle = $('mm-queue-toggle');
@@ -729,7 +735,81 @@
     playerView.classList.toggle('is-lyrics', lyricsOpen);
     lyricsEl.hidden = !lyricsOpen;
     lyricsToggle.setAttribute('aria-pressed', lyricsOpen ? 'true' : 'false');
-    if (lyricsOpen) highlightLyrics(now.time);
+
+    if (lyricsSettingsToggle) {
+      lyricsSettingsToggle.hidden = !lyricsOpen;
+      if (!lyricsOpen) closeLyricsSettings();
+    }
+
+    if (lyricsOpen) {
+      applyLyricsFontScale();
+      highlightLyrics(now.time);
+    }
+  }
+
+  function toggleLyricsSettings() {
+    if (!lyricsSettings) return;
+    if (lyricsSettings.hidden) openLyricsSettings(); else closeLyricsSettings();
+  }
+
+  function openLyricsSettings() {
+    if (!lyricsSettings) return;
+    lyricsSettings.hidden = false;
+    if (lyricsSettingsToggle) {
+      lyricsSettingsToggle.classList.add('is-active');
+      lyricsSettingsToggle.setAttribute('aria-expanded', 'true');
+    }
+    updateLyricsSyncUi();
+    updateLyricsFontUi();
+  }
+
+  function closeLyricsSettings() {
+    if (!lyricsSettings) return;
+    lyricsSettings.hidden = true;
+    if (lyricsSettingsToggle) {
+      lyricsSettingsToggle.classList.remove('is-active');
+      lyricsSettingsToggle.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function updateLyricsSyncUi() {
+    if (!syncValueEl) return;
+    var sign = lyrics.syncOffset >= 0 ? '+' : '';
+    syncValueEl.textContent = sign + lyrics.syncOffset.toFixed(2) + 's';
+    if (syncResetEl) syncResetEl.classList.toggle('is-muted', lyrics.syncOffset === 0);
+  }
+
+  function setLyricsSyncOffset(value) {
+    lyrics.syncOffset = Math.max(-5, Math.min(5, Math.round(value * 4) / 4));
+    updateLyricsSyncUi();
+    lyrics.active = -1;
+    highlightLyrics(now.time);
+  }
+
+  function applyLyricsFontScale() {
+    lyricsEl.style.setProperty('--mm-lyric-scale', String(lyrics.fontScale));
+    updateLyricsFontUi();
+  }
+
+  function updateLyricsFontUi() {
+    if (!fontValueEl) return;
+    fontValueEl.textContent = Math.round(lyrics.fontScale * 100) + '%';
+    if (fontResetEl) fontResetEl.classList.toggle('is-muted', Math.abs(lyrics.fontScale - 1) < 0.001);
+  }
+
+  function setLyricsFontScale(value) {
+    lyrics.fontScale = Math.max(0.5, Math.min(2, Math.round(value * 20) / 20));
+    lyricsEl.style.setProperty('--mm-lyric-scale', String(lyrics.fontScale));
+    updateLyricsFontUi();
+    saveLyricsSettings();
+  }
+
+  var _saveLyricsTimer = null;
+  function saveLyricsSettings() {
+    clearTimeout(_saveLyricsTimer);
+    _saveLyricsTimer = setTimeout(function () {
+      send('saveLyricsSettings', { fontScale: lyrics.fontScale, hidden: lyrics.hidden });
+    }, 250);
   }
 
   // ── Lyrics ───────────────────────────────────────────────
@@ -759,15 +839,17 @@
     }
 
     lyricsEl.innerHTML = html;
+    applyLyricsFontScale();
     if (lyricsOpen) highlightLyrics(now.time);
   }
 
   function highlightLyrics(time) {
     if (!lyrics.synced.length || !lyricsOpen) return;
 
+    var adjustedTime = time + lyrics.syncOffset;
     var index = -1;
     for (var i = 0; i < lyrics.synced.length; i++) {
-      if (lyrics.synced[i].time <= time + 0.15) index = i; else break;
+      if (lyrics.synced[i].time <= adjustedTime) index = i; else break;
     }
 
     if (index === lyrics.active) return;
@@ -1045,6 +1127,8 @@
       lyrics.synced = [];
       lyrics.plain = [];
       lyrics.active = -1;
+      lyrics.syncOffset = 0;
+      updateLyricsSyncUi();
       lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Loading lyrics…</span></div>';
     }
 
@@ -1187,6 +1271,18 @@
 
   // Player controls
   lyricsToggle.addEventListener('click', function () { toggleLyrics(); });
+  if (lyricsSettingsToggle) {
+    lyricsSettingsToggle.addEventListener('click', function () { toggleLyricsSettings(); });
+  }
+  $('mm-sync-back').addEventListener('click', function () { setLyricsSyncOffset(lyrics.syncOffset - 0.25); });
+  $('mm-sync-forward').addEventListener('click', function () { setLyricsSyncOffset(lyrics.syncOffset + 0.25); });
+  $('mm-sync-reset').addEventListener('click', function () { setLyricsSyncOffset(0); });
+  $('mm-font-decrease').addEventListener('click', function () { setLyricsFontScale(lyrics.fontScale - 0.1); });
+  $('mm-font-increase').addEventListener('click', function () { setLyricsFontScale(lyrics.fontScale + 0.1); });
+  $('mm-font-reset').addEventListener('click', function () { setLyricsFontScale(1); });
+  updateLyricsSyncUi();
+  updateLyricsFontUi();
+
   if (queueToggle) {
     queueToggle.addEventListener('click', function () {
       if (queueEl.hidden) openQueue(); else closeQueue(true);
@@ -1203,10 +1299,13 @@
 
   seekEl.addEventListener('change', function () {
     var total = now.total || 0;
-    var target = seekEl.value / 1000 * total;
+    // The host expects a normalized position (0..1). Sending absolute seconds
+    // clamped every seek to the end of the track, which looked like the player
+    // was skipping the song as soon as the thumb was released.
+    var position = Math.max(0, Math.min(1, seekEl.value / 1000));
     seekDragging = false;
-    now.time = target;
-    send('seek', { position: target });
+    now.time = position * total;
+    send('seek', { position: position });
     updateSeekUi();
   });
 
@@ -1951,6 +2050,11 @@
     if (state.volume != null) playback.volume = state.volume;
     if (state.crossfade != null) playback.crossfade = state.crossfade;
     if (state.repeatEnabled != null) setRepeatState(state.repeatEnabled);
+    if (state.lyricsFontScale != null) {
+      lyrics.fontScale = Math.max(0.5, Math.min(2, state.lyricsFontScale));
+      applyLyricsFontScale();
+    }
+    if (state.lyricsHidden != null) lyrics.hidden = !!state.lyricsHidden;
   }).catch(function () { });
 
   loadHomeFeed(true);

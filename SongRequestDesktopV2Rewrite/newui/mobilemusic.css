@@ -340,6 +340,7 @@ input[type="search"] {
 .mm-pill-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   height: 34px;
   padding: 0 14px;
@@ -348,11 +349,55 @@ input[type="search"] {
   border: 1px solid rgba(255, 255, 255, 0.10);
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+  transition: padding 0.24s ease, gap 0.24s ease, background 0.2s ease,
+              border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.mm-pill-btn > span {
+  display: inline-block;
+  max-width: 90px;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  transition: max-width 0.24s ease, opacity 0.18s ease;
 }
 
 .mm-pill-btn[aria-pressed="true"] {
   background: rgba(208, 188, 255, 0.24);
   border-color: rgba(208, 188, 255, 0.5);
+}
+
+/* In lyrics mode the chips keep their icons but fold their labels away so the
+   lyrics get the full width of a phone screen (especially in landscape). */
+.mm-player.is-lyrics .mm-player-top .mm-pill-btn > span {
+  max-width: 0;
+  opacity: 0;
+}
+
+.mm-player.is-lyrics .mm-player-top .mm-pill-btn:not(.mm-lyrics-settings-chip) {
+  gap: 0;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.mm-lyrics-settings-chip {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.mm-lyrics-settings-chip:not([hidden]) {
+  animation: mmLyricsChipIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mm-lyrics-settings-chip.is-active {
+  background: rgba(208, 188, 255, 0.24);
+  border-color: rgba(208, 188, 255, 0.5);
+}
+
+@keyframes mmLyricsChipIn {
+  from { opacity: 0; transform: scale(0.78); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 /* ── Empty / loading ────────────────────────────────────── */
@@ -449,6 +494,77 @@ input[type="search"] {
   height: 40px;
 }
 
+.mm-lyrics-settings {
+  position: absolute;
+  top: 44px;
+  right: 18px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(29, 27, 32, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  animation: mmLyricsSettingsIn 0.2s ease;
+}
+
+.mm-lyrics-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mm-lyrics-settings-label {
+  width: 34px;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mm-muted);
+}
+
+.mm-settings-btn {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 0.18s ease, opacity 0.18s ease;
+}
+
+.mm-settings-btn:active { background: rgba(255, 255, 255, 0.18); }
+.mm-settings-btn.is-muted { opacity: 0.4; }
+
+.mm-font-btn span {
+  font-size: 9px;
+  margin-left: 1px;
+  vertical-align: super;
+}
+
+.mm-settings-value {
+  min-width: 48px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+@keyframes mmLyricsSettingsIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .mm-hero {
   flex: 1;
   min-height: 0;
@@ -530,6 +646,7 @@ input[type="search"] {
 .mm-player.is-lyrics #mm-artist { font-size: 13.5px; margin-top: 2px; }
 
 .mm-lyrics {
+  --mm-lyric-scale: 1;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -540,7 +657,7 @@ input[type="search"] {
 }
 
 .mm-lyrics .mm-line {
-  font-size: 18px;
+  font-size: calc(18px * var(--mm-lyric-scale));
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.42);
   padding: 7px 4px;
@@ -549,7 +666,7 @@ input[type="search"] {
 
 .mm-lyrics .mm-line.is-active {
   color: #fff;
-  font-size: 21px;
+  font-size: calc(21px * var(--mm-lyric-scale));
   font-weight: 700;
 }
 
@@ -754,6 +871,105 @@ input[type="search"] {
   #mm-title { font-size: 21px; }
   .mm-controls { gap: 20px; padding-top: 8px; }
   .mm-play-btn { width: 58px; height: 58px; font-size: 22px; }
+}
+
+/* ── Landscape phones ───────────────────────────────────── */
+/* The page is mobile-only, so this never touches the desktop music player.
+   Without lyrics the hero becomes a horizontal row; with lyrics the player
+   switches to a two-column grid (hero + controls | lyrics) so the lyrics get
+   the horizontal space instead of being squeezed between artwork and controls. */
+@media (orientation: landscape) and (max-height: 640px) {
+  .mm-player {
+    padding: 4px max(14px, env(safe-area-inset-left)) 6px max(14px, env(safe-area-inset-right));
+  }
+
+  .mm-player-top { height: 32px; gap: 4px; }
+  .mm-player-top .mm-pill-btn { height: 30px; font-size: 12px; padding-left: 11px; padding-right: 11px; }
+  .mm-player-top .mm-pill-btn > span { max-width: 72px; }
+
+  .mm-player:not(.is-lyrics) .mm-hero {
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .mm-player:not(.is-lyrics) #mm-art-wrap {
+    width: min(40vh, 180px);
+    height: min(40vh, 180px);
+  }
+
+  .mm-player:not(.is-lyrics) .mm-meta {
+    text-align: left;
+    max-width: 44%;
+  }
+
+  .mm-player:not(.is-lyrics) #mm-title { font-size: 22px; }
+
+  .mm-player.is-lyrics {
+    display: grid;
+    grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "top top"
+      "hero lyrics"
+      "bottom lyrics";
+    column-gap: 18px;
+    row-gap: 2px;
+  }
+
+  .mm-player.is-lyrics .mm-player-top { grid-area: top; }
+
+  .mm-player.is-lyrics .mm-hero {
+    grid-area: hero;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    min-height: 0;
+  }
+
+  .mm-player.is-lyrics #mm-art-wrap {
+    width: min(27vh, 130px);
+    height: min(27vh, 130px);
+  }
+
+  .mm-player.is-lyrics .mm-meta { text-align: center; max-width: 100%; padding: 0 2px; }
+  .mm-player.is-lyrics #mm-title { font-size: 17px; }
+  .mm-player.is-lyrics #mm-artist { font-size: 12.5px; }
+
+  .mm-player.is-lyrics .mm-lyrics {
+    grid-area: lyrics;
+    height: 100%;
+    padding: 0 4px 4px;
+  }
+
+  .mm-player.is-lyrics .mm-line {
+    font-size: calc(16px * var(--mm-lyric-scale));
+    padding: 5px 4px;
+  }
+
+  .mm-player.is-lyrics .mm-line.is-active {
+    font-size: calc(19px * var(--mm-lyric-scale));
+  }
+
+  .mm-player.is-lyrics .mm-player-bottom {
+    grid-area: bottom;
+    padding-top: 2px;
+  }
+
+  .mm-player-bottom .mm-seek { gap: 6px; font-size: 11px; }
+  .mm-player-bottom .mm-seek span { width: 32px; }
+  .mm-controls { padding: 6px 2px 0; gap: 2px; }
+  .mm-controls .mm-icon-btn { width: 38px; height: 38px; }
+  .mm-controls .mm-lg { font-size: 18px; }
+  .mm-play-btn { width: 48px; height: 48px; font-size: 18px; }
+
+  .mm-lyrics-settings {
+    top: 36px;
+    right: max(14px, env(safe-area-inset-right));
+  }
 }
 
 

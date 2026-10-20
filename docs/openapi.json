@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "SongRequest local API",
-    "version": "6.5",
+    "version": "6.6",
     "description": "HTTP + WebSocket access to every SongRequest feature and status. Authentication is optional: set a token in Settings > API & MCP and send 'Authorization: Bearer <token>'. The send-in list and library can be searched with /api/v1/songs and /api/v1/search. Live updates are pushed over /api/v1/ws (WebSocket, JSON messages)."
   },
   "servers": [

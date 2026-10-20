@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Silk.NET.OpenAL;
@@ -9,13 +10,17 @@ namespace SongRequestDesktopV2Rewrite;
 /// <summary>
 /// Enumerates OpenAL Soft output devices.
 ///
-/// Silk.NET marshals <c>alcGetString(NULL, ALC_DEVICE_SPECIFIER)</c> to a single
-/// string, so the raw function is invoked through a function pointer to read the
-/// full double-NUL-separated device list.
+/// Silk.NET marshals <c>alcGetString(NULL, ...)</c> to a single string, so the raw
+/// function is invoked through a function pointer to read the full
+/// double-NUL-separated device list. <c>ALC_DEVICE_SPECIFIER</c> only returns the
+/// backend/driver names ("OpenAL Soft"), while <c>ALC_ALL_DEVICES_SPECIFIER</c>
+/// (from <c>ALC_ENUMERATE_ALL_EXT</c>) returns the actual playback endpoints on
+/// Windows and Linux — the distinction behind the old "only OpenAL Soft" menu.
 /// </summary>
 internal static unsafe class OpenAlDevices
 {
     private const int AlcDeviceSpecifier = 0x1005;
+    private const int AlcAllDevicesSpecifier = 0x1013;
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr AlcGetStringDelegate(IntPtr device, int param);
@@ -28,7 +33,10 @@ internal static unsafe class OpenAlDevices
     {
         lock (Sync)
         {
-            if (_probed) return _names;
+            // Keep a successful list cached, but retry after a failed/empty probe:
+            // on some desktops the audio server is not ready yet when the first
+            // settings/menu call runs.
+            if (_probed && _names.Count > 0) return _names;
             _probed = true;
             try { _names = Probe(); }
             catch { _names = Array.Empty<string>(); }
@@ -58,8 +66,18 @@ internal static unsafe class OpenAlDevices
                 if (proc == IntPtr.Zero) return Array.Empty<string>();
 
                 var getString = Marshal.GetDelegateForFunctionPointer<AlcGetStringDelegate>(proc);
-                var ptr = getString(IntPtr.Zero, AlcDeviceSpecifier);
-                return ReadDoubleNullList(ptr);
+
+                // Prefer the full endpoint list. Older builds without
+                // ALC_ENUMERATE_ALL_EXT return null/empty here, so fall back to the
+                // historical driver-name list.
+                var names = ReadDoubleNullList(getString(IntPtr.Zero, AlcAllDevicesSpecifier));
+                if (names.Count == 0)
+                    names = ReadDoubleNullList(getString(IntPtr.Zero, AlcDeviceSpecifier));
+
+                return names
+                    .Where(n => !string.IsNullOrWhiteSpace(n))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
             }
             finally
             {

@@ -28,6 +28,17 @@ internal static class YtDlpDownloader
     public static bool IsAvailable => !string.IsNullOrEmpty(YoutubeCookieService.TryFindYtDlp());
 
     /// <summary>
+    /// yt-dlp format selector. Desktop takes the absolute best audio (usually Opus);
+    /// mobile asks for its preferred decodable container first. The old
+    /// unconditional m4a preference always took the lower-bitrate AAC stream on
+    /// desktop.
+    /// </summary>
+    internal static string FormatSelector()
+        => string.IsNullOrEmpty(DownloadedAudio.PreferredContainer)
+            ? "bestaudio/best"
+            : $"bestaudio[ext={DownloadedAudio.PreferredExtension.TrimStart('.')}]/bestaudio/best";
+
+    /// <summary>
     /// Downloads the audio for <paramref name="videoId"/> into <paramref name="targetPath"/>.
     /// Returns null on success, or an error message.
     /// </summary>
@@ -72,7 +83,7 @@ internal static class YtDlpDownloader
             psi.ArgumentList.Add("--no-warnings");
             psi.ArgumentList.Add("--newline");
             psi.ArgumentList.Add("-f");
-            psi.ArgumentList.Add("bestaudio[ext=m4a]/bestaudio/best");
+            psi.ArgumentList.Add(FormatSelector());
             psi.ArgumentList.Add("-o");
             psi.ArgumentList.Add(template);
             if (File.Exists(cookieFile))

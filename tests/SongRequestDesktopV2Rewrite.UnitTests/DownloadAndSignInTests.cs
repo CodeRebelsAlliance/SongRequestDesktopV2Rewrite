@@ -82,6 +82,27 @@ public class DownloadAndSignInTests
     }
 
     [Fact]
+    public void YtDlpFormatSelector_UsesBestAudioOnDesktop_AndThePreferredContainerOnMobile()
+    {
+        var saved = DownloadedAudio.PreferredContainer;
+        try
+        {
+            DownloadedAudio.PreferredContainer = null;
+            Assert.Equal("bestaudio/best", YtDlpDownloader.FormatSelector());
+
+            DownloadedAudio.PreferredContainer = "mp4";
+            Assert.Equal("bestaudio[ext=m4a]/bestaudio/best", YtDlpDownloader.FormatSelector());
+
+            DownloadedAudio.PreferredContainer = "webm";
+            Assert.Equal("bestaudio[ext=webm]/bestaudio/best", YtDlpDownloader.FormatSelector());
+        }
+        finally
+        {
+            DownloadedAudio.PreferredContainer = saved;
+        }
+    }
+
+    [Fact]
     public void PathFor_ReusesAnExistingDownloadWhicheverExtensionItHas()
     {
         using var sandbox = new Sandbox();

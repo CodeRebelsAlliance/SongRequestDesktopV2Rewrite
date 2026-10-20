@@ -107,8 +107,9 @@ namespace SongRequestDesktopV2Rewrite
 
         /// <summary>
         /// Picks the audio stream to download: the preferred container first (mobile
-        /// wants AAC/m4a so the platform decoders can play it), then the original
-        /// language, then the highest bitrate.
+        /// wants AAC/m4a so the platform decoders can play it), then the highest
+        /// bitrate. Language only breaks ties, so a lower-bitrate "original" track
+        /// can never win over a higher-quality stream (the old order did that).
         /// </summary>
         private static IAudioStreamInfo? SelectAudioStream(IEnumerable<IAudioStreamInfo> audioStreams)
         {
@@ -120,19 +121,21 @@ namespace SongRequestDesktopV2Rewrite
                 var preferred = streams
                     .Where(s => DownloadedAudio.MatchesPreferredContainer(s.Container.Name))
                     .OrderByDescending(s => s.Bitrate)
+                    .ThenByDescending(IsOriginalLanguage)
                     .FirstOrDefault();
 
                 if (preferred != null) return preferred;
             }
 
-            var original = streams
-                .Where(a => a.AudioLanguage?.ToString() is { } language &&
-                            language.IndexOf("Original", StringComparison.OrdinalIgnoreCase) >= 0)
-                .OrderByDescending(a => a.Bitrate)
+            return streams
+                .OrderByDescending(s => s.Bitrate)
+                .ThenByDescending(IsOriginalLanguage)
                 .FirstOrDefault();
-
-            return original ?? streams.OrderByDescending(s => s.Bitrate).FirstOrDefault();
         }
+
+        private static bool IsOriginalLanguage(IAudioStreamInfo stream)
+            => stream.AudioLanguage?.ToString() is { } language &&
+               language.IndexOf("Original", StringComparison.OrdinalIgnoreCase) >= 0;
 
         public async Task<string> DownloadVideoAsync(string videoUrl, string downloadPath)
         {

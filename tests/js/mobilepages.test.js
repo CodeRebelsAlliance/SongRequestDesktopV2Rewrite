@@ -219,6 +219,30 @@ test('mobile player shows colour-coded quality and lyrics source in Options', ()
   assert.match(css, /\.mm-quality\.is-high/);
 });
 
+test('mobile seekbar sends a normalized position instead of absolute seconds', () => {
+  const js = read('mobilemusic.js');
+  assert.match(js, /seekEl\.value \/ 1000/);
+  assert.match(js, /send\('seek', \{ position: position \}\)/);
+});
+
+test('mobile lyrics view has synchronization and size controls plus landscape layout', () => {
+  const html = read('mobilemusic.html');
+  const js = read('mobilemusic.js');
+  const css = read('mobilemusic.css');
+
+  assert.match(html, /id="mm-lyrics-settings-toggle"/);
+  assert.match(html, /id="mm-sync-value"/);
+  assert.match(html, /id="mm-font-value"/);
+  assert.match(js, /function setLyricsSyncOffset/);
+  assert.match(js, /function setLyricsFontScale/);
+  assert.match(js, /function toggleLyricsSettings/);
+
+  // Lyrics mode folds chip labels away and the landscape grid gives lyrics a column.
+  assert.match(css, /\.mm-player\.is-lyrics \.mm-player-top \.mm-pill-btn > span/);
+  assert.match(css, /@media \(orientation: landscape\) and \(max-height: 640px\)/);
+  assert.match(css, /grid-template-areas:\s*"top top"\s*"hero lyrics"\s*"bottom lyrics"/);
+});
+
 test('mobile music page exposes repeat state and playlist browsing', () => {
   const html = read('mobilemusic.html');
   assert.match(html, /id="mm-repeat"[^>]*aria-pressed="false"/);
