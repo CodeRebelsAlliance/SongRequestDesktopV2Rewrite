@@ -38,7 +38,11 @@ public sealed class AppHost : IDisposable
         Interop = new YoutubeFormInterop(Host, Host.YoutubeService)
         {
             // Broadcast events belong to the main window (requests/settings page).
-            SendMessage = json => _page.SendTo("index.html", json),
+            SendMessage = json =>
+            {
+                if (!_page.SendTo(MainPage.MobileRequestsFile, json))
+                    _page.SendTo("index.html", json);
+            },
             RunOnUi = RunOnUi,
             PostToUi = PostToUi,
             QuitRequested = () => Application.Current?.Quit(),

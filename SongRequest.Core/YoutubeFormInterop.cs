@@ -393,7 +393,13 @@ public class YoutubeFormInterop
                 }
                 case "toggleRepeat":
                 {
-                    PostToUi(() => _ytForm.Music.ToggleRepeat());
+                    PostToUi(() =>
+                    {
+                        _ytForm.Music.ToggleRepeat();
+                        // Repeat is a player state, not a queue mutation: tell every
+                        // UI about it explicitly so toggle buttons can report it.
+                        SendQueueUpdate();
+                    });
                     SendResponse(id, new { success = true });
                     return;
                 }
@@ -409,14 +415,16 @@ public class YoutubeFormInterop
                         SendQueueUpdate();
                         double volInit = 0.8, cfInit = 4.0;
                         bool canControlInit = true;
+                        bool repeatInit = false;
                         var mp = _ytForm.Music;
                         if (mp != null)
                         {
                             volInit = mp.VolumeValue;
                             cfInit = mp.CrossfadeSeconds;
                             canControlInit = mp.CanControlVolume;
+                            repeatInit = mp.RepeatEnabled;
                         }
-                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit, lyricsFontScale = (double)ConfigService.Instance.Current.LyricsFontScale, lyricsHidden = ConfigService.Instance.Current.LyricsHidden });
+                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit, repeatEnabled = repeatInit, lyricsFontScale = (double)ConfigService.Instance.Current.LyricsFontScale, lyricsHidden = ConfigService.Instance.Current.LyricsHidden });
                         SendCurrentNowPlayingToNewUI();
 
                         MusicPlayerSendEvent("musicPlayerConfig", new
@@ -1843,7 +1851,8 @@ public class YoutubeFormInterop
                     queue = queueData,
                     playlistQueue = playlistQueueData,
                     currentSongPath = _currentSongPath,
-                    isPlaying = mp.IsPlaybackActive
+                    isPlaying = mp.IsPlaybackActive,
+                    repeatEnabled = mp.RepeatEnabled
                 }
             });
             mpSend(json);
@@ -1894,6 +1903,12 @@ public class YoutubeFormInterop
             System.Diagnostics.Debug.WriteLine($"[SendPresentationQueueUpdate] {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Artwork for a song path as a data URL. Public seam for the mobile stage
+    /// server, which renders queue thumbnails outside the web UI process.
+    /// </summary>
+    public string? GetThumbnailDataUrl(string? songPath) => GetThumbnailForSongPath(songPath);
 
     private string? GetThumbnailForSongPath(string? songPath)
     {
@@ -4614,6 +4629,20 @@ public class YoutubeFormInterop
         catch { }
     }
 
+    /// <summary>Request URL as a QR data URL (no CDN/network needed on the display).</summary>
+    private static string? QrDataUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        try
+        {
+            using var generator = new global::QRCoder.QRCodeGenerator();
+            using var data = generator.CreateQrCode(url, global::QRCoder.QRCodeGenerator.ECCLevel.Q);
+            var png = new global::QRCoder.PngByteQRCode(data).GetGraphic(6);
+            return "data:image/png;base64," + Convert.ToBase64String(png);
+        }
+        catch { return null; }
+    }
+
     private void SendPresentationCurrentState()
     {
         var presSend = _ytForm.NewUiRef?.PresentationSendMessage;
@@ -4626,6 +4655,9 @@ public class YoutubeFormInterop
             lyricsFontScale = (double)(cfg?.LyricsFontScale ?? 1.0f),
             lyricsHidden = cfg?.LyricsHidden ?? false,
             requestUrl = cfg?.RequestUrl ?? "",
+            // A data URL means the QR still renders when the machine has no
+            // internet (the page otherwise loads qrcode.js from a CDN).
+            requestQr = QrDataUrl(cfg?.RequestUrl),
             presentationSource = cfg?.PresentationSource ?? "player",
             presentationZoom = Math.Clamp(cfg?.PresentationZoom ?? 1.0, 0.5, 2.0)
         });

@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soundboard - SongRequest</title>
+<link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="soundboard.css">
+  <link rel="stylesheet" href="mobile.css">
+  <link rel="stylesheet" href="mobilesoundboard.css">
+</head>
+<body>
+<div id="sb-root">
+  <div id="sb-topbar">
+    <div id="sb-top-left">
+      <img id="sb-logo" src="SRshortLogo.png" alt=""/>
+      <span id="sb-title">Technik-AG <span style="color:yellow">Song</span><span style="color:orange">Request</span> Soundboard</span>
+    </div>
+    <div id="sb-top-center">
+      <span id="sb-grid-info">Grid: 4 × 3</span>
+      <span id="sb-page-info">Page 1 of 1</span>
+    </div>
+    <div id="sb-top-actions">
+      <label id="sb-midi-toggle"><input type="checkbox" id="sb-midi-enabled"/> <i class="fas fa-piano"></i> MIDI</label>
+      <button id="sb-midi-settings" class="top-btn" title="MIDI devices"><i class="fas fa-sliders-h"></i></button>
+      <button id="sb-assign-mode" class="top-btn" title="Assign a MIDI control to a button"><i class="fas fa-bullseye"></i> Assign</button>
+      <button id="sb-pages" class="top-btn"><i class="fas fa-file"></i> Pages</button>
+      <button id="sb-grid-size" class="top-btn"><i class="fas fa-cog"></i> Grid Size</button>
+      <button id="sb-keys" class="top-btn"><i class="fas fa-keyboard"></i> Keys</button>
+      <button id="sb-add-sound" class="top-btn success"><i class="fas fa-plus"></i> Add Sound</button>
+      <button id="sb-close" class="top-btn danger"><i class="fas fa-times"></i> Close</button>
+    </div>
+  </div>
+  <div id="sb-main">
+    <div id="sb-grid-scroll"><div id="sb-grid"></div></div>
+    <div id="sb-bottombar">
+      <button id="sb-prev" class="top-btn"><i class="fas fa-chevron-left"></i> Previous</button>
+      <button id="sb-next" class="top-btn">Next <i class="fas fa-chevron-right"></i></button>
+      <span class="sb-bb-label">🔊</span>
+      <input type="range" id="sb-master" min="0" max="300" value="100"/>
+      <span id="sb-master-label" class="sb-bb-label">100%</span>
+      <span class="sb-bb-label">🎧</span>
+      <select id="sb-device" class="settings-input sb-device-select"></select>
+      <button id="sb-stop-all" class="top-btn danger" style="margin-left:auto"><i class="fas fa-stop"></i> Stop All</button>
+    </div>
+  </div>
+</div>
+
+<div id="sb-context-menu" class="context-menu" style="display:none">
+  <div class="context-menu-item" data-cm="edit"><i class="fas fa-pen"></i> Edit</div>
+  <div class="context-menu-item" data-cm="clear-midi" id="sb-cm-clear-midi"><i class="fas fa-sliders-h"></i> Clear MIDI Mapping</div>
+  <div class="context-menu-item context-menu-danger" data-cm="delete"><i class="fas fa-trash"></i> Delete</div>
+</div>
+
+<!-- Edit button modal -->
+<div id="sb-edit-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:640px;max-height:92vh;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <span><i class="fas fa-pen"></i> Edit Sound Button</span>
+      <button class="modal-close" id="sb-edit-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body sb-modal-body">
+      <div class="settings-field">
+        <label>Name</label>
+        <input type="text" id="sb-edit-name" class="settings-input"/>
+      </div>
+      <div class="settings-field">
+        <label>Icon</label>
+        <input type="text" id="sb-edit-icon" class="settings-input" maxlength="4" style="width:100px"/>
+      </div>
+      <div class="settings-field">
+        <label>Button Color</label>
+        <div id="sb-edit-colors" class="sb-color-palette"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <span class="settings-hint" style="margin:0">Custom:</span>
+          <input type="text" id="sb-edit-custom-color" class="settings-input" style="width:110px;font-family:Consolas,monospace" placeholder="#RRGGBB"/>
+          <span id="sb-edit-color-preview" class="sb-color-preview"></span>
+        </div>
+      </div>
+      <div class="settings-field">
+        <label>Sound File</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="sb-edit-soundfile" class="settings-input" style="flex:1" readonly/>
+          <button id="sb-edit-browse" class="top-btn"><i class="fas fa-folder-open"></i> Browse</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input type="text" id="sb-edit-yturl" class="settings-input" style="flex:1" placeholder="Import from YouTube URL..."/>
+          <button id="sb-edit-ytimport" class="top-btn"><i class="fas fa-download"></i> Import</button>
+        </div>
+        <div id="sb-edit-import-status" class="settings-hint"></div>
+      </div>
+      <div class="settings-field">
+        <label>Audio Effects</label>
+        <label class="settings-checkbox" style="display:inline-flex;margin-right:20px"><input type="checkbox" id="sb-edit-fadein"/> Fade In</label>
+        <label class="settings-checkbox" style="display:inline-flex"><input type="checkbox" id="sb-edit-fadeout"/> Fade Out</label>
+        <div class="settings-hint">Fade options are stored for future use.</div>
+      </div>
+      <div class="settings-field">
+        <label>Playback Mode</label>
+        <select id="sb-edit-repeat" class="settings-input">
+          <option value="none">Play-Stop (once)</option>
+          <option value="loop">Play-Loop (repeat)</option>
+          <option value="overlay">Play-Overlay (multiple)</option>
+        </select>
+      </div>
+      <div class="settings-field">
+        <label>Volume &mdash; <span id="sb-edit-volume-label">100%</span></label>
+        <input type="range" id="sb-edit-volume" min="0" max="300" value="100" style="width:100%"/>
+      </div>
+      <div class="settings-field">
+        <label>MIDI Mapping</label>
+        <div id="sb-edit-midi" class="sb-midi-status">Not mapped</div>
+      </div>
+      <div class="settings-field">
+        <label>Custom Audio Device</label>
+        <select id="sb-edit-device" class="settings-input"></select>
+      </div>
+      <div class="settings-field">
+        <label>Keyboard Shortcut</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label class="settings-checkbox" style="margin:0"><input type="checkbox" id="sb-edit-shortcut-enabled"/> Enabled</label>
+          <div id="sb-edit-shortcut" class="sb-shortcut-display">(not set)</div>
+          <button id="sb-edit-shortcut-set" class="top-btn">Set</button>
+          <button id="sb-edit-shortcut-clear" class="top-btn danger">Clear</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer sb-modal-footer">
+      <button id="sb-edit-save" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-save"></i> Save</button>
+      <button id="sb-edit-cancel" class="top-btn"><i class="fas fa-times"></i> Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pages modal -->
+<div id="sb-pages-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:560px">
+    <div class="modal-header">
+      <span><i class="fas fa-file"></i> Manage Soundboard Pages</span>
+      <button class="modal-close" id="sb-pages-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="sb-pages-list" class="sb-pages-list"></div>
+      <div class="sb-pages-actions">
+        <button id="sb-pages-add" class="top-btn"><i class="fas fa-plus"></i> Add Page</button>
+        <button id="sb-pages-delete" class="top-btn danger"><i class="fas fa-trash"></i> Delete</button>
+        <button id="sb-pages-rename" class="top-btn"><i class="fas fa-pen"></i> Rename</button>
+        <button id="sb-pages-up" class="top-btn"><i class="fas fa-arrow-up"></i> Move Up</button>
+        <button id="sb-pages-down" class="top-btn"><i class="fas fa-arrow-down"></i> Move Down</button>
+        <button id="sb-pages-jump" class="top-btn accent"><i class="fas fa-bullseye"></i> Jump To</button>
+      </div>
+      <div id="sb-pages-addform" class="sb-addform" style="display:none">
+        <input type="text" id="sb-pages-addname" class="settings-input" placeholder="Page name"/>
+        <label class="settings-hint" style="margin:0">Columns</label>
+        <select id="sb-pages-addcols" class="settings-input"></select>
+        <label class="settings-hint" style="margin:0">Rows</label>
+        <select id="sb-pages-addrows" class="settings-input"></select>
+        <button id="sb-pages-addconfirm" class="action-btn" style="width:auto;padding:8px 16px">Add</button>
+        <button id="sb-pages-addcancel" class="top-btn">Cancel</button>
+      </div>
+    </div>
+    <div class="modal-footer sb-modal-footer">
+      <button id="sb-pages-done" class="top-btn" style="padding:8px 20px"><i class="fas fa-check"></i> Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Grid size modal -->
+<div id="sb-gridsize-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:360px">
+    <div class="modal-header">
+      <span><i class="fas fa-th"></i> Grid Size</span>
+      <button class="modal-close" id="sb-gridsize-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-field">
+        <label>Columns</label>
+        <select id="sb-gridsize-cols" class="settings-input"></select>
+      </div>
+      <div class="settings-field">
+        <label>Rows</label>
+        <select id="sb-gridsize-rows" class="settings-input"></select>
+      </div>
+    </div>
+    <div class="modal-footer sb-modal-footer">
+      <button id="sb-gridsize-apply" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-check"></i> Apply</button>
+      <button id="sb-gridsize-cancel" class="top-btn"><i class="fas fa-times"></i> Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Keyboard shortcuts modal -->
+<div id="sb-keys-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:560px">
+    <div class="modal-header">
+      <span><i class="fas fa-keyboard"></i> Soundboard Shortcuts</span>
+      <button class="modal-close" id="sb-keys-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-hint">Global shortcuts work while the soundboard window is focused.</div>
+      <div id="sb-keys-list" class="sb-keys-list"></div>
+    </div>
+    <div class="modal-footer sb-modal-footer">
+      <button id="sb-keys-apply" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-save"></i> Save</button>
+      <button id="sb-keys-cancel" class="top-btn"><i class="fas fa-times"></i> Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- MIDI settings modal -->
+<div id="sb-midi-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:460px">
+    <div class="modal-header">
+      <span><i class="fas fa-sliders-h"></i> MIDI Devices &amp; Feedback</span>
+      <button class="modal-close" id="sb-midi-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-field">
+        <label class="settings-checkbox"><input type="checkbox" id="sb-midi-modal-enabled"/> Enable MIDI</label>
+      </div>
+      <div class="settings-field">
+        <label>MIDI Input Device</label>
+        <select id="sb-midi-modal-input" class="settings-input"></select>
+      </div>
+      <div class="settings-field">
+        <label>MIDI Output Device</label>
+        <select id="sb-midi-modal-output" class="settings-input"></select>
+      </div>
+      <div class="settings-field">
+        <label>Empty Button LED Brightness &mdash; <span id="sb-midi-modal-vel-label">10</span></label>
+        <input type="range" id="sb-midi-modal-vel" min="0" max="127" value="10" style="width:100%"/>
+      </div>
+      <div id="sb-midi-modal-status" class="settings-hint" style="color:#d0d0d0">MIDI status unknown</div>
+      <button id="sb-midi-test" class="top-btn" style="font-size:12px"><i class="fas fa-lightbulb"></i> Test Feedback LEDs</button>
+    </div>
+    <div class="modal-footer sb-modal-footer">
+      <button id="sb-midi-done" class="top-btn" style="padding:8px 20px"><i class="fas fa-check"></i> Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- MIDI assign capture modal -->
+<div id="sb-midiassign-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:460px">
+    <div class="modal-header">
+      <span><i class="fas fa-bullseye"></i> Assign MIDI Mapping</span>
+      <button class="modal-close" id="sb-midiassign-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="sb-midiassign-status" class="settings-hint sb-midiassign-status">Waiting for MIDI input...</div>
+      <div class="settings-field">
+        <label>Velocity Pressed &mdash; <span id="sb-midiassign-vp-label">127</span></label>
+        <input type="range" id="sb-midiassign-vp" min="0" max="127" value="127" style="width:100%"/>
+      </div>
+      <div class="settings-field">
+        <label>Velocity Unpressed &mdash; <span id="sb-midiassign-vu-label">0</span></label>
+        <input type="range" id="sb-midiassign-vu" min="0" max="127" value="0" style="width:100%"/>
+      </div>
+    </div>
+    <div class="modal-footer sb-modal-footer">
+      <button id="sb-midiassign-ok" class="action-btn" style="width:auto;padding:8px 18px" disabled><i class="fas fa-check"></i> OK</button>
+      <button id="sb-midiassign-cancel" class="top-btn"><i class="fas fa-times"></i> Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Keybind capture modal -->
+<div id="sb-keybind-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:420px">
+    <div class="modal-header">
+      <span><i class="fas fa-keyboard"></i> Assign Key Bind</span>
+      <button class="modal-close" id="sb-keybind-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-hint">Press the key combination you want to assign.</div>
+      <div id="sb-keybind-detected" class="sb-shortcut-display sb-keybind-detected">No shortcut detected</div>
+    </div>
+    <div class="modal-footer sb-modal-footer">
+      <button id="sb-keybind-apply" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-check"></i> Apply</button>
+      <button id="sb-keybind-cancel" class="top-btn"><i class="fas fa-times"></i> Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generic input modal -->
+<div id="sb-input-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:400px">
+    <div class="modal-header">
+      <span id="sb-input-title">Input</span>
+      <button class="modal-close" id="sb-input-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-field">
+        <label id="sb-input-prompt">Enter a value</label>
+        <input type="text" id="sb-input-value" class="settings-input"/>
+      </div>
+    </div>
+    <div class="modal-footer sb-modal-footer">
+      <button id="sb-input-ok" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-check"></i> OK</button>
+      <button id="sb-input-cancel" class="top-btn"><i class="fas fa-times"></i> Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="keys.js"></script>
+<script src="_framework/hybridwebview.js"></script>
+<script src="hostbridge.js"></script>
+<script src="soundboard.js"></script>
+<script src="mobilesoundboard.js"></script>
+</body>
+</html>

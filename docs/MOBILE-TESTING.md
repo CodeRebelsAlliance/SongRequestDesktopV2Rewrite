@@ -93,7 +93,7 @@ Run on the built APK (`net.bycra.songrequest-Signed.apk`, arm64 + x86_64):
 
 - [x] App installs and starts; the startup launcher, the YouTube-auth step and
       the optional-tools prompt all render and are dismissible.
-- [x] Version badge shows the shared `<Version>` (4.6) — the app is not offered
+- [x] Version badge shows the shared `<Version>` — the app is not offered
       the desktop installer, and `installUpdate` is refused on mobile.
 - [x] Tabs switch: Requests → Play → Board → Stage → back; each page renders in
       the HybridWebView and keeps its state (lazy views, LRU of 2).
@@ -284,6 +284,32 @@ and notification; `adb shell dumpsys activity services` reported
       secrets, or rely on the cached debug keystore. The first release after this
       change may still need one manual install (old key vs new key).
 - [x] Soundboard file pick: `PrepareSoundFile` materialises `content://` picks.
+
+### Touch variants, playlists and stage link — automated + device checklist
+
+- [x] `node --test tests/js` covers the new bridge diff (`stagebridge.test.js`)
+      and the mobile page wiring (`mobilepages.test.js`).
+- [x] Desktop regression suite green with the new pages: 511 unit, 43/44
+      integration (1 environment skip, FFmpeg/cookies), 45 JS tests; mobile
+      Android Release build 0 warnings.
+- [x] **Requests (device)**: Requests/Pending/Blacklist/Word Filter/Dashboard
+      tabs scroll as chips; a card's actions scroll horizontally; Submit Song,
+      Settings, About and the startup launch flow open as full-height sheets.
+- [x] **Soundboard (device)**: pads are touch-sized, the toolbar is icon-first and
+      scrollable, long-press opens the action sheet, and the Edit/Pages/Grid/Keys/
+      MIDI dialogs fill the screen; swipe left/right changes page.
+- [x] **Playlists (device)**: tap a playlist → detail view; Play/Shuffle, move
+      entries up/down, remove, rename, add songs and delete all round-trip
+      through `getPlaylist` / `reorderPlaylistEntry` / `updatePlaylist` /
+      `deletePlaylist`.
+- [x] **Repeat**: the player button exposes `aria-pressed` and stays in sync with
+      `repeatEnabled` from the host's `queueUpdate`/`musicPlayerReady` payload.
+- [x] **Stage/TV**: with the stage running, load the LAN URL in a browser: Up
+      Next keeps its thumbnails without flicker/tick rebuilds, lyrics highlight
+      advances, and the request QR renders (server-generated data URL, no CDN).
+- [ ] Still to check on real hardware: HDMI second display, a TV browser over
+      Wi-Fi, long-press timing on low-end phones and the MIDI assign sheet with a
+      physical controller.
 
 ## 4. Known toolchain constraints
 

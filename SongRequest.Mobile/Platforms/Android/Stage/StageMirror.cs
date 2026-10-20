@@ -57,7 +57,11 @@ internal static class StageMirror
             if (_server == null)
             {
                 if (!StageAssets.EnsureExtracted()) return;
-                _server = new StageServer(AppHost.Current!.Host.Music, StageAssets.WebRoot)
+                _server = new StageServer(
+                    AppHost.Current!.Host.Music,
+                    StageAssets.WebRoot,
+                    // Queue artwork lives in the library, not on the Song object.
+                    songPath => AppHost.Current?.Interop.GetThumbnailDataUrl(songPath))
                 {
                     // A TV changing the zoom updates the setting the in-app page and
                     // the HDMI mirror read too.

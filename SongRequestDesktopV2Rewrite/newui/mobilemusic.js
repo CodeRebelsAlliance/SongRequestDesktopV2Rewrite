@@ -104,6 +104,8 @@
 
   var queue = [];
   var playlistQueue = [];
+  var currentPlaylist = null;
+  var playlistReturnTab = 'library';
 
   var feed = null;
   var feedAt = 0;
@@ -124,11 +126,13 @@
     library: $('mm-view-library'),
     player: $('mm-view-player'),
     share: $('mm-view-share'),
+    playlist: $('mm-view-playlist'),
   };
 
   var playback = { volume: 0.8, crossfade: 4 };
   var share = { sharing: false, receiving: false, status: 'idle', sessionId: null, volume: 1 };
   var lastQuery = '';
+  var repeatEnabled = false;
 
   var playerView = views.player;
   var artWrap = $('mm-art-wrap');
@@ -138,6 +142,7 @@
   var lyricsEl = $('mm-lyrics');
   var lyricsToggle = $('mm-lyrics-toggle');
   var playBtn = $('mm-play');
+  var repeatBtn = $('mm-repeat');
   var seekEl = $('mm-seek');
   var curEl = $('mm-cur');
   var totalEl = $('mm-total');
@@ -385,6 +390,126 @@
       '</button>';
   }
 
+  // ── Playlist detail (browse + modify) ────────────────────
+  function openPlaylist(id) {
+    if (!id) return;
+    if (currentTab !== 'playlist') playlistReturnTab = currentTab;
+
+    request('getPlaylist', { playlistId: id }).then(function (data) {
+      if (!data || data.error) { toast((data && data.error) || 'Playlist not found', 'error'); return; }
+
+      currentPlaylist = data;
+      currentTab = 'playlist';
+      for (var name in views) views[name].hidden = name !== 'playlist';
+      closeQueue(false);
+      updateMini();
+      renderPlaylist();
+    }).catch(function (error) { toast(error.message, 'error'); });
+  }
+
+  function renderPlaylist() {
+    if (!currentPlaylist) return;
+
+    $('mm-playlist-title').textContent =
+      (currentPlaylist.emoji ? currentPlaylist.emoji + ' ' : '') + (currentPlaylist.name || 'Playlist');
+    $('mm-playlist-sub').textContent =
+      (currentPlaylist.songs ? currentPlaylist.songs.length : 0) + ' songs';
+
+    var songs = currentPlaylist.songs || [];
+    $('mm-playlist-list').innerHTML = songs.length
+      ? songs.map(function (entry, index) { return playlistSongRow(entry, index, songs.length); }).join('')
+      : '<div class="mm-empty"><i class="fas fa-list"></i><span>This playlist is empty</span>' +
+        '<button class="mm-btn" data-playlist-action="add"><i class="fas fa-plus"></i> Add songs</button></div>';
+  }
+
+  function playlistSongRow(entry, index, total) {
+    var duration = entry.durationDisplay || formatTime(entry.duration || 0);
+    return '<div class="mm-playlist-song" data-entry-id="' + esc(entry.entryId || '') + '">' +
+      '<button class="mm-song mm-song-main" data-song-id="' + esc(entry.songId || '') + '">' +
+        '<div class="mm-thumb">' + (entry.thumbnail ? '<img src="' + esc(entry.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
+        '<div class="mm-song-text">' +
+          '<div class="mm-song-title">' + esc(entry.title || 'Unknown') + '</div>' +
+          '<div class="mm-song-sub">' + esc(entry.artist || '—') + '</div>' +
+        '</div>' +
+        '<span class="mm-song-dur">' + esc(duration) + '</span>' +
+      '</button>' +
+      '<div class="mm-entry-controls">' +
+        '<button class="mm-icon-btn" data-entry-move="up" data-index="' + index + '" aria-label="Move up"' +
+          (index === 0 ? ' disabled' : '') + '><i class="fas fa-chevron-up"></i></button>' +
+        '<button class="mm-icon-btn" data-entry-move="down" data-index="' + index + '" aria-label="Move down"' +
+          (index >= total - 1 ? ' disabled' : '') + '><i class="fas fa-chevron-down"></i></button>' +
+        '<button class="mm-icon-btn" data-entry-remove data-index="' + index + '" aria-label="Remove from playlist">' +
+          '<i class="fas fa-times"></i></button>' +
+      '</div>' +
+      '</div>';
+  }
+
+  function closePlaylist() {
+    currentPlaylist = null;
+    setTab(playlistReturnTab || 'library');
+  }
+
+  function reloadPlaylist() {
+    if (!currentPlaylist) return;
+    var id = currentPlaylist.id;
+    request('getPlaylist', { playlistId: id }).then(function (data) {
+      if (!data || data.error) { toast((data && data.error) || 'Playlist not found', 'error'); closePlaylist(); return; }
+      currentPlaylist = data;
+      renderPlaylist();
+      feed = null;
+      feedAt = 0;
+      if (lib.mode === 'playlists') loadLibrary(true);
+    }).catch(function (error) { toast(error.message, 'error'); });
+  }
+
+  function openPlaylistMenu() {
+    if (!currentPlaylist) return;
+    openSheet(
+      '<h3>' + esc((currentPlaylist.emoji ? currentPlaylist.emoji + ' ' : '') + (currentPlaylist.name || 'Playlist')) + '</h3>' +
+      '<button class="mm-sheet-action" data-playlist-action="rename"><i class="fas fa-pen"></i> Rename playlist</button>' +
+      '<button class="mm-sheet-action" data-playlist-action="add"><i class="fas fa-plus"></i> Add songs from library</button>' +
+      '<button class="mm-sheet-action is-danger" data-playlist-action="delete"><i class="fas fa-trash-alt"></i> Delete playlist</button>'
+    );
+  }
+
+  function onPlaylistAction(action) {
+    if (!currentPlaylist) return;
+
+    if (action === 'add') {
+      closeSheet();
+      closePlaylist();
+      setTab('library');
+      setLibraryMode('songs');
+      toast('Long-press a song, then choose “Add to playlist”', 'info');
+      return;
+    }
+
+    if (action === 'rename') {
+      openSheet(
+        '<h3>Rename playlist</h3>' +
+        '<input id="mm-playlist-rename" class="mm-sheet-input" value="' + esc(currentPlaylist.name || '') + '" placeholder="Playlist name">' +
+        '<button id="mm-playlist-rename-save" class="mm-btn mm-share-primary" style="width:100%;margin-top:12px">Save name</button>'
+      );
+      return;
+    }
+
+    if (action === 'delete') {
+      if (!window.confirm('Delete playlist “' + (currentPlaylist.name || 'Playlist') + '”? The songs stay in your library.')) return;
+      var id = currentPlaylist.id;
+      request('deletePlaylist', { playlistId: id }).then(function (result) {
+        if (result && result.error) { toast(result.error, 'error'); return; }
+        toast('Playlist deleted', 'success');
+        closeSheet();
+        currentPlaylist = null;
+        feed = null;
+        feedAt = 0;
+        lib.page = 0;
+        setTab('library');
+        setLibraryMode('playlists');
+      }).catch(function (error) { toast(error.message, 'error'); });
+    }
+  }
+
   // ── Player ───────────────────────────────────────────────
   function setArt(src) {
     if (!src) return;
@@ -409,7 +534,7 @@
   }
 
   function updateMini() {
-    var show = !!(now.title && (currentTab === 'home' || currentTab === 'library'));
+    var show = !!(now.title && (currentTab === 'home' || currentTab === 'library' || currentTab === 'playlist'));
     miniEl.hidden = !show;
 
     if (!show) return;
@@ -423,6 +548,14 @@
     playBtn.innerHTML = playing ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     setMiniPlayIcon(playing);
+  }
+
+  function setRepeatState(on) {
+    repeatEnabled = !!on;
+    if (!repeatBtn) return;
+    repeatBtn.classList.toggle('is-active', repeatEnabled);
+    repeatBtn.setAttribute('aria-pressed', repeatEnabled ? 'true' : 'false');
+    repeatBtn.setAttribute('aria-label', repeatEnabled ? 'Repeat on' : 'Repeat off');
   }
 
   function setMiniPlayIcon(playing) {
@@ -506,6 +639,7 @@
       now.playing = !!data.isPlaying;
       setPlayingUi(now.playing);
     }
+    if (data && data.repeatEnabled != null) setRepeatState(data.repeatEnabled);
     renderQueue();
   }
 
@@ -669,6 +803,7 @@
         send('musicPlayerReady');
         if (currentTab === 'home') loadHomeFeed(false);
         if (currentTab === 'library') loadLibrary(false);
+        if (currentTab === 'playlist') reloadPlaylist();
         break;
 
       case 'nowPlayingUpdate':
@@ -694,6 +829,7 @@
         lib.page = 0;
         if (currentTab === 'home') loadHomeFeed(true);
         if (currentTab === 'library') loadLibrary(true);
+        if (currentTab === 'playlist') reloadPlaylist();
         break;
     }
   }
@@ -772,11 +908,12 @@
   function playPlaylist(id) { if (id) send('playPlaylist', { playlistId: id }); }
 
   bindTapList($('mm-home-scroll'), function (kind, id) {
-    if (kind === 'song') playSong(id); else playPlaylist(id);
+    if (kind === 'song') playSong(id); else openPlaylist(id);
   });
   bindTapList($('mm-lib-songs'), function (kind, id) { if (kind === 'song') playSong(id); });
   bindTapList($('mm-lib-recent'), function (kind, id) { if (kind === 'song') playSong(id); });
-  bindTapList($('mm-lib-playlists'), function (kind, id) { if (kind === 'playlist') playPlaylist(id); });
+  bindTapList($('mm-lib-playlists'), function (kind, id) { if (kind === 'playlist') openPlaylist(id); });
+  bindTapList($('mm-playlist-list'), function (kind, id) { if (kind === 'song') playSong(id); });
 
   // Search: Home shows library matches instead of the feed.
   var homeSearch = $('mm-home-search');
@@ -1270,6 +1407,27 @@
   $('mm-library-settings').addEventListener('click', openSettingsSheet);
 
   sheetBody.addEventListener('click', function (event) {
+    var playlistAction = event.target.closest('button[data-playlist-action]');
+    if (playlistAction) { onPlaylistAction(playlistAction.dataset.playlistAction); return; }
+
+    var renameSave = event.target.closest('#mm-playlist-rename-save');
+    if (renameSave) {
+      var input = $('mm-playlist-rename');
+      var name = input ? input.value.trim() : '';
+      if (!name || !currentPlaylist) { toast('Enter a playlist name', 'error'); return; }
+      request('updatePlaylist', { playlistId: currentPlaylist.id, name: name }).then(function (result) {
+        if (result && result.error) { toast(result.error, 'error'); return; }
+        currentPlaylist.name = name;
+        renderPlaylist();
+        toast('Playlist renamed', 'success');
+        closeSheet();
+        feed = null;
+        feedAt = 0;
+        if (lib.mode === 'playlists') loadLibrary(true);
+      }).catch(function (error) { toast(error.message, 'error'); });
+      return;
+    }
+
     var menu = event.target.closest('button[data-menu]');
     if (menu) { onSheetAction(menu); return; }
 
@@ -1302,6 +1460,7 @@
   });
 
   $('mm-repeat').addEventListener('click', function () {
+    setRepeatState(!repeatEnabled);
     send('toggleRepeat');
   });
 
@@ -1311,6 +1470,52 @@
       '<input id="mm-new-playlist-name" class="mm-sheet-input" placeholder="Playlist name">' +
       '<button id="mm-create-playlist-inline" class="mm-btn" style="margin-top:12px;width:100%">Create playlist</button>'
     );
+  });
+
+  // Playlist detail: browse songs, reorder them, remove entries, play/shuffle.
+  $('mm-playlist-back').addEventListener('click', closePlaylist);
+  $('mm-playlist-menu').addEventListener('click', openPlaylistMenu);
+  $('mm-playlist-play').addEventListener('click', function () {
+    if (currentPlaylist) send('playPlaylist', { playlistId: currentPlaylist.id });
+  });
+  $('mm-playlist-shuffle').addEventListener('click', function () {
+    if (currentPlaylist) send('shufflePlaylist', { playlistId: currentPlaylist.id });
+  });
+
+  $('mm-playlist-list').addEventListener('click', function (event) {
+    var add = event.target.closest('button[data-playlist-action]');
+    if (add) { onPlaylistAction(add.dataset.playlistAction); return; }
+
+    var row = event.target.closest('.mm-playlist-song');
+    if (!row || !currentPlaylist) return;
+
+    var index = (currentPlaylist.songs || []).findIndex(function (entry) { return entry.entryId === row.dataset.entryId; });
+    if (index < 0) return;
+    var entry = currentPlaylist.songs[index];
+
+    var move = event.target.closest('button[data-entry-move]');
+    if (move) {
+      var target = move.dataset.entryMove === 'up' ? index - 1 : index + 1;
+      if (target < 0 || target >= currentPlaylist.songs.length) return;
+      request('reorderPlaylistEntry', {
+        playlistId: currentPlaylist.id,
+        entryId: entry.entryId,
+        newSortOrder: target
+      }).then(reloadPlaylist).catch(function (error) { toast(error.message, 'error'); });
+      return;
+    }
+
+    var remove = event.target.closest('button[data-entry-remove]');
+    if (remove) {
+      request('removePlaylistEntry', {
+        playlistId: currentPlaylist.id,
+        entryId: entry.entryId
+      }).then(function (result) {
+        if (result && result.error) { toast(result.error, 'error'); return; }
+        toast('Removed from playlist', 'success');
+        reloadPlaylist();
+      }).catch(function (error) { toast(error.message, 'error'); });
+    }
   });
 
   $('mm-queue-shuffle').addEventListener('click', function () { send('shuffleQueue'); });
@@ -1368,6 +1573,7 @@
     if (!state) return;
     if (state.volume != null) playback.volume = state.volume;
     if (state.crossfade != null) playback.crossfade = state.crossfade;
+    if (state.repeatEnabled != null) setRepeatState(state.repeatEnabled);
   }).catch(function () { });
 
   loadHomeFeed(true);

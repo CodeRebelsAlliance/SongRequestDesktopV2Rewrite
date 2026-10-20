@@ -28,17 +28,21 @@ internal sealed class StageServer : IDisposable
     private readonly MusicEngine _engine;
     private readonly LyricsService _lyrics;
     private readonly string _webRoot;
+    private readonly Func<string?, string?>? _thumbnailResolver;
 
     private readonly Dictionary<string, LyricsResult?> _lyricsCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _cacheLock = new();
+    private string? _qrCacheUrl;
+    private string? _qrCacheData;
 
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
 
-    public StageServer(MusicEngine engine, string webRoot)
+    public StageServer(MusicEngine engine, string webRoot, Func<string?, string?>? thumbnailResolver = null)
     {
         _engine = engine;
         _webRoot = webRoot;
+        _thumbnailResolver = thumbnailResolver;
         _lyrics = new LyricsService();
     }
 
@@ -343,7 +347,7 @@ internal sealed class StageServer : IDisposable
                 totalTime = total.TotalSeconds,
                 currentTime = position.TotalSeconds,
                 isPlaying = _engine.IsPlaying,
-                thumbnail = Thumbnail(current.thumbnail as string),
+                thumbnail = Thumbnail(current.thumbnail as string, current.songPath),
             };
         }
 
@@ -351,9 +355,12 @@ internal sealed class StageServer : IDisposable
         {
             title = song.Title,
             artist = song.Artist,
-            thumbnail = Thumbnail(song.thumbnail as string),
+            thumbnail = Thumbnail(song.thumbnail as string, song.songPath),
             estimatedStart = song.EstimatedStartDisplay ?? string.Empty,
         }).ToList();
+
+        var cfg = ConfigService.Instance.Current;
+        var requestUrl = cfg?.RequestUrl ?? string.Empty;
 
         var payload = new
         {
@@ -362,9 +369,17 @@ internal sealed class StageServer : IDisposable
             lyrics = current != null ? LyricsFor(current) : null,
             settings = new
             {
-                fontScale = ConfigService.Instance.Current?.LyricsFontScale ?? 1.0f,
-                hidden = ConfigService.Instance.Current?.LyricsHidden ?? false,
-                presentationZoom = Math.Clamp(ConfigService.Instance.Current?.PresentationZoom ?? 1.0, 0.5, 2.0),
+                // Names match what presentation.js reads (lyricsFontScale /
+                // lyricsHidden, not the internal fontScale / hidden).
+                lyricsFontScale = (double)(cfg?.LyricsFontScale ?? 1.0f),
+                lyricsHidden = cfg?.LyricsHidden ?? false,
+                presentationZoom = Math.Clamp(cfg?.PresentationZoom ?? 1.0, 0.5, 2.0),
+                presentationSource = cfg?.PresentationSource ?? "player",
+                requestUrl,
+                // QRCoder on the phone: a TV may have no internet access, and the
+                // page's CDN copy of qrcode.js would then render an empty white box.
+                requestQr = QrDataUrl(requestUrl),
+                isPlaying = _engine.IsPlaying,
             },
         };
 
@@ -387,11 +402,55 @@ internal sealed class StageServer : IDisposable
         => $"{(int)time.TotalMinutes}:{time.Seconds:D2}";
 
     /// <summary>Data URL for artwork, using the same store the desktop uses.</summary>
-    private static string? Thumbnail(string? path)
+    private string? Thumbnail(string? inline, string? songPath)
     {
-        if (string.IsNullOrWhiteSpace(path)) return null;
-        try { return ThumbnailStore.Instance.GetDataUrl(path); }
+        // Library songs carry no inline artwork on their Song object; the shared
+        // resolver (backed by LibraryService/ThumbnailStore) knows their file path.
+        if (!string.IsNullOrWhiteSpace(songPath) && _thumbnailResolver != null)
+        {
+            try
+            {
+                var resolved = _thumbnailResolver(songPath);
+                if (!string.IsNullOrWhiteSpace(resolved)) return resolved;
+            }
+            catch { /* fall through to the inline value */ }
+        }
+
+        if (string.IsNullOrWhiteSpace(inline)) return null;
+        try
+        {
+            // Inline values are already data URLs (MusicEngine) or a thumbnail file.
+            return inline.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+                ? inline
+                : ThumbnailStore.Instance.GetDataUrl(inline);
+        }
         catch { return null; }
+    }
+
+    /// <summary>Request-page QR as a data URL, so the TV needs no CDN/network.</summary>
+    private string? QrDataUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+
+        lock (_cacheLock)
+        {
+            // Generating a PNG every 500 ms poll would be wasteful; the request URL
+            // changes rarely, so cache by value.
+            if (string.Equals(_qrCacheUrl, url, StringComparison.Ordinal))
+                return _qrCacheData;
+
+            try
+            {
+                using var generator = new QRCoder.QRCodeGenerator();
+                using var data = generator.CreateQrCode(url, QRCoder.QRCodeGenerator.ECCLevel.Q);
+                var png = new QRCoder.PngByteQRCode(data).GetGraphic(6);
+                _qrCacheData = "data:image/png;base64," + Convert.ToBase64String(png);
+            }
+            catch { _qrCacheData = null; }
+
+            _qrCacheUrl = url;
+            return _qrCacheData;
+        }
     }
 
     /// <summary>Lyrics for the current song (fetched once, then cached).</summary>
@@ -405,9 +464,30 @@ internal sealed class StageServer : IDisposable
                 result = null;
                 try
                 {
-                    var duration = SafeTotalTime();
-                    result = _lyrics.GetLyricsAsync(song.Artist, song.Title, duration)
-                        .GetAwaiter().GetResult();
+                    // Same order as the desktop presentation: embedded sidecar/inline
+                    // first (works offline), then the host cache, then the network.
+                    var embedded = LyricsService.GetEmbeddedLyrics(song.songPath);
+                    var lrc = embedded == null || !embedded.Found
+                        ? LyricsService.GetLrcFileLyrics(song.songPath)
+                        : null;
+
+                    if (embedded != null && embedded.Found) result = embedded;
+                    else if (lrc != null && lrc.Found) result = lrc;
+
+                    if (result == null)
+                    {
+                        var cached = _lyrics.GetCachedLyricsAsync(
+                                song.Artist ?? "", song.Title ?? "", song.Duration)
+                            .GetAwaiter().GetResult();
+                        if (cached != null && cached.Found) result = cached;
+                    }
+
+                    if (result == null)
+                    {
+                        result = _lyrics.GetLyricsAsync(
+                                song.Artist ?? "", song.Title ?? "", song.Duration)
+                            .GetAwaiter().GetResult();
+                    }
                 }
                 catch { result = null; }
 
@@ -505,24 +585,49 @@ internal sealed class StageServer : IDisposable
 (function (global) {
   'use strict';
 
-  var lastState = '';
+  var last = { nowPlaying: null, queue: null, lyrics: null, settings: null };
 
   function emit(handler, eventName, data) {
     handler(JSON.stringify({ type: 'event', eventName: eventName, data: data }));
+  }
+
+  // Emit a section only when *that section* changed. The old bridge compared the
+  // whole state document, so the ticking currentTime made the queue, lyrics and
+  // settings look new every poll: the TV rebuilt its Up Next list and reset the
+  // lyrics scroll twice a second.
+  function changed(key, value) {
+    var text = JSON.stringify(value == null ? null : value);
+    if (text === last[key]) return false;
+    last[key] = text;
+    return true;
   }
 
   function poll(handler) {
     fetch('state', { cache: 'no-store' })
       .then(function (r) { return r.text(); })
       .then(function (text) {
-        if (text === lastState) return;
-        lastState = text;
-
         var state = JSON.parse(text);
-        if (state.nowPlaying) emit(handler, 'nowPlayingUpdate', state.nowPlaying);
-        if (state.queue) emit(handler, 'presentationQueueUpdate', { queue: state.queue });
-        if (state.lyrics) emit(handler, 'lyricsUpdate', state.lyrics);
-        if (state.settings) emit(handler, 'presentationSettings', state.settings);
+
+        if (state.nowPlaying != null && changed('nowPlaying', state.nowPlaying)) {
+          emit(handler, 'nowPlayingUpdate', state.nowPlaying);
+        }
+
+        var queue = state.queue || [];
+        if (changed('queue', queue)) {
+          emit(handler, 'presentationQueueUpdate', { queue: queue });
+        }
+
+        // A missing lyrics object means "this song has none"; send an empty one so
+        // the page clears the previous song's lines instead of keeping them.
+        var lyrics = state.lyrics || { syncedLyrics: [], plainLyrics: [], provider: '' };
+        if (changed('lyrics', lyrics)) {
+          emit(handler, 'lyricsUpdate', lyrics);
+        }
+
+        if (state.settings != null && changed('settings', state.settings)) {
+          emit(handler, 'presentationSettings', state.settings);
+        }
+
       })
       .catch(function () { /* the phone may be gone; keep polling quietly */ });
   }

@@ -10,6 +10,11 @@ using SongRequestDesktopV2Rewrite;
 
 namespace SongRequest.Mobile;
 
+// The package-info APIs differ before/after API 28; both branches are guarded by
+// Build.VERSION.SdkInt checks below. The platform analyzer cannot see through the
+// ternary, so silence its per-call diagnostics for this file.
+#pragma warning disable CA1416, CA1422
+
 /// <summary>
 /// Android in-app update: download the release APK and hand it to the system
 /// package installer.

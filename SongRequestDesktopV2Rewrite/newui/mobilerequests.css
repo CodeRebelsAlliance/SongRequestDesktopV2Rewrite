@@ -1,0 +1,375 @@
+/* =====================================================
+   Mobile Requests UI — touch-first moderation/request page.
+   Loaded only by mobilerequests.html; the desktop index.html
+   keeps its existing styles (styles.css + mobile.css).
+   ===================================================== */
+
+* { box-sizing: border-box; }
+
+:root {
+  --mr-bg: #121212;
+  --mr-surface: #1d1b20;
+  --mr-surface-2: #26232c;
+  --mr-surface-3: #322c3a;
+  --mr-text: #ece7f0;
+  --mr-muted: #a9a4b3;
+  --mr-primary: #d0bcff;
+  --mr-outline: rgba(255, 255, 255, 0.08);
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--mr-bg);
+  color: var(--mr-text);
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Roboto', sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+#app { height: 100vh; height: 100dvh; }
+
+/* ── Top bar ─────────────────────────────────────────────── */
+#topbar {
+  margin: 0;
+  padding: 8px 12px calc(6px + env(safe-area-inset-top));
+  padding-top: calc(8px + env(safe-area-inset-top));
+  border-radius: 0;
+  border-bottom: 0;
+  background: var(--mr-surface);
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+#top-left { gap: 8px; min-width: 0; }
+#top-left #logo { width: 26px; height: 26px; }
+#title { font-size: 17px; white-space: nowrap; }
+#top-left #version-badge { font-size: 11px; padding: 1px 6px; }
+
+#top-actions {
+  gap: 4px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+#top-actions .top-btn {
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  border-color: var(--mr-outline);
+  background: var(--mr-surface-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* The native nav bar owns navigation; the request page keeps only the actions
+   that are not destinations. */
+#btn-music-player,
+#btn-soundboard,
+#btn-quit { display: none !important; }
+
+/* Compact labels on narrow screens: icons carry the meaning, aria labels remain. */
+@media (max-width: 520px) {
+  #top-actions .top-btn span,
+  #top-actions .top-btn { font-size: 0; }
+  #top-actions .top-btn i { font-size: 16px; }
+  #btn-submit i { color: #f4b860; }
+  #top-left #version-badge { display: none; }
+  #title { max-width: 44vw; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+}
+
+/* ── Tabs as scrollable M3 chips ─────────────────────────── */
+#tabbar {
+  margin: 0;
+  padding: 6px 10px 8px;
+  gap: 6px;
+  background: var(--mr-surface);
+  border-bottom: 1px solid var(--mr-outline);
+  border-radius: 0;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+}
+#tabbar::-webkit-scrollbar { display: none; }
+
+#tabbar .tab-btn {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 14px;
+  min-height: 38px;
+  border-radius: 19px;
+  background: var(--mr-surface-2);
+  border: 1px solid var(--mr-outline);
+  color: var(--mr-muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#tabbar .tab-btn.active {
+  background: #40384f;
+  border-color: transparent;
+  color: #f5f0ff;
+}
+
+/* ── Panels ──────────────────────────────────────────────── */
+#main { min-height: 0; }
+.panel { padding: 10px 12px 8px; }
+
+.list-toolbar {
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.list-toolbar input,
+.list-toolbar select,
+#wordfilter-controls input {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--mr-surface-2);
+  border: 1px solid var(--mr-outline);
+  color: var(--mr-text);
+  font-size: 16px;
+}
+
+/* ── Request cards ───────────────────────────────────────── */
+.song-list { padding-right: 0; }
+
+.song-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "thumb info status"
+    "actions actions actions";
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--mr-outline);
+  border-radius: 16px;
+  background: var(--mr-surface);
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.song-card:active { background: var(--mr-surface-2); }
+
+.song-card .thumb-wrap {
+  grid-area: thumb;
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+}
+
+.song-card .info { grid-area: info; min-width: 0; }
+.song-card .info .stitle { font-size: 14.5px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.song-card .info .screator { font-size: 12.5px; }
+.song-card .info .smeta { gap: 8px; font-size: 11.5px; }
+.song-card .info .smessage { white-space: normal; }
+
+.song-card .sstatus {
+  grid-area: status;
+  align-self: start;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 10px;
+}
+
+.song-card .sactions {
+  grid-area: actions;
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding: 2px 0 0;
+  scrollbar-width: none;
+}
+.song-card .sactions::-webkit-scrollbar { display: none; }
+
+.song-card .sactions button {
+  flex: 1 0 auto;
+  min-height: 38px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.song-card .dl-progress { grid-column: 1 / -1; }
+
+/* ── Word filter ─────────────────────────────────────────── */
+#wordfilter-controls { gap: 8px; margin-bottom: 12px; }
+#wordfilter-controls input { flex: 1; }
+#wordfilter-controls .action-btn { min-height: 46px; border-radius: 14px; }
+
+#wordfilter-list li {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--mr-surface);
+  border-color: var(--mr-outline);
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+#wordfilter-list li button { min-height: 36px; }
+
+/* ── Dashboard ───────────────────────────────────────────── */
+#dashboard-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.stat-card {
+  padding: 12px 8px;
+  border-radius: 14px;
+  background: var(--mr-surface);
+  border-color: var(--mr-outline);
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.stat-label { font-size: 10.5px; margin-bottom: 4px; }
+.stat-value { font-size: 24px; }
+
+#dashboard-console {
+  border-radius: 14px;
+  background: #141216;
+  border-color: var(--mr-outline);
+  min-height: 120px;
+}
+
+/* ── Bottom status bar ───────────────────────────────────── */
+#bottombar {
+  margin: 0;
+  padding: 7px 12px calc(7px + env(safe-area-inset-bottom));
+  border-radius: 0;
+  border-top: 1px solid var(--mr-outline);
+  background: var(--mr-surface);
+  gap: 8px;
+}
+
+#status-text { font-size: 11.5px; }
+#clock { display: none; }
+#bottom-right { gap: 6px; }
+#connection-status { font-size: 11px; padding: 3px 8px; }
+#volume-pill, #autopilot-badge { font-size: 10px; padding: 3px 8px; }
+
+/* ── Dialogs become full-height sheets ───────────────────── */
+.modal-overlay { align-items: stretch; justify-content: stretch; }
+.modal {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  background: var(--mr-surface);
+}
+
+.modal-header {
+  padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+  font-size: 17px;
+  gap: 8px;
+}
+
+.modal-body { padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); }
+.modal-footer { padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); }
+
+.modal-body input[type="text"],
+.modal-body input[type="password"],
+.modal-body select,
+.modal-body textarea,
+.settings-input {
+  min-height: 46px;
+  border-radius: 12px;
+  background: var(--mr-surface-2);
+  border-color: var(--mr-outline);
+  font-size: 16px;
+}
+
+.modal-body .action-btn,
+.modal-footer .action-btn {
+  min-height: 46px;
+  border-radius: 23px;
+}
+
+/* Settings tabs scroll like the main chips. */
+#settings-tabs,
+.modal-header-tabs {
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#settings-tabs::-webkit-scrollbar,
+.modal-header-tabs::-webkit-scrollbar { display: none; }
+
+.settings-tab,
+.modal-tab-btn {
+  flex-shrink: 0;
+  min-height: 38px;
+  padding: 8px 14px;
+  border-radius: 19px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.settings-tab.active { background: #40384f; color: #f5f0ff; }
+
+.settings-card {
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--mr-surface);
+  border: 1px solid var(--mr-outline);
+  margin-bottom: 10px;
+}
+
+.settings-checkbox { min-height: 34px; }
+.settings-checkbox input { width: 22px; height: 22px; }
+
+/* The mobile app manages scans/imports in the music page; keep these rows, but
+   wrap their buttons instead of squeezing them. */
+.settings-folder-list { gap: 6px; }
+
+/* ── Toasts ──────────────────────────────────────────────── */
+#toast-container {
+  left: 12px;
+  right: 12px;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  align-items: stretch;
+}
+.toast { min-width: 0; width: 100%; }
+
+/* ── Startup overlay on a phone ──────────────────────────── */
+#startup-launch-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px;
+}
+
+.startup-launch-btn { min-height: 92px; padding: 12px 8px; }
+
+#startup-update-box,
+#startup-launch-box,
+#startup-auth-box {
+  width: min(92vw, 520px);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+#startup-splash-inner { width: min(90vw, 460px); }
+
+/* ── Small phones ────────────────────────────────────────── */
+@media (max-width: 380px) {
+  .song-card { grid-template-columns: 50px minmax(0, 1fr) auto; }
+  .song-card .thumb-wrap { width: 50px; height: 50px; }
+  .song-card .sactions button { font-size: 11px; padding: 6px 9px; }
+}

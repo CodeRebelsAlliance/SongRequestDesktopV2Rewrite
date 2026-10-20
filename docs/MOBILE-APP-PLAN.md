@@ -813,6 +813,34 @@ port; they affect the desktop app too):
   mobile artifacts through the existing release job; `Tests` (desktop) and
   `Tests-Mobile` both required and green.
 
+**Touch variants for every mode** ✅:
+- **Song Requests** now has a purpose-built `mobilerequests.html` (+
+  `mobilerequests.css`/`.js`). It keeps the complete desktop feature set — All
+  Songs / Pending / Blacklist, search + sort, approve/unapprove/blacklist/delete,
+  queue/play-next, Submit Song (URL and YouTube search), the word filter, the
+  dashboard/console, Settings, About/updates and the startup flow — restyled as
+  M3 cards, chip tabs, full-height sheets and safe-area-aware bars. Mobile mode
+  only ever loads this page; the desktop keeps `index.html` untouched.
+- **Soundboard** now has `mobilesoundboard.html` (+
+  `mobilesoundboard.css`/`.js`) over the same `soundboard.js`: touch-sized pads,
+  scrollable icon-first toolbar, a bottom action sheet for Edit / Clear MIDI /
+  Delete (long-press), full-height edit/pages/grid/keys/MIDI sheets, swipe
+  between pages, master volume/output device and Stop All. Again the desktop page
+  is unchanged.
+- Both pages are wired into `MainPage` (Requests/Board destinations in the
+  request and soundboard modes) and the host routes broadcast events and
+  soundboard playback to them.
+- **Playlist contents can be browsed and modified on mobile**: tapping a playlist
+  opens a detail view with Play/Shuffle, per-entry move up/down and remove, plus
+  rename, add-songs and delete in its action sheet. The player's repeat button now
+  reports `aria-pressed` and follows the host's `repeatEnabled` state.
+- **Stage/TV fixes**: the HTTP bridge diffs each section instead of the whole
+  `/state` document, so the Up Next list and lyrics are not rebuilt every tick
+  (lyrics now advance with the clock); library artwork is resolved through the
+  shared thumbnail store; `/state` uses the field names `presentation.js` reads
+  and supplies a server-generated QR data URL, so a TV with no internet still
+  shows the request QR instead of a white tile.
+
 **Milestone totals for the chosen full-parity programme:** Android-only through
 M6 ≈ 16–22 dev-weeks; +iOS ≈ 19–26; +M8 ≈ 21–29. (M0–M2 alone — shared core,
 mobile shell, native audio — is a usable "control the queue and play from the

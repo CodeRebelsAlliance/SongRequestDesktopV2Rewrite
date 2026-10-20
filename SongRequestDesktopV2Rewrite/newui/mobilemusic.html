@@ -117,6 +117,27 @@
       </div>
     </section>
 
+    <!-- ─────────────── PLAYLIST DETAIL ─────────────── -->
+    <section class="mm-view" id="mm-view-playlist" hidden>
+      <header class="mm-header mm-detail-header">
+        <button id="mm-playlist-back" class="mm-icon-btn" aria-label="Back"><i class="fas fa-arrow-left"></i></button>
+        <div class="mm-detail-heading">
+          <h1 id="mm-playlist-title">Playlist</h1>
+          <div class="mm-sub" id="mm-playlist-sub">0 songs</div>
+        </div>
+        <button id="mm-playlist-menu" class="mm-icon-btn" aria-label="Playlist options"><i class="fas fa-ellipsis-vertical"></i></button>
+      </header>
+
+      <div class="mm-playlist-actions">
+        <button id="mm-playlist-play" class="mm-btn"><i class="fas fa-play"></i> Play</button>
+        <button id="mm-playlist-shuffle" class="mm-btn"><i class="fas fa-shuffle"></i> Shuffle</button>
+      </div>
+
+      <div class="mm-scroll">
+        <div id="mm-playlist-list" class="mm-list"></div>
+      </div>
+    </section>
+
     <!-- ─────────────── PLAYER ─────────────── -->
     <section class="mm-view mm-player" id="mm-view-player" hidden>
       <div id="mm-player-bg"></div>
@@ -152,7 +173,7 @@
           <button id="mm-prev" class="mm-icon-btn mm-lg" aria-label="Previous"><i class="fas fa-backward-step"></i></button>
           <button id="mm-play" class="mm-play-btn" aria-label="Play"><i class="fas fa-play"></i></button>
           <button id="mm-next" class="mm-icon-btn mm-lg" aria-label="Next"><i class="fas fa-forward-step"></i></button>
-          <button id="mm-repeat" class="mm-icon-btn" aria-label="Repeat"><i class="fas fa-repeat"></i></button>
+          <button id="mm-repeat" class="mm-icon-btn" aria-label="Repeat" aria-pressed="false"><i class="fas fa-repeat"></i></button>
         </div>
       </div>
     </section>

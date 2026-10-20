@@ -21,7 +21,11 @@ public sealed class MobileShell : IUiShell
         // state when it loads, so nothing is lost permanently.
         MusicPlayerSendMessage = json => _page.SendToMusic(json);
         PresentationSendMessage = json => _page.SendTo("presentation.html", json);
-        SoundboardSendMessage = json => _page.SendTo("soundboard.html", json);
+        SoundboardSendMessage = json =>
+        {
+            if (!_page.SendTo(MainPage.MobileSoundboardFile, json))
+                _page.SendTo("soundboard.html", json);
+        };
         VisualizationSendMessage = json => _page.SendTo("visualization.html", json);
         AnnouncementSendMessage = json => _page.SendTo("announcement.html", json);
     }
@@ -111,7 +115,8 @@ public sealed class MobileShell : IUiShell
         "visualization" => "visualization.html",
         "presentation" => "presentation.html",
         "musicplayer" => "musicplayer.html",
-        "soundboard" => "soundboard.html",
+        "soundboard" => MainPage.MobileSoundboardFile,
+        "requests" => MainPage.MobileRequestsFile,
         "announcement" => "announcement.html",
         _ => null,
     };

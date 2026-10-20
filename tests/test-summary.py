@@ -24,6 +24,17 @@ def parse_trx(path):
     passed = int(attrs.get("passed", "0"))
     failed = int(attrs.get("failed", "0"))
     skipped = int(attrs.get("notExecuted", "0")) + int(attrs.get("inconclusive", "0"))
+
+    # Some xUnit/vstest combinations report a skipped test as `NotExecuted` in the
+    # per-result Outcome but leave the counters at zero. Trust the results when
+    # they show more skips, otherwise the summary calls the run "aborted".
+    result_skips = 0
+    for result in root.iter(f"{NS}UnitTestResult"):
+        if result.get("outcome") in ("NotExecuted", "Inconclusive", "NotRunnable", "Skipped"):
+            result_skips += 1
+    if result_skips > skipped:
+        skipped = result_skips
+
     # Anything left over is aborted/error/timeout/inProgress/passedButRunAborted:
     # vstest writes these when the test host dies part-way through a run (which
     # also means no coverage is produced), so surface them instead of hiding them.

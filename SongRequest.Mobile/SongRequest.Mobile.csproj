@@ -28,7 +28,7 @@
          must increase monotonically per release, so it is set explicitly
          (major*10000 + minor*100 + patch). -->
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
-    <ApplicationVersion>50700</ApplicationVersion>
+    <ApplicationVersion>50800</ApplicationVersion>
 
     <!-- Android 8.0 (API 26): the floor for media notifications and modern
          foreground services (the plan's recommended minimum). -->

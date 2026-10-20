@@ -78,8 +78,23 @@
   }
 
   // ── QR code ──
-  function setQrCode(url) {
-    if (!url || !presQrCode) return;
+  // The host may supply a ready-made PNG (mobile stage server: a TV often has no
+  // internet, so the CDN copy of qrcode.js cannot be relied on).
+  function setQrCode(url, qrDataUrl) {
+    if (!presQrCode) return;
+
+    if (qrDataUrl) {
+      presQrCode.innerHTML = '<img src="' + escHtml(qrDataUrl) + '" alt="Request QR">';
+      presQrPanel && presQrPanel.classList.remove('is-empty');
+      return;
+    }
+
+    if (!url) {
+      presQrCode.innerHTML = '';
+      presQrPanel && presQrPanel.classList.add('is-empty');
+      return;
+    }
+
     presQrCode.innerHTML = '';
     try {
       if (typeof QRCode !== 'undefined') {
@@ -91,8 +106,14 @@
           colorLight: '#ffffff',
           correctLevel: QRCode.CorrectLevel.M
         });
+        presQrPanel && presQrPanel.classList.remove('is-empty');
+      } else {
+        // No local generator and no host-supplied PNG: hide the empty white tile.
+        presQrPanel && presQrPanel.classList.add('is-empty');
       }
-    } catch(e) { }
+    } catch(e) {
+      presQrPanel && presQrPanel.classList.add('is-empty');
+    }
   }
 
   // ── Background color extraction ──
@@ -409,8 +430,8 @@
       if (presLyrics) presLyrics.style.display = lyricsHidden ? 'none' : '';
       if (lyricsProvider) lyricsProvider.style.display = lyricsHidden ? 'none' : '';
     }
-    if (data.requestUrl != null) {
-      setQrCode(data.requestUrl);
+    if (data.requestUrl != null || data.requestQr != null) {
+      setQrCode(data.requestUrl, data.requestQr);
     }
     if (data.presentationSource != null) {
       setSourceVisibility(data.presentationSource);

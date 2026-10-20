@@ -548,6 +548,10 @@ body {
   height: 100% !important;
 }
 
+/* No request URL configured (or no QR could be generated): don't leave a blank
+   white tile on the TV. */
+#pres-qr-panel.is-empty #pres-qr-code { display: none; }
+
 #pres-qr-label {
   font-size: 13px;
   font-weight: 500;

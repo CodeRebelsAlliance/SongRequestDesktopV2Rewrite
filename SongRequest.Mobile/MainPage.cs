@@ -21,6 +21,12 @@ public sealed class MainPage : ContentPage
     /// <summary>The touch-first music page used by every player tab on mobile.</summary>
     public const string MobileMusicFile = "mobilemusic.html";
 
+    /// <summary>The touch-first song-request/moderation page.</summary>
+    public const string MobileRequestsFile = "mobilerequests.html";
+
+    /// <summary>The touch-first soundboard page.</summary>
+    public const string MobileSoundboardFile = "mobilesoundboard.html";
+
     /// <summary>The desktop music page (not used on mobile any more).</summary>
     private const string DesktopMusicFile = "musicplayer.html";
 
@@ -52,7 +58,7 @@ public sealed class MainPage : ContentPage
     private string _mode = "SongRequests";
     private string _activeKey = "requests";
     private string _baseKey = "requests";
-    private string _currentFile = "index.html";
+    private string _currentFile = MobileRequestsFile;
     private bool _suppressNextPlayerOpen;
 
     // Animated navigation-bar colours (derived from the current song's artwork).
@@ -339,15 +345,15 @@ public sealed class MainPage : ContentPage
         },
         StartupMode.Soundboard => new[]
         {
-            new TabDef("board", "Board", "soundboard.html", "\uf569"),            // fa-drum
+            new TabDef("board", "Board", MobileSoundboardFile, "\uf569"),          // fa-drum
             new TabDef("player", "Player", MobileMusicFile, "\uf025"),            // fa-headphones
             new TabDef("stage", "Stage", MobileStageFile, "\uf26c"),              // fa-tv
         },
         _ => new[]
         {
-            new TabDef("requests", "Requests", "index.html", "\uf0ca"),           // fa-list-ul
+            new TabDef("requests", "Requests", MobileRequestsFile, "\uf0ca"),     // fa-list-ul
             new TabDef("player", "Player", MobileMusicFile, "\uf025"),            // fa-headphones
-            new TabDef("board", "Board", "soundboard.html", "\uf569"),            // fa-drum
+            new TabDef("board", "Board", MobileSoundboardFile, "\uf569"),          // fa-drum
             new TabDef("stage", "Stage", MobileStageFile, "\uf26c"),              // fa-tv
         },
     };

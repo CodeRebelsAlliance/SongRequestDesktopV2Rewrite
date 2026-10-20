@@ -294,6 +294,12 @@ input[type="search"] {
 
 .mm-icon-btn:active { background: rgba(255, 255, 255, 0.08); }
 
+/* Repeat (and any future toggle) reports its state, not just an icon colour. */
+.mm-icon-btn.is-active {
+  color: var(--mm-primary);
+  background: rgba(208, 188, 255, 0.20);
+}
+
 .mm-play-btn {
   width: 68px;
   height: 68px;
@@ -610,6 +616,58 @@ input[type="search"] {
 
 .mm-controls .mm-lg { font-size: 22px; }
 .mm-controls .mm-icon-btn { width: 48px; height: 48px; }
+
+/* ── Playlist detail ────────────────────────────────────── */
+.mm-detail-header { justify-content: flex-start; gap: 8px; }
+.mm-detail-heading { flex: 1; min-width: 0; }
+.mm-detail-heading h1 {
+  font-size: 19px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mm-detail-heading .mm-sub {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--mm-muted);
+}
+
+.mm-playlist-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 6px;
+}
+.mm-playlist-actions .mm-btn { flex: 1; }
+
+.mm-playlist-song {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+}
+
+.mm-playlist-song .mm-song-main {
+  flex: 1;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+.mm-entry-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.mm-entry-controls .mm-icon-btn {
+  width: 34px;
+  height: 34px;
+  font-size: 13px;
+  color: var(--mm-muted);
+}
+
+.mm-entry-controls .mm-icon-btn:disabled { opacity: 0.28; }
 
 /* ── Queue sidebar ──────────────────────────────────────── */
 #mm-queue-scrim {

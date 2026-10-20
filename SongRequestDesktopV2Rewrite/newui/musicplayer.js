@@ -776,6 +776,7 @@
     repeatBtns.forEach(function(btn) {
       if (!btn) return;
       btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
       btn.innerHTML = on ? '<i class="fas fa-redo"></i><span class="repeat-dot"></span>' : '<i class="fas fa-redo"></i>';
     });
   }
@@ -942,6 +943,7 @@
         break;
       case 'queueUpdate':
         updateQueue(data);
+        if (data && data.repeatEnabled != null) setRepeatState(!!data.repeatEnabled);
         break;
       case 'lyricsUpdate':
         renderLyrics(data);
