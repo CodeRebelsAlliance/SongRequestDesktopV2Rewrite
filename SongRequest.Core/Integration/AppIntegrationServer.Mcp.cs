@@ -507,8 +507,27 @@ public sealed partial class AppIntegrationServer
         tools.Add(Command("list_playlists", "List playlists", "List manual and dynamic playlists.", "getPlaylists"));
         tools.Add(Command("get_playlist", "Get playlist", "Read one playlist with its songs.",
             "getPlaylist", Schema("playlistId", ("playlistId", "string", "Playlist id."))));
+        tools.Add(Command("create_playlist", "Create playlist",
+            "Create a playlist. The icon is a Font Awesome class such as fa-list or fa-fire.",
+            "createPlaylist", Schema("name",
+                ("name", "string", "Playlist name."),
+                ("icon", "string", "Font Awesome icon class (default fa-list)."),
+                ("emoji", "string", "Optional legacy emoji."))));
+        tools.Add(Command("update_playlist", "Update playlist",
+            "Rename a playlist or change its icon.",
+            "updatePlaylist", Schema("playlistId",
+                ("playlistId", "string", "Playlist id."),
+                ("name", "string", "New name."),
+                ("icon", "string", "New Font Awesome icon class."),
+                ("emoji", "string", "Optional legacy emoji."))));
+        tools.Add(Command("play_playlist", "Play playlist", "Play a playlist now.",
+            "playPlaylist", Schema("playlistId", ("playlistId", "string", "Playlist id."))));
+        tools.Add(Command("queue_playlist", "Queue playlist", "Append a playlist to the queue.",
+            "queuePlaylist", Schema("playlistId", ("playlistId", "string", "Playlist id."))));
+        tools.Add(Command("delete_playlist", "Delete playlist", "Delete a playlist.",
+            "deletePlaylist", Schema("playlistId", ("playlistId", "string", "Playlist id."))));
         tools.Add(Tool("get_player", "Get player",
-            "Current track, playback state, volume, crossfade and queue counts.",
+            "Current track, playback state, volume, crossfade, queue counts, audio quality and lyrics status.",
             Schema(),
             (_, _) => Task.FromResult<JToken?>(BuildPlayerState())));
         tools.Add(Tool("get_queue", "Get queue",

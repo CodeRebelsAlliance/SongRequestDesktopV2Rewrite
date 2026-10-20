@@ -1754,7 +1754,7 @@
         }
       },
       "post": {
-        "summary": "Create a playlist",
+        "summary": "Create a playlist (icon is a Font Awesome class such as fa-list)",
         "tags": [
           "Playlists"
         ],
@@ -1799,6 +1799,9 @@
                 "type": "object",
                 "properties": {
                   "name": {
+                    "type": "string"
+                  },
+                  "icon": {
                     "type": "string"
                   },
                   "emoji": {
@@ -1864,7 +1867,7 @@
         ]
       },
       "patch": {
-        "summary": "Rename or change the emoji",
+        "summary": "Rename a playlist or change its icon",
         "tags": [
           "Playlists"
         ],
@@ -1920,6 +1923,9 @@
                 "type": "object",
                 "properties": {
                   "name": {
+                    "type": "string"
+                  },
+                  "icon": {
                     "type": "string"
                   },
                   "emoji": {
@@ -3073,6 +3079,7 @@
       "player.progress",
       "nowPlayingUpdate",
       "queueUpdate",
+      "lyricsUpdate",
       "downloadProgress",
       "libraryScanProgress",
       "libraryScanCompleted",

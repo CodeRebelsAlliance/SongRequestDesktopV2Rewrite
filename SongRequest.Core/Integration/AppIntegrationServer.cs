@@ -36,6 +36,7 @@ public sealed partial class AppIntegrationServer : IDisposable
         "player.progress",
         "nowPlayingUpdate",
         "queueUpdate",
+        "lyricsUpdate",
         "downloadProgress",
         "libraryScanProgress",
         "libraryScanCompleted",
@@ -451,15 +452,68 @@ public sealed partial class AppIntegrationServer : IDisposable
         var music = _host?.Music;
         if (music == null) return;
 
+        Song? song = e.Current;
+        if (song == null)
+        {
+            try { song = music.Queue.FirstOrDefault(); } catch { }
+        }
+
+        var quality = BuildAudioQuality(song);
         _ = BroadcastEventAsync("player.progress", new
         {
             currentTime = e.CurrentTime.TotalSeconds,
             totalTime = e.TotalTime.TotalSeconds,
             isPlaying = music.IsPlaying,
             isPlaybackActive = music.IsPlaybackActive,
-            title = e.Current?.Title ?? "",
-            artist = e.Current?.Artist ?? ""
+            title = song?.Title ?? "",
+            artist = song?.Artist ?? "",
+            fileType = quality?["format"],
+            bitrateKbps = quality?["bitrateKbps"],
+            quality,
+            lyricsProvider = _interop?.CurrentLyricsProvider ?? "",
+            lyricsAvailable = _interop?.CurrentLyricsAvailable ?? false
         });
+    }
+
+    /// <summary>Audio-quality metadata for a queued/library song (mirrors the UI badges).</summary>
+    private JObject? BuildAudioQuality(Song? song)
+    {
+        if (song == null || string.IsNullOrWhiteSpace(song.songPath)) return null;
+
+        var format = string.Empty;
+        try { format = System.IO.Path.GetExtension(song.songPath).TrimStart('.').ToUpperInvariant(); }
+        catch { }
+
+        var bitrateKbps = 0;
+        try
+        {
+            var librarySong = _interop?.LibraryService.Data.Songs.FirstOrDefault(s =>
+                string.Equals(s.FilePath, song.songPath, StringComparison.OrdinalIgnoreCase));
+            bitrateKbps = librarySong?.BitrateKbps ?? 0;
+        }
+        catch { }
+
+        if (string.IsNullOrEmpty(format) && bitrateKbps <= 0) return null;
+
+        var lossless = format is "FLAC" or "WAV" or "ALAC" or "AIFF" or "APE" or "DSF";
+        var tier = lossless ? "is-lossless"
+            : bitrateKbps >= 256 ? "is-high"
+            : bitrateKbps >= 160 ? "is-good"
+            : bitrateKbps > 0 ? "is-low"
+            : "is-unknown";
+
+        var text = string.IsNullOrEmpty(format) ? "Audio" : format;
+        if (lossless) text += " · Lossless";
+        else if (bitrateKbps > 0) text += " · " + bitrateKbps + " kbps";
+
+        return new JObject
+        {
+            ["format"] = format,
+            ["bitrateKbps"] = bitrateKbps,
+            ["lossless"] = lossless,
+            ["text"] = text,
+            ["tier"] = tier
+        };
     }
 
     private async Task BroadcastEventAsync(string eventName, object? data)
@@ -562,23 +616,32 @@ public sealed partial class AppIntegrationServer : IDisposable
         catch { }
 
         JObject? current = null;
+        Song? currentSong = null;
         try
         {
-            var song = music?.Queue.FirstOrDefault();
-            if (song != null)
+            currentSong = music?.Queue.FirstOrDefault();
+            if (currentSong != null)
             {
                 current = new JObject
                 {
-                    ["title"] = song.Title ?? "",
-                    ["artist"] = song.Artist ?? "",
-                    ["duration"] = song.Duration.TotalSeconds,
-                    ["durationDisplay"] = song.length ?? "",
-                    ["songPath"] = song.songPath ?? "",
-                    ["estimatedStart"] = song.EstimatedStartDisplay ?? ""
+                    ["title"] = currentSong.Title ?? "",
+                    ["artist"] = currentSong.Artist ?? "",
+                    ["duration"] = currentSong.Duration.TotalSeconds,
+                    ["durationDisplay"] = currentSong.length ?? "",
+                    ["songPath"] = currentSong.songPath ?? "",
+                    ["estimatedStart"] = currentSong.EstimatedStartDisplay ?? ""
                 };
             }
         }
         catch { }
+
+        var quality = BuildAudioQuality(currentSong);
+        if (current != null && quality != null)
+        {
+            current["fileType"] = quality["format"];
+            current["bitrateKbps"] = quality["bitrateKbps"];
+            current["lossless"] = quality["lossless"];
+        }
 
         var queue = BuildQueueState();
         return new JObject
@@ -593,6 +656,12 @@ public sealed partial class AppIntegrationServer : IDisposable
             ["currentTime"] = currentTime,
             ["totalTime"] = totalTime,
             ["current"] = current,
+            ["fileType"] = quality?["format"],
+            ["bitrateKbps"] = quality?["bitrateKbps"],
+            ["lossless"] = quality?["lossless"],
+            ["quality"] = quality,
+            ["lyricsProvider"] = _interop?.CurrentLyricsProvider ?? "",
+            ["lyricsAvailable"] = _interop?.CurrentLyricsAvailable ?? false,
             ["queueCount"] = queue["queueCount"],
             ["playlistQueueCount"] = queue["playlistQueueCount"]
         };

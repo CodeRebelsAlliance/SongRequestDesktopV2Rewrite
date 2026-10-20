@@ -97,7 +97,8 @@ A named, ordered collection of songs.
 | `Id` | `string` | Stable GUID. |
 | `Name` | `string` | Display name. |
 | `Description` | `string?` | Optional description. |
-| `Emoji` | `string?` | Optional icon emoji. |
+| `Icon` | `string?` | Font Awesome icon class shown by both UIs (for example `fa-list`, `fa-fire`). |
+| `Emoji` | `string?` | Legacy optional emoji, still accepted when creating/updating through older clients. |
 | `CreatedUtc` | `DateTime` | Creation timestamp. |
 | `LastModifiedUtc` | `DateTime` | Last modification timestamp. |
 | `LastPlayedUtc` | `DateTime?` | Last time the playlist was played (`null` = never). Set by `LibraryService.MarkPlaylistPlayed`, drives the "Playlists — most recently listened" home row. |

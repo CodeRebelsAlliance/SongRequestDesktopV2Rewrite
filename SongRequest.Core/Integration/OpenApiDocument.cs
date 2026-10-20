@@ -199,12 +199,12 @@ internal static class OpenApiDocument
         paths["/api/v1/playlists"] = new JObject
         {
             ["get"] = Op("List playlists", "Playlists", null, null),
-            ["post"] = Op("Create a playlist", "Playlists", null, Body(("name", "string"), ("emoji", "string")))
+            ["post"] = Op("Create a playlist (icon is a Font Awesome class such as fa-list)", "Playlists", null, Body(("name", "string"), ("icon", "string"), ("emoji", "string")))
         };
         paths["/api/v1/playlists/{playlistId}"] = new JObject
         {
             ["get"] = Op("Read one playlist", "Playlists", PathParams(("playlistId", "Playlist id")), null),
-            ["patch"] = Op("Rename or change the emoji", "Playlists", PathParams(("playlistId", "Playlist id")), Body(("name", "string"), ("emoji", "string"))),
+            ["patch"] = Op("Rename a playlist or change its icon", "Playlists", PathParams(("playlistId", "Playlist id")), Body(("name", "string"), ("icon", "string"), ("emoji", "string"))),
             ["delete"] = Op("Delete a playlist", "Playlists", PathParams(("playlistId", "Playlist id")), null)
         };
         paths["/api/v1/playlists/{playlistId}/songs"] = new JObject

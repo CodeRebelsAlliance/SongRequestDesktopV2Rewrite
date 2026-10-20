@@ -170,7 +170,7 @@ and (with `artwork=true`) an `artwork` data URL.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/api/v1/player` | Current track, position, volume, crossfade, repeat, output device, queue counts. |
+| `GET` | `/api/v1/player` | Current track, position, volume, crossfade, repeat, output device, queue counts, audio quality (`fileType`, `bitrateKbps`, `lossless`, `quality`) and lyrics status (`lyricsProvider`, `lyricsAvailable`). |
 | `GET` | `/api/v1/queue` | Play queue and playlist queue. |
 | `POST` | `/api/v1/player/play-pause` | Toggle playback. |
 | `POST` | `/api/v1/player/next` | Next track. |
@@ -187,14 +187,18 @@ and (with `artwork=true`) an `artwork` data URL.
 | `GET` | `/api/v1/devices/audio` | List output devices. |
 | `POST` | `/api/v1/devices/audio` | `{ "deviceNumber": -1 }` (`-1` = system default). |
 
+The player's `quality` object has `format`, `bitrateKbps`, `lossless`, `text` and
+`tier` (`is-lossless`, `is-high`, `is-good`, `is-low` or `is-unknown`), matching
+the badges in the music player UI.
+
 ### Playlists and history
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/v1/playlists` | List manual and dynamic playlists. |
-| `POST` | `/api/v1/playlists` | Create (`{ "name": "...", "emoji": "..." }`). |
-| `GET` | `/api/v1/playlists/{id}` | Read one playlist. |
-| `PATCH` | `/api/v1/playlists/{id}` | Rename or change emoji. |
+| `POST` | `/api/v1/playlists` | Create (`{ "name": "...", "icon": "fa-list" }`; `emoji` remains accepted for compatibility). |
+| `GET` | `/api/v1/playlists/{id}` | Read one playlist (includes its `icon` Font Awesome class). |
+| `PATCH` | `/api/v1/playlists/{id}` | Rename or change the icon (`{ "name": "...", "icon": "fa-fire" }`). |
 | `DELETE` | `/api/v1/playlists/{id}` | Delete a playlist. |
 | `POST` | `/api/v1/playlists/{id}/songs` | Add `{ "songId": "..." }`. |
 | `DELETE` | `/api/v1/playlists/{id}/entries/{entryId}` | Remove an entry. |
@@ -337,7 +341,8 @@ Live events include:
 | `requests.new` | A fetch found new send-in requests. Payload: `count` and `requests` (`ytid`, `sentInUtc`, `message`, `isApproved`). |
 | `requests.updated` | A fetch of the send-in list completed. Re-read `/api/v1/requests` or send a command. |
 | `queue.updated` | Queue or playlist queue changed. Payload contains both queues. |
-| `player.progress` | Playback progress (throttled to one per second). |
+| `player.progress` | Playback progress (throttled to one per second), including audio-quality and lyrics metadata. |
+| `lyricsUpdate` | Lyrics for the current track were resolved, including the provider (`Embedded`, `LRC File`, `LRCLIB` or `YouTube captions`). |
 | `nowPlayingUpdate` | The track changed (forwarded from the app engine). |
 | `queueUpdate` | Raw queue update forwarded from the web UI bridge. |
 | `downloadProgress` | Request download progress (`videoId`, `stage`, `progress`). |
@@ -413,8 +418,9 @@ The server publishes:
 - `get_player`, `play_pause`, `next`, `previous`, `stop_playback`, `seek`,
   `set_volume`, `set_crossfade`, `toggle_repeat`, `shuffle_queue`, `clear_queue`,
   `queue_song`, `play_next`.
-- `list_playlists`, `get_playlist`, `get_library_songs`, `get_library_stats`,
-  `scan_library`, `get_play_history`, `get_played_songs`.
+- `list_playlists`, `get_playlist`, `create_playlist`, `update_playlist`,
+  `play_playlist`, `queue_playlist`, `delete_playlist`, `get_library_songs`,
+  `get_library_stats`, `scan_library`, `get_play_history`, `get_played_songs`.
 - `search_youtube`, `get_lyrics`.
 - `get_settings`, `update_settings`.
 - `soundboard_get_state`, `soundboard_play`, `soundboard_stop_all`.

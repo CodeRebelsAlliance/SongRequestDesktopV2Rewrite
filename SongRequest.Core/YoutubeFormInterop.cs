@@ -42,6 +42,12 @@ public class YoutubeFormInterop
     /// </summary>
     public event Action<IReadOnlyList<NewRequestInfo>>? NewRequestsDetected;
 
+    /// <summary>Lyrics provider for the current track (empty until a lookup finishes).</summary>
+    public string CurrentLyricsProvider { get; private set; } = string.Empty;
+
+    /// <summary>Whether the current track has lyrics from any provider.</summary>
+    public bool CurrentLyricsAvailable { get; private set; }
+
     /// <summary>Runs an action synchronously on the UI/host thread.</summary>
     public Action<Action> RunOnUi { get; set; } = a => a();
 
@@ -1825,6 +1831,8 @@ public class YoutubeFormInterop
             if (current != null && current.songPath != _currentSongPath)
             {
                 _currentSongPath = current.songPath;
+                CurrentLyricsProvider = string.Empty;
+                CurrentLyricsAvailable = false;
                 data["title"] = current.Title ?? "";
                 data["artist"] = current.Artist ?? "";
                 data["duration"] = current.length ?? "";
@@ -3639,6 +3647,9 @@ public class YoutubeFormInterop
 
         data["provider"] = provider;
 
+        CurrentLyricsProvider = result.Found ? provider : string.Empty;
+        CurrentLyricsAvailable = result.Found;
+
         try
         {
             var json = JsonConvert.SerializeObject(new
@@ -3650,21 +3661,29 @@ public class YoutubeFormInterop
             mpSend(json);
         }
         catch { }
+
+        try { EventRaised?.Invoke("lyricsUpdate", data); } catch { }
     }
 
     private void SendEmptyLyrics(Action<string> mpSend)
     {
+        CurrentLyricsProvider = string.Empty;
+        CurrentLyricsAvailable = false;
+
+        var data = new { provider = "", hasSynced = false, syncedLyrics = new object[0], plainLyrics = new string[0] };
         try
         {
             var json = JsonConvert.SerializeObject(new
             {
                 type = "event",
                 eventName = "lyricsUpdate",
-                data = new { provider = "", hasSynced = false, syncedLyrics = new object[0], plainLyrics = new string[0] }
+                data
             });
             mpSend(json);
         }
         catch { }
+
+        try { EventRaised?.Invoke("lyricsUpdate", data); } catch { }
     }
 
     private static bool TryGetCachedSubtitleFallback(string? songPath, out string timedSubtitleText, out string plainSubtitleText)

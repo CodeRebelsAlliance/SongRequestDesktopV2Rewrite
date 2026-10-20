@@ -131,12 +131,12 @@ public static class CommandCatalog
         // ── Playlists ─────────────────────────────────────────────────────
         Add("getPlaylists", "Playlists", "List manual and dynamic playlists.", null);
         Add("getPlaylist", "Playlists", "Read one playlist with its songs.", new[] { "playlistId" });
-        Add("createPlaylist", "Playlists", "Create a playlist.", new[] { "name", "emoji" });
+        Add("createPlaylist", "Playlists", "Create a playlist. The icon is a Font Awesome class such as fa-list or fa-fire.", new[] { "name", "icon", "emoji" });
         Add("addSongToPlaylist", "Playlists", "Add a library song to a playlist.", new[] { "playlistId", "songId" });
         Add("removePlaylistEntry", "Playlists", "Remove an entry from a playlist.", new[] { "playlistId", "entryId" });
         Add("reorderPlaylistEntry", "Playlists", "Move a playlist entry.", new[] { "playlistId", "entryId", "newSortOrder" });
         Add("deletePlaylist", "Playlists", "Delete a playlist.", new[] { "playlistId" }, true);
-        Add("updatePlaylist", "Playlists", "Rename or re-emoji a playlist.", new[] { "playlistId", "name", "emoji" });
+        Add("updatePlaylist", "Playlists", "Rename a playlist or change its icon (Font Awesome class, e.g. fa-list).", new[] { "playlistId", "name", "icon", "emoji" });
         Add("playPlaylist", "Playlists", "Play a playlist now.", new[] { "playlistId", "shuffle" });
         Add("queuePlaylist", "Playlists", "Append a playlist to the playlist queue.", new[] { "playlistId" });
         Add("shufflePlaylist", "Playlists", "Shuffle a playlist's resolved songs into the queue.", new[] { "playlistId" });
