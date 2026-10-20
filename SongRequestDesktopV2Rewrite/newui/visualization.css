@@ -91,22 +91,22 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ge
 
 :root[data-shell="mobile"] .viz-mode {
   flex: 1 1 calc(33.333% - 4px);
-  min-height: 54px;
-  padding: 7px 6px;
-  border-radius: 14px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 12px;
   border: 1px solid var(--vz-outline);
   background: var(--vz-surface-2);
   color: var(--vz-muted);
   font-size: 11.5px;
   font-weight: 600;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  white-space: normal;
+  gap: 6px;
+  white-space: nowrap;
 }
-:root[data-shell="mobile"] .viz-mode i { font-size: 15px; }
+:root[data-shell="mobile"] .viz-mode i { font-size: 13px; }
 :root[data-shell="mobile"] .viz-mode.active {
   background: #40384f;
   border-color: transparent;

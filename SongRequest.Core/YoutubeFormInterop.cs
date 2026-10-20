@@ -763,7 +763,7 @@ public class YoutubeFormInterop
                     result = CompleteSetup(msg);
                     break;
                 case "installUpdate":
-                    result = StartUpdate(msg);
+                    result = await StartUpdate(msg);
                     break;
 
                 // ── Library ──────────────────────────────
@@ -3207,7 +3207,7 @@ public class YoutubeFormInterop
         }
     }
 
-    private object StartUpdate(JObject msg)
+    private async Task<object> StartUpdate(JObject msg)
     {
         try
         {
@@ -3219,23 +3219,33 @@ public class YoutubeFormInterop
                 return new { error = "No download URL" };
 
             var packageInstaller = UpdateService.PackageInstaller;
+            if (packageInstaller != null)
+            {
+                // Mobile: stay with the updater until the download has finished,
+                // the APK has been verified and the system installer has opened.
+                // Returning immediately let the startup flow continue while the
+                // download was still running in the background.
+                var progress = new Progress<UpdateService.UpdateProgress>(p =>
+                    SendEvent("updateProgress", new { stage = p.Stage, progress = p.Percent, message = p.Message }));
 
+                var error = await packageInstaller(downloadUrl, progress).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(error))
+                {
+                    SendEvent("updateProgress", new { stage = "error", progress = 0, message = error });
+                    return new { error };
+                }
+
+                SendEvent("updateProgress", new { stage = "installing", progress = 100, message = "Installer opened. Complete the update there." });
+                return new { success = true, completed = true, installKind = "package" };
+            }
+
+            // Desktop: the installer replaces the process and restarts it. Start it
+            // in the background so the UI can stay on the update panel while the
+            // process is torn down.
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    if (packageInstaller != null)
-                    {
-                        // Mobile: download the package and let the OS install it.
-                        var progress = new Progress<UpdateService.UpdateProgress>(p =>
-                            SendEvent("updateProgress", new { stage = p.Stage, progress = p.Percent, message = p.Message }));
-
-                        var error = await packageInstaller(downloadUrl, progress).ConfigureAwait(false);
-                        if (!string.IsNullOrEmpty(error))
-                            SendEvent("updateProgress", new { stage = "error", progress = 0, message = error });
-                        return;
-                    }
-
                     await UpdateInstaller.InstallAsync(downloadUrl, p =>
                         SendEvent("updateProgress", new { stage = p.Stage, progress = p.Percent, message = p.Message }));
                 }

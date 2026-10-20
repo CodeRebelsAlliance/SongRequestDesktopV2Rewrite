@@ -290,7 +290,7 @@ and notification; `adb shell dumpsys activity services` reported
 - [x] `node --test tests/js` covers the new bridge diff (`stagebridge.test.js`)
       and the mobile page wiring (`mobilepages.test.js`).
 - [x] Desktop regression suite green with the new pages: 515 unit, 44/45
-      integration (1 environment skip, FFmpeg/cookies), 60 JS tests; mobile
+      integration (1 environment skip, FFmpeg/cookies), 62 JS tests; mobile
       Android Release build 0 warnings.
 - [x] **Requests (device)**: Requests/Pending/Blacklist/Word Filter/Dashboard
       tabs scroll as chips; tapping a card opens the M3 action sheet; Submit Song,
@@ -368,6 +368,10 @@ and notification; `adb shell dumpsys activity services` reported
       incomplete/cancelled attempts fall back to the manual auth buttons.
 - [x] **Compact request tabs**: the request tab row is compact (icon + label,
       ~40px high) and no longer consumes a large vertical block.
+- [x] **Updater**: starting an update keeps the startup overlay in the updater
+      (progress + installer hand-off) instead of continuing into launch/auth while
+      the APK is still downloading.
+- [x] **Visualization chips**: mode selectors use the compact icon+label row.
 - [ ] Still to check on real hardware: HDMI second display, a TV browser over
       Wi-Fi, long-press timing on low-end phones and the MIDI assign page with a
       physical controller.

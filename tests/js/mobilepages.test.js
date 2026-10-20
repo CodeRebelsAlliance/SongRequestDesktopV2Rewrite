@@ -170,6 +170,22 @@ test('automatic sign-in opens the in-app YouTube page', () => {
   assert.match(app, /Opening YouTube sign-in/);
 });
 
+test('startup updater stays open while the package installs', () => {
+  const app = read('app.js');
+  const interop = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  assert.doesNotMatch(app, /setTimeout\(resolve, 2500\)/);
+  assert.match(app, /Continue without updating/);
+  assert.match(interop, /await packageInstaller\(downloadUrl, progress\)/);
+  assert.match(interop, /case "installUpdate":\s*result = await StartUpdate/);
+});
+
+test('visualization mode chips are as compact as the request tabs', () => {
+  const css = read('visualization.css');
+  const viz = css.slice(css.indexOf(':root[data-shell="mobile"] .viz-mode'));
+  assert.match(viz, /min-height: 40px/);
+  assert.match(viz, /flex-direction: row/);
+});
+
 test('mobile music page exposes repeat state and playlist browsing', () => {
   const html = read('mobilemusic.html');
   assert.match(html, /id="mm-repeat"[^>]*aria-pressed="false"/);

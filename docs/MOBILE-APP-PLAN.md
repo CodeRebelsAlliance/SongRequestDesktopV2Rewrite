@@ -921,6 +921,13 @@ port; they affect the desktop app too):
   YouTube” action does the same), then presses Done once the session cookies are
   present.
 
+- **Updater / visualization polish**: the mobile visualization mode chips use the
+  same compact icon+label row as the request tabs. Startup updates no longer
+  detach into the background on Android: `installUpdate` stays pending until the
+  APK is downloaded, verified and the system installer opens; the startup screen
+  remains on the update panel and offers “Continue without updating” only after
+  the installer has been opened.
+
 **Milestone totals for the chosen full-parity programme:** Android-only through
 M6 ≈ 16–22 dev-weeks; +iOS ≈ 19–26; +M8 ≈ 21–29. (M0–M2 alone — shared core,
 mobile shell, native audio — is a usable "control the queue and play from the

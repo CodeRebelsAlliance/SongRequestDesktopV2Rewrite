@@ -357,7 +357,7 @@
     document.getElementById('about-update-progress').style.display = 'block';
     document.getElementById('about-update-progress-text').textContent = 'Starting download...';
     try {
-      const r = await send('installUpdate', { downloadUrl: _availableUpdate.downloadUrl });
+      const r = await send('installUpdate', { downloadUrl: _availableUpdate.downloadUrl }, { timeout: 30 * 60 * 1000 });
       if (r && r.error) {
         document.getElementById('about-update-progress-text').textContent = 'Error: ' + r.error;
         btn.disabled = false;
@@ -2029,31 +2029,41 @@
       }
 
       await new Promise(resolve => {
-        document.getElementById('startup-update-later').onclick = resolve;
-        document.getElementById('startup-update-now').onclick = async () => {
+        const laterButton = document.getElementById('startup-update-later');
+        const nowButton = document.getElementById('startup-update-now');
+        laterButton.onclick = resolve;
+        nowButton.onclick = async () => {
           document.getElementById('startup-update-buttons').style.display = 'none';
           document.getElementById('startup-update-progress').style.display = 'block';
           document.getElementById('startup-update-progress-text').textContent = 'Starting download...';
           const text = document.getElementById('startup-update-progress-text');
           try {
-            const r = await send('installUpdate', { downloadUrl: updateInfo.downloadUrl });
+            // Long timeout: the mobile updater now stays in this request until the
+            // APK has downloaded, verified and the system installer has opened.
+            const r = await send('installUpdate', { downloadUrl: updateInfo.downloadUrl }, { timeout: 30 * 60 * 1000 });
             if (r && r.error) {
               text.textContent = 'Error: ' + r.error;
               document.getElementById('startup-update-buttons').style.display = 'flex';
+              nowButton.style.display = '';
               return;
             }
 
             if (updateInfo.installKind === 'package') {
-              // The platform installer takes over (Android): the user confirms
-              // there, so let the app continue in the meantime.
-              text.textContent = 'Android will ask you to confirm the install.';
-              setTimeout(resolve, 2500);
+              // Do NOT continue startup while the platform installer is running.
+              // The user returns here after installing (or cancelling) and can
+              // explicitly continue without updating.
+              text.textContent = 'Installer opened. Complete the update there, then return to this screen.';
+              laterButton.textContent = 'Continue without updating';
+              laterButton.onclick = resolve;
+              nowButton.style.display = 'none';
+              document.getElementById('startup-update-buttons').style.display = 'flex';
             }
             // Otherwise the desktop updater replaces the app and restarts it, so we
             // intentionally stay on this panel and keep the sequence paused.
           } catch (e) {
             text.textContent = 'Error: ' + e.message;
             document.getElementById('startup-update-buttons').style.display = 'flex';
+            nowButton.style.display = '';
           }
         };
       });
