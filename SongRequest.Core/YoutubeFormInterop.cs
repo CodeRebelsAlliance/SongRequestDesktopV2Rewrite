@@ -11,14 +11,36 @@ using System.Threading.Tasks;
 
 namespace SongRequestDesktopV2Rewrite;
 
+/// <summary>A request that appeared in the send-in list for the first time.</summary>
+public sealed record NewRequestInfo(string Ytid, DateTime? SentInUtc, string Message, bool IsApproved);
+
 public class YoutubeFormInterop
 {
     private readonly ISongRequestHost _ytForm;
     private readonly YoutubeService _ytService;
     private readonly LibraryService _libraryService;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _pendingRequests = new();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<string?>> _commandResponses = new();
 
     public Action<string>? SendMessage { get; set; }
+
+    /// <summary>
+    /// Raised for every event the interop would send to the web UI. The local API
+    /// and MCP servers use this to stream live updates to their clients.
+    /// </summary>
+    public event Action<string, object?>? EventRaised;
+
+    /// <summary>
+    /// Raised after a fetch of the request list (the send-in list) completed, so
+    /// API/WebSocket clients can refresh without polling the companion server.
+    /// </summary>
+    public event Action? RequestsUpdated;
+
+    /// <summary>
+    /// Raised when a fetch found request ids that were not seen before. The local
+    /// API forwards these as the <c>requests.new</c> WebSocket event.
+    /// </summary>
+    public event Action<IReadOnlyList<NewRequestInfo>>? NewRequestsDetected;
 
     /// <summary>Runs an action synchronously on the UI/host thread.</summary>
     public Action<Action> RunOnUi { get; set; } = a => a();
@@ -272,6 +294,47 @@ public class YoutubeFormInterop
 
     private static readonly AsyncLocal<Action<string>?> _responseTarget = new();
 
+    /// <summary>
+    /// Executes any command the web UI can send and returns its result. This is the
+    /// single seam used by the local API and MCP server, so both expose exactly the
+    /// same features as the application itself.
+    /// </summary>
+    /// <param name="method">Command name (see <see cref="Integration.CommandCatalog"/>).</param>
+    /// <param name="parameters">Command arguments, or <c>null</c> for none.</param>
+    /// <param name="cancellationToken">Cancels waiting for the response.</param>
+    public async Task<JToken?> ExecuteCommandAsync(
+        string method,
+        JObject? parameters = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(method))
+            throw new ArgumentException("A command name is required.", nameof(method));
+
+        var id = "srapi-" + Guid.NewGuid().ToString("N");
+        var message = parameters == null ? new JObject() : (JObject)parameters.DeepClone();
+        message["type"] = "request";
+        message["id"] = id;
+        message["method"] = method;
+
+        var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _commandResponses[id] = completion;
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(5));
+        using var registration = timeout.Token.Register(() => completion.TrySetCanceled(timeout.Token));
+
+        try
+        {
+            HandleMessage(message.ToString(Formatting.None));
+            var json = await completion.Task.ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(json) ? null : JToken.Parse(json);
+        }
+        finally
+        {
+            _commandResponses.TryRemove(id, out _);
+        }
+    }
+
     private async Task HandleRequest(JObject msg)
     {
         var id = msg["id"]?.ToString();
@@ -288,6 +351,7 @@ public class YoutubeFormInterop
                     return;
                 case "closeMusicPlayer":
                     CloseNewMusicPlayer();
+                    SendResponse(id, new { success = true });
                     return;
                 case "showPresentation":
                     _ytForm.NewUiRef?.ShowPresentationWindow();
@@ -658,6 +722,9 @@ public class YoutubeFormInterop
                     break;
                 case "getSettings":
                     result = GetFullConfig();
+                    break;
+                case "getIntegrationStatus":
+                    result = Integration.AppIntegrationServer.Instance.GetStatusObject();
                     break;
                 case "reloadConfig":
                     result = ReloadConfig();
@@ -1045,7 +1112,15 @@ public class YoutubeFormInterop
     private void SendResponse(string? id, object? result, Action<string>? target = null)
     {
         if (id == null) return;
+
         var json = JsonConvert.SerializeObject(new { type = "response", id, result });
+
+        // API/MCP commands are awaited outside the web-UI message bus. Completing
+        // the pending task here also covers responses produced later from a
+        // PostToUi callback (mobile), where no AsyncLocal response target exists.
+        if (_commandResponses.TryRemove(id, out var completion))
+            completion.TrySetResult(result == null ? "null" : JToken.FromObject(result).ToString(Formatting.None));
+
         (target ?? _responseTarget.Value ?? SendMessage)?.Invoke(json);
     }
 
@@ -1059,6 +1134,8 @@ public class YoutubeFormInterop
         // well. Harmless on desktop (its player shows the same state).
         if (eventName is "libraryScanProgress" or "libraryScanCompleted")
             MusicPlayerSendEvent(eventName, data);
+
+        try { EventRaised?.Invoke(eventName, data); } catch { }
     }
 
     private void MusicPlayerSendEvent(string eventName, object? data)
@@ -1176,6 +1253,16 @@ public class YoutubeFormInterop
                 durationTicks = _ytForm.GetCachedDurationTicks(ytid)
             });
         }
+
+        if (newEntries.Count > 0)
+        {
+            var newRequests = newEntries
+                .Select(e => new NewRequestInfo(e.ytid, e.timestampUtc, e.message, e.isApproved))
+                .ToArray();
+            try { NewRequestsDetected?.Invoke(newRequests); } catch { }
+        }
+
+        try { RequestsUpdated?.Invoke(); } catch { }
 
         return new { database = databaseList, blacklist = blacklistItems };
     }
@@ -2106,6 +2193,7 @@ public class YoutubeFormInterop
             _ytForm.NewUiRef?.SoundboardSendMessage?.Invoke(json);
         }
         catch { }
+        try { EventRaised?.Invoke(eventName, data); } catch { }
     }
 
     // ──────────────────────────────────────────────────
@@ -2153,6 +2241,7 @@ public class YoutubeFormInterop
             _ytForm.NewUiRef?.VisualizationSendMessage?.Invoke(json);
         }
         catch { }
+        try { EventRaised?.Invoke(eventName, data); } catch { }
     }
 
     // ──────────────────────────────────────────────────
@@ -2241,6 +2330,7 @@ public class YoutubeFormInterop
             _ytForm.NewUiRef?.AnnouncementSendMessage?.Invoke(json);
         }
         catch { }
+        try { EventRaised?.Invoke(eventName, data); } catch { }
     }
 
     private object AnnouncementSetDimDb(JObject msg)
@@ -2467,7 +2557,16 @@ public class YoutubeFormInterop
             systemMediaIntegration = cfg.SystemMediaIntegration,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
-            systemMediaActive = SystemMediaActive
+            systemMediaActive = SystemMediaActive,
+            apiEnabled = cfg.ApiEnabled,
+            apiBindAddress = cfg.ApiBindAddress,
+            apiPort = cfg.ApiPort,
+            apiToken = cfg.ApiToken,
+            mcpEnabled = cfg.McpEnabled,
+            mcpBindAddress = cfg.McpBindAddress,
+            mcpPort = cfg.McpPort,
+            mcpToken = cfg.McpToken,
+            integrationStatus = Integration.AppIntegrationServer.Instance.GetStatusObject()
         };
     }
 
@@ -2556,6 +2655,7 @@ public class YoutubeFormInterop
         {
             ConfigService.Instance.Reload();
             RemoteControlService.Instance.ApplyConfig();
+            try { Integration.AppIntegrationServer.Instance.ApplyConfig(); } catch { }
             return new { success = true };
         }
         catch (Exception ex)
@@ -2797,6 +2897,17 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("systemMediaIntegration", out var smi)) cfg.SystemMediaIntegration = smi.ToObject<bool>();
                 if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
 
+                // Local API / MCP servers. ApplyConfig is called after the update;
+                // these assignments only persist the values.
+                if (settings.TryGetValue("apiEnabled", out var apiEn)) cfg.ApiEnabled = apiEn.ToObject<bool>();
+                if (settings.TryGetValue("apiBindAddress", out var apiBind)) cfg.ApiBindAddress = apiBind.ToString();
+                if (settings.TryGetValue("apiPort", out var apiPort)) cfg.ApiPort = apiPort.ToObject<int>();
+                if (settings.TryGetValue("apiToken", out var apiToken)) cfg.ApiToken = apiToken.ToString();
+                if (settings.TryGetValue("mcpEnabled", out var mcpEn)) cfg.McpEnabled = mcpEn.ToObject<bool>();
+                if (settings.TryGetValue("mcpBindAddress", out var mcpBind)) cfg.McpBindAddress = mcpBind.ToString();
+                if (settings.TryGetValue("mcpPort", out var mcpPort)) cfg.McpPort = mcpPort.ToObject<int>();
+                if (settings.TryGetValue("mcpToken", out var mcpToken)) cfg.McpToken = mcpToken.ToString();
+
                 if (settings.TryGetValue("normalizeVolume", out var nv2) && !nv2.ToObject<bool>())
                 {
                     cfg.NormalizationActive = false;
@@ -2816,6 +2927,15 @@ public class YoutubeFormInterop
             if (settings.ContainsKey("systemMediaIntegration"))
             {
                 try { ApplySystemMediaIntegration(); } catch { }
+            }
+
+            // Apply API/MCP enable/port/bind/token changes immediately.
+            if (settings.ContainsKey("apiEnabled") || settings.ContainsKey("apiBindAddress") ||
+                settings.ContainsKey("apiPort") || settings.ContainsKey("apiToken") ||
+                settings.ContainsKey("mcpEnabled") || settings.ContainsKey("mcpBindAddress") ||
+                settings.ContainsKey("mcpPort") || settings.ContainsKey("mcpToken"))
+            {
+                try { Integration.AppIntegrationServer.Instance.ApplyConfig(); } catch { }
             }
 
             // Keep the (already open) music player's Announcement button in sync.
@@ -4875,6 +4995,8 @@ public class YoutubeFormInterop
 
     private void MusicShareSendEvent(string eventName, object? data)
     {
+        try { EventRaised?.Invoke(eventName, data); } catch { }
+
         var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
         if (mpSend == null) return;
         try

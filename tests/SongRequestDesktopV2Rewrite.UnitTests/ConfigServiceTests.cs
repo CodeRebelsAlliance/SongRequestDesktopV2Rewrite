@@ -89,6 +89,49 @@ public class ConfigServiceTests
     }
 
     [Fact]
+    public void ApiAndMcp_DefaultToOffAndLoopback()
+    {
+        var svc = new ConfigService(NewConfigPath());
+
+        Assert.False(svc.Current.ApiEnabled);
+        Assert.False(svc.Current.McpEnabled);
+        Assert.Equal("127.0.0.1", svc.Current.ApiBindAddress);
+        Assert.Equal("127.0.0.1", svc.Current.McpBindAddress);
+        Assert.Equal(8730, svc.Current.ApiPort);
+        Assert.Equal(8731, svc.Current.McpPort);
+        Assert.Equal(string.Empty, svc.Current.ApiToken);
+        Assert.Equal(string.Empty, svc.Current.McpToken);
+    }
+
+    [Fact]
+    public void ApiAndMcp_OptionsPersistWithTheConfig()
+    {
+        var path = NewConfigPath();
+        var svc = new ConfigService(path);
+
+        svc.Update(c =>
+        {
+            c.ApiEnabled = true;
+            c.ApiBindAddress = "0.0.0.0";
+            c.ApiPort = 9000;
+            c.ApiToken = "api-token";
+            c.McpEnabled = true;
+            c.McpBindAddress = "127.0.0.1";
+            c.McpPort = 9001;
+            c.McpToken = "mcp-token";
+        });
+
+        var reloaded = new ConfigService(path);
+        Assert.True(reloaded.Current.ApiEnabled);
+        Assert.Equal("0.0.0.0", reloaded.Current.ApiBindAddress);
+        Assert.Equal(9000, reloaded.Current.ApiPort);
+        Assert.Equal("api-token", reloaded.Current.ApiToken);
+        Assert.True(reloaded.Current.McpEnabled);
+        Assert.Equal(9001, reloaded.Current.McpPort);
+        Assert.Equal("mcp-token", reloaded.Current.McpToken);
+    }
+
+    [Fact]
     public void StartupAndWindowOptions_Persist()
     {
         var path = NewConfigPath();

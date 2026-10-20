@@ -466,6 +466,17 @@
       document.getElementById('s-system-media-status').textContent =
         mediaOk ? ('Backend: ' + (cfg.systemMediaBackend || 'unknown') + (cfg.systemMediaActive ? ' (active)' : '')) : '';
 
+      // Local API / MCP servers
+      document.getElementById('s-api-enabled').checked = cfg.apiEnabled === true;
+      document.getElementById('s-api-bind').value = cfg.apiBindAddress || '127.0.0.1';
+      document.getElementById('s-api-port').value = cfg.apiPort || 8730;
+      document.getElementById('s-api-token').value = cfg.apiToken || '';
+      document.getElementById('s-mcp-enabled').checked = cfg.mcpEnabled === true;
+      document.getElementById('s-mcp-bind').value = cfg.mcpBindAddress || '127.0.0.1';
+      document.getElementById('s-mcp-port').value = cfg.mcpPort || 8731;
+      document.getElementById('s-mcp-token').value = cfg.mcpToken || '';
+      renderIntegrationStatus(cfg.integrationStatus);
+
       // Pre-select the browser remembered from a previous cookie import.
       await ensureAuthBrowsers();
       selectAuthBrowser(cfg.cookieBrowser || '');
@@ -474,6 +485,42 @@
       statusEl.textContent = 'Loaded.'; loadData();
       loadLibraryStats();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
+  }
+
+  function integrationServerText(name, status) {
+    if (!status) return name + ': status unknown.';
+    if (status.error) return name + ': error — ' + status.error;
+    if (!status.enabled) return name + ': disabled.';
+    if (!status.running) return name + ': enabled but not running (check the port and bind address).';
+    let text = name + ': running on ' + (status.bindAddress || '127.0.0.1') + ':' + status.port;
+    if (name === 'API') text += ' · WebSocket clients: ' + (status.webSocketClients || 0);
+    return text;
+  }
+
+  function renderIntegrationStatus(status) {
+    status = status || {};
+    const api = status.api || {};
+    const mcp = status.mcp || {};
+
+    const apiBase = 'http://' + (api.bindAddress === '0.0.0.0' ? '127.0.0.1' : (api.bindAddress || '127.0.0.1')) + ':' + (api.port || 8730);
+    const mcpBase = 'http://' + (mcp.bindAddress === '0.0.0.0' ? '127.0.0.1' : (mcp.bindAddress || '127.0.0.1')) + ':' + (mcp.port || 8731);
+    document.getElementById('s-api-base').textContent = apiBase;
+    document.getElementById('s-mcp-base').textContent = mcpBase + '/mcp';
+    document.getElementById('s-api-status').textContent = integrationServerText('API', api);
+    document.getElementById('s-mcp-status').textContent = integrationServerText('MCP', mcp);
+    document.getElementById('s-integration-status').textContent =
+      integrationServerText('API', api) + '\n' + integrationServerText('MCP', mcp) +
+      '\nOpenAPI: ' + apiBase + '/openapi.json · Capabilities: ' + apiBase + '/api/v1/capabilities';
+  }
+
+  async function refreshIntegrationStatus() {
+    try {
+      const status = await send('getIntegrationStatus');
+      renderIntegrationStatus(status);
+    } catch (e) {
+      const el = document.getElementById('s-integration-status');
+      if (el) el.textContent = 'Status unavailable: ' + e.message;
+    }
   }
 
   // Reads a MIDI device select; returns -1 ("no device") when the list is empty,
@@ -521,6 +568,14 @@
         closeToTray: document.getElementById('s-close-tray').checked,
         globalKeyboardShortcuts: document.getElementById('s-global-hotkeys').checked,
         systemMediaIntegration: document.getElementById('s-system-media').checked,
+        apiEnabled: document.getElementById('s-api-enabled').checked,
+        apiBindAddress: document.getElementById('s-api-bind').value || '127.0.0.1',
+        apiPort: parseInt(document.getElementById('s-api-port').value) || 8730,
+        apiToken: document.getElementById('s-api-token').value || '',
+        mcpEnabled: document.getElementById('s-mcp-enabled').checked,
+        mcpBindAddress: document.getElementById('s-mcp-bind').value || '127.0.0.1',
+        mcpPort: parseInt(document.getElementById('s-mcp-port').value) || 8731,
+        mcpToken: document.getElementById('s-mcp-token').value || '',
         autoGrabCookies: document.getElementById('s-yt-auto').checked,
         libraryScanFolders: _libraryScanFolders,
         libraryAllowedExtensions: document.getElementById('s-library-extensions').value.split(',').map(function(e){return e.trim()}).filter(function(e){return e}),
@@ -547,6 +602,8 @@
 
       statusEl.textContent = 'Saved successfully.';
       toast('Settings saved', 'success');
+
+      try { await refreshIntegrationStatus(); } catch (e) { }
 
       // A corrected token/address should clear the auth/server overlay: hide it
       // before reloading, because a successful reload never hides it by itself.
@@ -857,12 +914,25 @@
     loadSettings();
   };
 
+  function bindTokenToggle(buttonId, inputId) {
+    const button = document.getElementById(buttonId);
+    const input = document.getElementById(inputId);
+    if (!button || !input) return;
+    button.addEventListener('click', () => {
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+  }
+  bindTokenToggle('s-api-token-toggle', 's-api-token');
+  bindTokenToggle('s-mcp-token-toggle', 's-mcp-token');
+  document.getElementById('s-integration-refresh').onclick = refreshIntegrationStatus;
+
   document.querySelectorAll('.settings-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.settings-tab, .settings-panel').forEach(el => el.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('settings-' + btn.dataset.tab).classList.add('active');
       if (btn.dataset.tab === 'logging') loadPlayedSongs();
+      if (btn.dataset.tab === 'integration') refreshIntegrationStatus();
     });
   });
 

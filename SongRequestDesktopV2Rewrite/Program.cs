@@ -1,4 +1,5 @@
 using System;
+using SongRequestDesktopV2Rewrite.Integration;
 
 namespace SongRequestDesktopV2Rewrite;
 
@@ -43,6 +44,10 @@ public static class Program
         RemoteControlService.Instance.RegisterMusicEngine(host.Music);
 
         var interop = new YoutubeFormInterop(host, host.YoutubeService);
+
+        // Optional local API + MCP server (off by default, see Settings).
+        AppIntegrationServer.Instance.Initialize(host, interop);
+
         var window = new NewUiWindow(interop, host);
         host.NewUiRef = window;
 

@@ -1015,6 +1015,13 @@ input[type="search"] {
   outline: none;
 }
 
+.mm-sheet-note {
+  margin-top: 8px;
+  color: var(--mm-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
 
 /* ── Toasts ─────────────────────────────────────────────── */
 #mm-toasts {

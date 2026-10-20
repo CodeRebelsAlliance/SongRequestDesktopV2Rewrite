@@ -1271,6 +1271,16 @@
           '<div class="mm-import-track"><div id="mm-import-fill"></div></div>' +
         '</div>' +
         '<div id="mm-import-result" class="mm-import-result" hidden></div>' +
+        '<h3>API &amp; MCP</h3>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-api-enabled"' + (cfg.apiEnabled ? ' checked' : '') + '> Enable local HTTP/WebSocket API</label>' +
+        '<input id="mm-set-api-bind" class="mm-sheet-input" placeholder="API bind address (127.0.0.1)" value="' + esc(cfg.apiBindAddress || '127.0.0.1') + '" style="margin-top:8px">' +
+        '<input id="mm-set-api-port" class="mm-sheet-input" type="number" min="1" max="65535" placeholder="API port (8730)" value="' + esc(cfg.apiPort || 8730) + '" style="margin-top:8px">' +
+        '<input id="mm-set-api-token" class="mm-sheet-input" type="password" placeholder="API token (optional)" value="' + esc(cfg.apiToken || '') + '" style="margin-top:8px">' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-mcp-enabled"' + (cfg.mcpEnabled ? ' checked' : '') + '> Enable local MCP server</label>' +
+        '<input id="mm-set-mcp-bind" class="mm-sheet-input" placeholder="MCP bind address (127.0.0.1)" value="' + esc(cfg.mcpBindAddress || '127.0.0.1') + '" style="margin-top:8px">' +
+        '<input id="mm-set-mcp-port" class="mm-sheet-input" type="number" min="1" max="65535" placeholder="MCP port (8731)" value="' + esc(cfg.mcpPort || 8731) + '" style="margin-top:8px">' +
+        '<input id="mm-set-mcp-token" class="mm-sheet-input" type="password" placeholder="MCP token (optional)" value="' + esc(cfg.mcpToken || '') + '" style="margin-top:8px">' +
+        '<div class="mm-sheet-note">Both servers are off by default and bind to loopback unless you change the address. See docs/API-AND-MCP.md.</div>' +
         '<button id="mm-settings-save" class="mm-btn mm-share-primary" style="width:100%;margin-top:16px">Save</button>'
       );
       wireSettingsSheet();
@@ -1291,7 +1301,15 @@
         address: $('mm-set-address').value.trim(),
         bearerToken: $('mm-set-token').value,
         autoGrabCookies: $('mm-set-auto-yt').checked,
-        libraryAutoAddDownloads: $('mm-set-auto-add').checked
+        libraryAutoAddDownloads: $('mm-set-auto-add').checked,
+        apiEnabled: $('mm-set-api-enabled').checked,
+        apiBindAddress: $('mm-set-api-bind').value.trim() || '127.0.0.1',
+        apiPort: parseInt($('mm-set-api-port').value, 10) || 8730,
+        apiToken: $('mm-set-api-token').value || '',
+        mcpEnabled: $('mm-set-mcp-enabled').checked,
+        mcpBindAddress: $('mm-set-mcp-bind').value.trim() || '127.0.0.1',
+        mcpPort: parseInt($('mm-set-mcp-port').value, 10) || 8731,
+        mcpToken: $('mm-set-mcp-token').value || ''
       };
 
       request('saveSettings', { settings: settings }).then(function (result) {

@@ -275,6 +275,7 @@
 <div id="settings-tabs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;flex-shrink:0">
         <button class="settings-tab active" data-tab="general">General</button>
         <button class="settings-tab" data-tab="security">Security & Server</button>
+        <button class="settings-tab" data-tab="integration">API &amp; MCP</button>
         <button class="settings-tab" data-tab="remote">Remote Control</button>
         <button class="settings-tab" data-tab="console">Console</button>
         <button class="settings-tab" data-tab="library">Library</button>
@@ -425,6 +426,69 @@
               <button id="tool-refresh" class="top-btn" style="font-size:12px">Refresh</button>
             </div>
             <div id="tool-progress" class="settings-hint" style="color:#d0d0d0"></div>
+          </div>
+        </div>
+        <div id="settings-integration" class="settings-panel">
+          <div class="settings-card">
+            <div class="settings-card-title">HTTP &amp; WebSocket API</div>
+            <div class="settings-hint">Off by default. Lets local tools, bots, dashboards and AI assistants read every status and control every feature over HTTP and a bidirectional WebSocket.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-api-enabled" /> Enable the local API server</label>
+            <div class="settings-field">
+              <label>Bind address</label>
+              <input type="text" id="s-api-bind" class="settings-input" placeholder="127.0.0.1" />
+              <div class="settings-hint">127.0.0.1 keeps it on this device. Use 0.0.0.0 only when devices on your LAN should connect — and set a token first.</div>
+            </div>
+            <div class="settings-field">
+              <label>Port</label>
+              <input type="number" id="s-api-port" class="settings-input" min="1" max="65535" />
+            </div>
+            <div class="settings-field">
+              <label>Access token (optional)</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="password" id="s-api-token" class="settings-input" style="flex:1" placeholder="Leave empty to allow unauthenticated access" />
+                <button id="s-api-token-toggle" class="top-btn" style="padding:6px 10px;font-size:13px" title="Show/Hide token">👁</button>
+              </div>
+              <div class="settings-hint">When set, send <code>Authorization: Bearer &lt;token&gt;</code>, <code>X-Api-Token</code>, or <code>?token=</code> (WebSocket).</div>
+            </div>
+            <div class="settings-hint" style="color:#9a9a9a">
+              HTTP: <span id="s-api-base">http://127.0.0.1:8730</span><br />
+              Songs &amp; search: <code>/api/v1/songs?q=&amp;source=all|sendinlist|library</code><br />
+              Live updates: <code>/api/v1/ws</code> · Spec: <code>/openapi.json</code> · Docs: <code>docs/API-AND-MCP.md</code>
+            </div>
+            <div id="s-api-status" class="settings-hint" style="color:#9a9a9a;white-space:pre-line">Disabled.</div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">MCP Server</div>
+            <div class="settings-hint">Off by default. Exposes every command and status as MCP tools and resources (Model Context Protocol over Streamable HTTP) for AI assistants such as Claude Desktop, Cursor and other MCP clients.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-mcp-enabled" /> Enable the MCP server</label>
+            <div class="settings-field">
+              <label>Bind address</label>
+              <input type="text" id="s-mcp-bind" class="settings-input" placeholder="127.0.0.1" />
+              <div class="settings-hint">Loopback by default. Expose to the LAN only with a token.</div>
+            </div>
+            <div class="settings-field">
+              <label>Port</label>
+              <input type="number" id="s-mcp-port" class="settings-input" min="1" max="65535" />
+            </div>
+            <div class="settings-field">
+              <label>Access token (optional)</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="password" id="s-mcp-token" class="settings-input" style="flex:1" placeholder="Leave empty to allow unauthenticated access" />
+                <button id="s-mcp-token-toggle" class="top-btn" style="padding:6px 10px;font-size:13px" title="Show/Hide token">👁</button>
+              </div>
+              <div class="settings-hint">MCP clients send this as <code>Authorization: Bearer &lt;token&gt;</code>.</div>
+            </div>
+            <div class="settings-hint" style="color:#9a9a9a">
+              Endpoint: <span id="s-mcp-base">http://127.0.0.1:8731/mcp</span><br />
+              Tools include status, song search, requests, playback, queue, library, playlists, soundboard, announcements and Music Share; <code>run_songrequest_command</code> reaches every command.
+            </div>
+            <div id="s-mcp-status" class="settings-hint" style="color:#9a9a9a;white-space:pre-line">Disabled.</div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Server Status</div>
+            <div class="settings-hint">Changes apply immediately when you save. The API and MCP servers are independent and can run at the same time.</div>
+            <button id="s-integration-refresh" class="top-btn" style="font-size:12px"><i class="fas fa-sync-alt"></i> Refresh status</button>
+            <div id="s-integration-status" class="settings-hint" style="color:#9a9a9a;white-space:pre-line"></div>
           </div>
         </div>
         <div id="settings-remote" class="settings-panel">

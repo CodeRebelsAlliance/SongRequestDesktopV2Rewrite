@@ -7,8 +7,8 @@
 > The **latest** badge above is read from the newest GitHub release, so it always
 > matches the released build — no need to edit this file when releasing.
 > The release tag comes from `<Version>` in
-> [`SongRequestDesktopV2Rewrite.csproj`](SongRequestDesktopV2Rewrite/SongRequestDesktopV2Rewrite.csproj),
-> which is also the version the app shows and updates from.
+> [`Directory.Build.props`](Directory.Build.props), which is also the version the
+> app shows and updates from.
 
 ![avast](https://i.ibb.co/pr2hn5z/Avast-Safe2.png) *
 # Desktop Application for managing Song Requests
@@ -156,6 +156,8 @@ browser. See
 - [`tests/README.md`](tests/README.md) — how to run the test suite, conventions, coverage ratchet and branch protection
 - [`docs/TESTING.md`](docs/TESTING.md) — the full test plan / feature matrix
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the layering: `SongRequest.Core`, the desktop/mobile hosts, and the platform provider seams
+- [`docs/API-AND-MCP.md`](docs/API-AND-MCP.md) — the optional local HTTP/WebSocket API and MCP server (off by default): settings, endpoints, song metadata, live events and client examples
+- [`docs/openapi.json`](docs/openapi.json) — machine-readable OpenAPI 3.0 document for the local API (also served at `/openapi.json`)
 - [`docs/MOBILE-APP-PLAN.md`](docs/MOBILE-APP-PLAN.md) — the Android/iOS plan (options, parity matrix, milestones, policy/licensing)
 - [`docs/MOBILE-TESTING.md`](docs/MOBILE-TESTING.md) — building the mobile hosts and the per-milestone device checklists
 - [`docs/REMOVED-FEATURES.md`](docs/REMOVED-FEATURES.md) — everything removed or changed in the cross-platform migration (tray icon, keyboard remote shortcuts, embedded Google login, auto tool setup, …)
@@ -185,6 +187,22 @@ with progress and handed to the system installer). The iOS host follows in M7; t
 plan and the milestone state live in
 [`docs/MOBILE-APP-PLAN.md`](docs/MOBILE-APP-PLAN.md), the build/test commands and
 device checklists in [`docs/MOBILE-TESTING.md`](docs/MOBILE-TESTING.md).
+
+## Local API & MCP (optional, off by default)
+
+Settings → **API & MCP** can start two independent local servers:
+
+- an **HTTP API** (`http://127.0.0.1:8730`) with a bidirectional **WebSocket**
+  (`/api/v1/ws`) for live updates such as newly sent-in songs, and
+- an **MCP server** (`http://127.0.0.1:8731/mcp`) that exposes every command and
+  status as tools and resources for AI assistants.
+
+Both are disabled by default, bind to loopback unless changed, and accept an
+optional bearer token. The API can search the send-in list and the library and
+returns both with full metadata. Every feature of the app is reachable through
+the generic command endpoint; the complete reference, security notes and client
+examples are in [`docs/API-AND-MCP.md`](docs/API-AND-MCP.md), with an OpenAPI
+document at [`docs/openapi.json`](docs/openapi.json).
 
 ## Testing
 

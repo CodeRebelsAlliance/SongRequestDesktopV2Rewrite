@@ -30,6 +30,7 @@ public static class AppBootstrap
 
     public static void Shutdown()
     {
+        try { Integration.AppIntegrationServer.Instance.Stop(); } catch { }
         try { RemoteControlService.Instance.Dispose(); } catch { }
         lock (_sync) { _initialized = false; }
     }

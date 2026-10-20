@@ -22,6 +22,7 @@ How the code is layered after the mobile-ready core extraction (plan:
         │           FetchingService, UpdateService,            │
         │           ThumbnailStore, LibraryRecommendations     │
         │  interop: YoutubeFormInterop (the ~150 commands)     │
+        │  integration: optional HTTP/WebSocket API + MCP      │
         │  abstractions + provider hooks (see below)           │
         └──────────────────────────────────────────────────────┘
                ▲                                        ▲
@@ -69,6 +70,24 @@ Graceful defaults: `NullAudioOutput` (silent, reports state), `NullMidiService`,
 `AutoStart` and `StartupGuard` live in Core because they are cross-platform
 already; on mobile `AutoStart.IsSupported` is false, so the settings toggle
 disables itself.
+
+## Local integration servers
+
+`AppIntegrationServer` (`SongRequest.Core/Integration/`) owns two optional
+servers configured from Settings → **API & MCP**:
+
+| Server | Transport | Default | Command surface |
+|---|---|---|---|
+| API | HTTP/1.1 + JSON, WebSocket at `/api/v1/ws` | off, `127.0.0.1:8730` | REST helpers plus `POST /api/v1/commands/{command}` |
+| MCP | JSON-RPC 2.0 over Streamable HTTP (`POST /mcp`) | off, `127.0.0.1:8731` | tools/resources, including `run_songrequest_command` |
+
+Both use `YoutubeFormInterop.ExecuteCommandAsync` — the same command dispatcher
+as the web UI — so they cannot drift from the app's features. The HTTP/WebSocket
+implementation is a small `TcpListener`/`WebSocket.CreateFromStream` server in
+Core (no ASP.NET/HttpListener dependency), which keeps it working on desktop and
+mobile. Live events come from the interop event sink, the music engine
+(`QueueChanged`, `NowPlayingTick`) and `RequestsUpdated` after a send-in fetch.
+The reference is [`API-AND-MCP.md`](API-AND-MCP.md).
 
 ## Rules for new code
 

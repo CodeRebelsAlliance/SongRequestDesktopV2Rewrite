@@ -51,6 +51,17 @@ namespace SongRequestDesktopV2Rewrite
         private bool _autoGrabCookies = false;
         private bool _systemMediaIntegration = true;
 
+        // Local integration servers (HTTP/WebSocket API and MCP). Both are off by
+        // default and bind to loopback only until the user explicitly changes it.
+        private bool _apiEnabled = false;
+        private string _apiBindAddress = "127.0.0.1";
+        private int _apiPort = 8730;
+        private string _apiToken = string.Empty;
+        private bool _mcpEnabled = false;
+        private string _mcpBindAddress = "127.0.0.1";
+        private int _mcpPort = 8731;
+        private string _mcpToken = string.Empty;
+
         public event PropertyChangedEventHandler? PropertyChanged;
 
         public int FetchingTimer
@@ -340,6 +351,71 @@ namespace SongRequestDesktopV2Rewrite
             set => SetField(ref _systemMediaIntegration, value);
         }
 
+        /// <summary>
+        /// Enables the local HTTP + WebSocket API (off by default). The server starts
+        /// immediately when this changes; no restart is needed.
+        /// </summary>
+        public bool ApiEnabled
+        {
+            get => _apiEnabled;
+            set => SetField(ref _apiEnabled, value);
+        }
+
+        /// <summary>
+        /// Interface the API server binds to. <c>127.0.0.1</c> keeps it on this
+        /// machine; <c>0.0.0.0</c> exposes it to the LAN (set a token first).
+        /// </summary>
+        public string ApiBindAddress
+        {
+            get => _apiBindAddress;
+            set => SetField(ref _apiBindAddress, string.IsNullOrWhiteSpace(value) ? "127.0.0.1" : value.Trim());
+        }
+
+        /// <summary>TCP port of the API server.</summary>
+        public int ApiPort
+        {
+            get => _apiPort;
+            set => SetField(ref _apiPort, Math.Clamp(value, 1, 65535));
+        }
+
+        /// <summary>
+        /// Optional bearer token for the API. Empty means no authentication — only
+        /// safe while the server stays bound to loopback.
+        /// </summary>
+        public string ApiToken
+        {
+            get => _apiToken;
+            set => SetField(ref _apiToken, value?.Trim() ?? string.Empty);
+        }
+
+        /// <summary>Enables the MCP (Model Context Protocol) server (off by default).</summary>
+        public bool McpEnabled
+        {
+            get => _mcpEnabled;
+            set => SetField(ref _mcpEnabled, value);
+        }
+
+        /// <summary>Interface the MCP server binds to (loopback by default).</summary>
+        public string McpBindAddress
+        {
+            get => _mcpBindAddress;
+            set => SetField(ref _mcpBindAddress, string.IsNullOrWhiteSpace(value) ? "127.0.0.1" : value.Trim());
+        }
+
+        /// <summary>TCP port of the MCP server.</summary>
+        public int McpPort
+        {
+            get => _mcpPort;
+            set => SetField(ref _mcpPort, Math.Clamp(value, 1, 65535));
+        }
+
+        /// <summary>Optional bearer token for MCP clients. Empty disables authentication.</summary>
+        public string McpToken
+        {
+            get => _mcpToken;
+            set => SetField(ref _mcpToken, value?.Trim() ?? string.Empty);
+        }
+
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
         {
             if (EqualityComparer<T>.Default.Equals(field, value)) return false;
@@ -426,6 +502,10 @@ namespace SongRequestDesktopV2Rewrite
                     if (string.IsNullOrWhiteSpace(cfg.Address)) { cfg.Address = "http://127.0.0.1:5000"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.DefaultSorting)) { cfg.DefaultSorting = "none"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.RequestUrl)) { cfg.RequestUrl = "https://example.com/request"; patched = true; }
+                    if (string.IsNullOrWhiteSpace(cfg.ApiBindAddress)) { cfg.ApiBindAddress = "127.0.0.1"; patched = true; }
+                    if (cfg.ApiPort is < 1 or > 65535) { cfg.ApiPort = 8730; patched = true; }
+                    if (string.IsNullOrWhiteSpace(cfg.McpBindAddress)) { cfg.McpBindAddress = "127.0.0.1"; patched = true; }
+                    if (cfg.McpPort is < 1 or > 65535) { cfg.McpPort = 8731; patched = true; }
                     var ensuredRemote = RemoteControlConfiguration.Ensure(cfg.RemoteControl);
                     if (!ReferenceEquals(cfg.RemoteControl, ensuredRemote))
                     {

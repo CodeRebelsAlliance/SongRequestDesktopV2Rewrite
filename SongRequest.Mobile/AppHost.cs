@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Maui.ApplicationModel;
 using SongRequestDesktopV2Rewrite;
+using SongRequestDesktopV2Rewrite.Integration;
 
 namespace SongRequest.Mobile;
 
@@ -89,9 +90,48 @@ public sealed class AppHost : IDisposable
         RemoteControlService.Instance.RegisterMusicEngine(Host.Music);
         AppBootstrap.Initialize();
 
+        // Optional local API + MCP server (off by default, see Settings).
+        AppIntegrationServer.Instance.Initialize(Host, Interop);
+        AppIntegrationServer.Instance.RegisterPlatformCommandHandler(HandleIntegrationPlatformCommandAsync);
+
         // OS media controls (lock screen, notification, headset/Bluetooth) —
         // the desktop's window does the same for MPRIS/SMTC.
         try { Interop.StartSystemMediaIntegration(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Media session failed: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// Host-specific commands for the local API/MCP servers. The stage server
+    /// lives in the mobile host (it is Android-only), so it is exposed here and
+    /// falls through to the shared interop for every other command.
+    /// </summary>
+    private static Task<Newtonsoft.Json.Linq.JToken?> HandleIntegrationPlatformCommandAsync(
+        string method,
+        Newtonsoft.Json.Linq.JObject? arguments,
+        System.Threading.CancellationToken cancellationToken)
+    {
+#if ANDROID
+        switch (method)
+        {
+            case "stageStatus":
+                return MainThread.InvokeOnMainThreadAsync(
+                    () => (Newtonsoft.Json.Linq.JToken?)Newtonsoft.Json.Linq.JObject.FromObject(StageMirror.StatusObject()));
+
+            case "stageStart":
+                return MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    StageMirror.Publish();
+                    return (Newtonsoft.Json.Linq.JToken?)Newtonsoft.Json.Linq.JObject.FromObject(StageMirror.StatusObject());
+                });
+
+            case "stageStop":
+                return MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    StageMirror.Stop();
+                    return (Newtonsoft.Json.Linq.JToken?)Newtonsoft.Json.Linq.JObject.FromObject(StageMirror.StatusObject());
+                });
+        }
+#endif
+        return Task.FromResult<Newtonsoft.Json.Linq.JToken?>(null);
     }
 
     private void OnHostMessage(string file, string message)
