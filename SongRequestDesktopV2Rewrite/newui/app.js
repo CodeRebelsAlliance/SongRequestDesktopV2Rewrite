@@ -1936,6 +1936,13 @@
     try { data = await send('getStartupData'); } catch (e) { data = { version: '?' }; }
     versionEl.textContent = 'Version ' + (data.version || '?');
 
+    // Already set up in this app session (the page was recreated after a tab
+    // switch or under memory pressure): never replay the splash/launch/auth flow.
+    if (data.setupComplete) {
+      overlay.style.display = 'none';
+      return;
+    }
+
     // Loading phase: progress to 35%, then check for updates
     setProgress(5, 'Initializing...');
     await delay(400);

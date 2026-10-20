@@ -82,9 +82,9 @@ button { background: none; border: 0; cursor: pointer; }
 }
 #top-actions .top-btn i { font-size: 17px; }
 #top-actions .top-btn:active { background: rgba(255, 255, 255, 0.08); }
-#btn-submit { background: var(--mr-primary); color: var(--mr-primary-ink); }
-#btn-submit i { color: var(--mr-primary-ink); }
-#btn-submit:active { filter: brightness(0.92); }
+#top-actions #btn-submit { background: var(--mr-primary); color: var(--mr-primary-ink); }
+#top-actions #btn-submit i { color: var(--mr-primary-ink); }
+#top-actions #btn-submit:active { filter: brightness(0.92); }
 
 #btn-music-player,
 #btn-soundboard,
@@ -145,6 +145,14 @@ button { background: none; border: 0; cursor: pointer; }
   border: 1px solid var(--mr-outline);
   color: var(--mr-text);
   font-size: 16px;
+}
+
+.list-toolbar input[type="text"] {
+  padding-left: 42px;
+  border-radius: 23px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 512 512'%3E%3Cpath fill='%23a9a4b3' d='M416 208c0 45-14 86-38 120l106 106-38 38-106-106c-34 24-75 38-120 38C103 404 12 313 12 208S103 12 208 12s208 91 208 196zm-208 148c82 0 148-66 148-148S290 60 208 60 60 126 60 208s66 148 148 148z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 15px center;
 }
 .list-toolbar select, .settings-input, select {
   background-color: var(--mr-surface-2);
@@ -370,12 +378,19 @@ select option { background-color: var(--mr-surface-2); color: var(--mr-text); }
 }
 
 /* ── Settings / tabs ─────────────────────────────────────── */
-#settings-tabs,
+#settings-tabs {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+
 .modal-header-tabs {
   flex-wrap: nowrap !important;
   overflow-x: auto;
-  scrollbar-width: none;
   gap: 5px;
+  scrollbar-width: none;
 }
 #settings-tabs::-webkit-scrollbar,
 .modal-header-tabs::-webkit-scrollbar { display: none; }
@@ -384,11 +399,12 @@ select option { background-color: var(--mr-surface-2); color: var(--mr-text); }
 .modal-tab-btn {
   flex-shrink: 0;
   min-height: 38px;
-  padding: 8px 14px;
-  border-radius: 19px;
+  padding: 8px 12px;
+  border-radius: 12px;
   font-size: 13px;
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
   border: 1px solid var(--mr-outline);
   background: var(--mr-surface-2);
   color: var(--mr-muted);
@@ -399,6 +415,29 @@ select option { background-color: var(--mr-surface-2); color: var(--mr-text); }
   background: #40384f;
   color: #f5f0ff;
   border-color: transparent;
+}
+
+/* styles.css rounds the first/last tab as if the row were one segmented control;
+   on the mobile settings page every chip is its own rounded button. */
+#settings-tabs .settings-tab,
+#settings-tabs .settings-tab:first-child,
+#settings-tabs .settings-tab:last-child,
+.modal-header-tabs .modal-tab-btn,
+.modal-header-tabs .modal-tab-btn:first-child,
+.modal-header-tabs .modal-tab-btn:last-child {
+  border-radius: 12px;
+}
+
+/* The settings page scrolls as one surface: no nested list with dead space
+   between the last card and the sticky footer. */
+#settings-modal .modal-body {
+  display: block !important;
+  overflow-y: auto !important;
+}
+#settings-modal #settings-content {
+  flex: none !important;
+  min-height: 0 !important;
+  overflow: visible !important;
 }
 
 .settings-card {

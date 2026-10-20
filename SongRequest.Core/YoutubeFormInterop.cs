@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SongRequestDesktopV2Rewrite;
@@ -1047,6 +1048,12 @@ public class YoutubeFormInterop
     {
         var json = JsonConvert.SerializeObject(new { type = "event", eventName, data });
         SendMessage?.Invoke(json);
+
+        // Library import/scan can be started from the music page too; the main
+        // window is not resident in that mode, so send progress to the player as
+        // well. Harmless on desktop (its player shows the same state).
+        if (eventName is "libraryScanProgress" or "libraryScanCompleted")
+            MusicPlayerSendEvent(eventName, data);
     }
 
     private void MusicPlayerSendEvent(string eventName, object? data)
@@ -1144,8 +1151,12 @@ public class YoutubeFormInterop
         // Mark that the initial load finished so downloads auto-enqueue under Autopilot.
         _ytForm.InitialLoadComplete = true;
 
-        // Server returns array of strings; enrich with cached metadata
+        // Server returns array of strings; enrich with cached metadata. Blacklist
+        // entries have no download/panel that would populate the cache, so fetch
+        // their metadata here once (otherwise the UI only had the artwork and an
+        // id where the title/creator should be).
         var blacklistArr = JArray.Parse(blacklistJson);
+        await EnrichBlacklistMetadataAsync(blacklistArr).ConfigureAwait(false);
         var blacklistItems = new List<object>();
         foreach (var item in blacklistArr)
         {
@@ -1162,6 +1173,70 @@ public class YoutubeFormInterop
         }
 
         return new { database = databaseList, blacklist = blacklistItems };
+    }
+
+    /// <summary>
+    /// Fetches title/creator/duration for blacklisted ids that do not have cached
+    /// metadata yet. Limited concurrency keeps a large blacklist from flooding
+    /// YouTube or delaying the first list render too much.
+    /// </summary>
+    private async Task EnrichBlacklistMetadataAsync(JArray blacklist)
+    {
+        var missing = new List<string>();
+        foreach (var item in blacklist)
+        {
+            var ytid = item.ToString();
+            if (string.IsNullOrWhiteSpace(ytid)) continue;
+
+            var cached = _ytForm.GetOrCreateVideoData(ytid);
+            if (cached.MetadataFetched || !string.IsNullOrWhiteSpace(cached.Title)) continue;
+            missing.Add(ytid);
+        }
+
+        if (missing.Count == 0) return;
+
+        // Bound the work per poll; the next refresh continues with the rest.
+        missing = missing.Take(30).ToList();
+
+        using var gate = new SemaphoreSlim(4, 4);
+        var tasks = missing.Select(async ytid =>
+        {
+            await gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var data = _ytForm.GetOrCreateVideoData(ytid);
+                if (data.MetadataFetched || !string.IsNullOrWhiteSpace(data.Title)) return;
+                try
+                {
+                    var (title, length, creator) = await _ytService
+                        .GetVideoMetadataAsync($"https://www.youtube.com/watch?v={ytid}")
+                        .ConfigureAwait(false);
+                    data.Title = title ?? string.Empty;
+                    data.Creator = creator ?? string.Empty;
+                    data.DurationTicks = length.Ticks;
+                }
+                catch
+                {
+                    // Unavailable/private/blocked: still mark it so we do not retry
+                    // on every poll; the row keeps its id as the title.
+                }
+                finally
+                {
+                    data.MetadataFetched = true;
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        });
+
+        try
+        {
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+            _ytForm.SaveVideoDataCache();
+        }
+        catch { }
     }
 
     private object GetConfig()
@@ -2887,6 +2962,10 @@ public class YoutubeFormInterop
         return new
         {
             version = AppInfo.version,
+            // True once the startup flow (mode + cookie decision) has completed.
+            // A page that is recreated later in the same app session must not run
+            // the splash/launch/auth sequence again.
+            setupComplete = _ytForm.SetupComplete,
             cookieBrowser = ConfigService.Instance.Current?.CookieBrowser ?? string.Empty,
             launchOptions = new
             {
@@ -3810,6 +3889,7 @@ public class YoutubeFormInterop
 
                 if (string.IsNullOrWhiteSpace(picked)) return new { cancelled = true };
 
+                SendEvent("libraryScanProgress", new { progress = 0.01, message = "Copying music into the app…" });
                 folder = PrepareImportFolder != null
                     ? await PrepareImportFolder(picked).ConfigureAwait(false)
                     : picked;
@@ -3823,6 +3903,7 @@ public class YoutubeFormInterop
 
                 if (files == null || files.Length == 0) return new { cancelled = true };
 
+                SendEvent("libraryScanProgress", new { progress = 0.01, message = "Copying music into the app…" });
                 folder = PrepareImportFiles != null
                     ? await PrepareImportFiles(files).ConfigureAwait(false)
                     : System.IO.Path.GetDirectoryName(files[0]);
@@ -3837,7 +3918,21 @@ public class YoutubeFormInterop
             return new { error = "The picked music could not be read." };
 
         AddScanFolderPath(folder);
-        var scan = await _libraryService.ScanAsync().ConfigureAwait(false);
+
+        void OnProgress(double pct, string msg)
+            => SendEvent("libraryScanProgress", new { progress = pct, message = msg });
+
+        _libraryService.ScanProgress += OnProgress;
+        LibraryScanResult scan;
+        try
+        {
+            scan = await _libraryService.ScanAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _libraryService.ScanProgress -= OnProgress;
+        }
+
         NotifyLibraryScanned(scan);
 
         return new
@@ -3847,6 +3942,8 @@ public class YoutubeFormInterop
             filesFound = scan.FilesFound,
             songsAdded = scan.SongsAdded,
             songsUpdated = scan.SongsUpdated,
+            songsMissing = scan.SongsMissing,
+            errorCount = scan.Errors.Count,
             errors = scan.Errors,
         };
     }

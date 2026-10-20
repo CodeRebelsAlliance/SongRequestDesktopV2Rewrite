@@ -12,7 +12,7 @@
     the tests and the platform builds pass and the tag does not exist yet.
   -->
   <PropertyGroup>
-    <Version>5.9</Version>
+    <Version>6.0</Version>
   </PropertyGroup>
 
 </Project>

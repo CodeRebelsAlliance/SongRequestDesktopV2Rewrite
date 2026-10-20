@@ -290,7 +290,7 @@ and notification; `adb shell dumpsys activity services` reported
 - [x] `node --test tests/js` covers the new bridge diff (`stagebridge.test.js`)
       and the mobile page wiring (`mobilepages.test.js`).
 - [x] Desktop regression suite green with the new pages: 511 unit, 43/44
-      integration (1 environment skip, FFmpeg/cookies), 47 JS tests; mobile
+      integration (1 environment skip, FFmpeg/cookies), 52 JS tests; mobile
       Android Release build 0 warnings.
 - [x] **Requests (device)**: Requests/Pending/Blacklist/Word Filter/Dashboard
       tabs scroll as chips; tapping a card opens the M3 action sheet; Submit Song,
@@ -315,6 +315,22 @@ and notification; `adb shell dumpsys activity services` reported
 - [x] **Stage/TV**: with the stage running, load the LAN URL in a browser: Up
       Next keeps its thumbnails without flicker/tick rebuilds, lyrics highlight
       advances, and the request QR renders (server-generated data URL, no CDN).
+- [x] **Startup/navigation**: the native tab bar is hidden during splash → mode
+      → auth; after completing setup it appears. Recreating the Requests webview
+      (memory pressure or a tab round-trip) skips the onboarding sequence.
+- [x] **Settings/import**: the Requests settings page uses a two-column tab grid
+      and one scrolling M3 surface with no dead space; importing music shows a
+      progress bar with the current file in both Requests settings and the
+      player's settings sheet, followed by the result summary.
+- [x] **YouTube search (player)**: the Home search field has a YouTube toggle;
+      typing searches YouTube directly and results download/play like the
+      desktop search view.
+- [x] **Blacklist metadata** (desktop + mobile): blacklisted ids are enriched
+      with title/creator/duration on first fetch and cached; rows no longer show
+      only artwork and the id.
+- [x] **Android signing**: CI generates/caches one fallback key at
+      `.android-signing/debug.keystore`; re-running the workflow produces the
+      same certificate (or uses the repository release keystore secrets).
 - [ ] Still to check on real hardware: HDMI second display, a TV browser over
       Wi-Fi, long-press timing on low-end phones and the MIDI assign page with a
       physical controller.

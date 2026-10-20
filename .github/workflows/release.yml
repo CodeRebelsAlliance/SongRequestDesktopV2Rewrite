@@ -251,8 +251,9 @@ jobs:
     runs-on: ubuntu-latest
     # In-app updates only work when every release is signed with the *same* key.
     # Add ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
-    # ANDROID_KEY_PASSWORD as repository secrets to use a proper release keystore;
-    # without them the debug keystore is cached across runs so it stays stable.
+    # ANDROID_KEY_PASSWORD as repository secrets to use a proper release keystore.
+    # Without them a single fallback key is generated once and cached by this
+    # workflow (see .android-signing/ below).
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -282,14 +283,39 @@ jobs:
           dotnet workload config --update-mode manifests
           dotnet workload install maui-android
 
-      # Fallback: keep the automatically generated debug keystore between runs.
-      # A fresh debug key per run is what made Android answer "App not installed".
-      - name: Restore a stable signing key (debug fallback)
+      # Fallback: keep one stable debug key between workflow runs. The previous
+      # cache pointed at ~/.android/debug.keystore, but .NET Android actually
+      # creates its debug key under ~/.local/share/Xamarin/Mono for Android/ — so
+      # the cache was always empty and every run got a brand-new signature.
+      - name: Restore fallback signing key
         if: env.ANDROID_KEYSTORE_BASE64 == ''
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
+          path: .android-signing
+          key: android-fallback-keystore-v2
+          restore-keys: |
+            android-fallback-keystore-
+
+      - name: Create fallback signing key if needed
+        if: env.ANDROID_KEYSTORE_BASE64 == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .android-signing
+          KEYSTORE="$GITHUB_WORKSPACE/.android-signing/debug.keystore"
+          if [ ! -f "$KEYSTORE" ]; then
+            keytool -genkeypair \
+              -keystore "$KEYSTORE" \
+              -storepass songrequest \
+              -keypass songrequest \
+              -alias songrequest \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=SongRequest, OU=Mobile, O=CodeRebelsAlliance, C=DE"
+          fi
+          echo "ANDROID_SIGNING_ARGS=-p:AndroidKeyStore=true -p:AndroidSigningKeyStore=$KEYSTORE -p:AndroidSigningStorePass=songrequest -p:AndroidSigningKeyAlias=songrequest -p:AndroidSigningKeyPass=songrequest" >> "$GITHUB_ENV"
+          echo "Using fallback signing key: $KEYSTORE"
 
       - name: Configure release signing
         if: env.ANDROID_KEYSTORE_BASE64 != ''

@@ -831,6 +831,14 @@
         if (currentTab === 'library') loadLibrary(true);
         if (currentTab === 'playlist') reloadPlaylist();
         break;
+
+      case 'libraryScanProgress':
+        updateImportProgress(data);
+        break;
+
+      case 'libraryScanCompleted':
+        finishImport(data);
+        break;
     }
   }
 
@@ -923,7 +931,9 @@
   var homeSearch = $('mm-home-search');
   var homeClear = $('mm-home-clear');
   var homeResults = $('mm-home-results');
+  var homeYoutube = $('mm-home-youtube');
   var searchTimer = null;
+  var youtubeSearchMode = false;
 
   function runHomeSearch() {
     var query = homeSearch.value.trim();
@@ -944,6 +954,11 @@
       if (homeSearch.value.trim() !== query) return;
       lastQuery = query;
 
+      if (youtubeSearchMode) {
+        searchYoutubeFor(query);
+        return;
+      }
+
       request('searchLibrary', { query: query, maxResults: 80 }).then(function (data) {
         if (homeSearch.value.trim() !== query) return;
         var results = (data && data.results) || [];
@@ -958,6 +973,14 @@
   }
 
   homeSearch.addEventListener('input', runHomeSearch);
+  homeYoutube.addEventListener('click', function () {
+    youtubeSearchMode = !youtubeSearchMode;
+    homeYoutube.classList.toggle('is-active', youtubeSearchMode);
+    homeYoutube.setAttribute('aria-pressed', youtubeSearchMode ? 'true' : 'false');
+    homeSearch.placeholder = youtubeSearchMode ? 'Search YouTube' : 'Search your library';
+    runHomeSearch();
+    if (youtubeSearchMode) homeSearch.focus();
+  });
   homeClear.addEventListener('click', function () {
     homeSearch.value = '';
     runHomeSearch();
@@ -1167,6 +1190,11 @@
           '<button class="mm-btn" data-settings-action="import-folder"><i class="fas fa-folder-open"></i> Import folder</button>' +
           '<button class="mm-btn" data-settings-action="scan"><i class="fas fa-rotate"></i> Scan</button>' +
         '</div>' +
+        '<div id="mm-import-progress" class="mm-import-progress" hidden>' +
+          '<div class="mm-import-head"><span id="mm-import-label">Preparing…</span><span id="mm-import-pct">0%</span></div>' +
+          '<div class="mm-import-track"><div id="mm-import-fill"></div></div>' +
+        '</div>' +
+        '<div id="mm-import-result" class="mm-import-result" hidden></div>' +
         '<button id="mm-settings-save" class="mm-btn mm-share-primary" style="width:100%;margin-top:16px">Save</button>'
       );
       wireSettingsSheet();
@@ -1200,22 +1228,82 @@
   function onSettingsAction(button) {
     switch (button.dataset.settingsAction) {
       case 'import-files':
-        send('importLibrary', { mode: 'files' });
-        toast('Choose audio files', 'info');
-        closeSheet();
+        startImport('files');
         break;
       case 'import-folder':
-        send('importLibrary', { mode: 'folder' });
-        toast('Choose a folder', 'info');
-        closeSheet();
+        startImport('folder');
         break;
       case 'scan':
-        request('scanLibrary').then(function () {
-          toast('Library scanned', 'success');
-          refreshLibraryViews();
-        }).catch(function (error) { toast(error.message, 'error'); });
+        startImport('scan');
         break;
     }
+  }
+
+  function showImportProgress(message) {
+    var wrap = $('mm-import-progress');
+    if (!wrap) return;
+    wrap.hidden = false;
+    $('mm-import-result').hidden = true;
+    $('mm-import-label').textContent = message || 'Preparing…';
+    $('mm-import-pct').textContent = '0%';
+    $('mm-import-fill').style.width = '0%';
+  }
+
+  function updateImportProgress(data) {
+    var wrap = $('mm-import-progress');
+    if (!wrap) return;
+    var pct = Math.round((data && data.progress || 0) * 100);
+    wrap.hidden = false;
+    $('mm-import-fill').style.width = pct + '%';
+    $('mm-import-pct').textContent = pct + '%';
+    $('mm-import-label').textContent = (data && data.message) || 'Scanning…';
+  }
+
+  function finishImport(data) {
+    var wrap = $('mm-import-progress');
+    if (!wrap) return;
+    $('mm-import-fill').style.width = '100%';
+    $('mm-import-pct').textContent = '100%';
+    $('mm-import-label').textContent = 'Import complete';
+
+    var result = $('mm-import-result');
+    if (result && data) {
+      var text = 'Found ' + (data.filesFound || 0) + ' files · +' + (data.songsAdded || 0) +
+        ' added · ' + (data.songsUpdated || 0) + ' updated' +
+        (data.errorCount ? ' · ' + data.errorCount + ' error(s)' : '');
+      result.textContent = text;
+      result.hidden = false;
+    }
+
+    setTimeout(function () {
+      if (wrap) wrap.hidden = true;
+      if (result) result.hidden = true;
+    }, 6000);
+  }
+
+  function startImport(mode) {
+    showImportProgress(mode === 'scan' ? 'Scanning library…' : 'Choose music…');
+    var status = $('mm-import-status');
+    if (status) { status.hidden = false; status.textContent = mode === 'scan' ? 'Scanning…' : 'Choose music to import…'; }
+
+    var method = mode === 'scan' ? 'scanLibrary' : 'importLibrary';
+    var params = mode === 'scan' ? null : { mode: mode };
+
+    request(method, params, 900000).then(function (result) {
+      if (mode === 'scan' || (result && result.success)) {
+        finishImport(result || {});
+      } else if (result && result.cancelled) {
+        if (status) status.textContent = 'Import cancelled.';
+        var wrap = $('mm-import-progress');
+        if (wrap) wrap.hidden = true;
+      } else if (result && result.error) {
+        if (status) status.textContent = 'Import failed: ' + result.error;
+        toast(result.error, 'error');
+      }
+    }).catch(function (error) {
+      if (status) status.textContent = 'Import failed: ' + error.message;
+      toast(error.message, 'error');
+    });
   }
 
   // ── Song actions ─────────────────────────────────────────
@@ -1311,12 +1399,17 @@
 
   // ── YouTube search ───────────────────────────────────────
   function searchYoutubeFor(query) {
+    lastQuery = query;
+    homeResults.hidden = false;
+    $('mm-home-feed').hidden = true;
+    homeResults.innerHTML = '<div class="mm-empty"><i class="fab fa-youtube"></i><span>Searching YouTube…</span></div>';
+
     request('searchYoutube', { query: query, maxResults: 10 }).then(function (data) {
       var results = (data && data.results) || [];
       homeResults.hidden = false;
       $('mm-home-feed').hidden = true;
 
-      var html = '<div class="mm-sheet-empty" style="padding:6px 16px">YouTube results</div>';
+      var html = '<div class="mm-sheet-empty" style="padding:6px 16px">YouTube results for “' + esc(query) + '”</div>';
       if (!results.length) html += '<div class="mm-empty"><i class="fab fa-youtube"></i><span>Nothing found</span></div>';
 
       results.forEach(function (item) {
@@ -1329,7 +1422,10 @@
       });
 
       homeResults.innerHTML = html;
-    }).catch(function (error) { toast(error.message, 'error'); });
+    }).catch(function (error) {
+      homeResults.innerHTML = '<div class="mm-empty"><i class="fas fa-triangle-exclamation"></i><span>' +
+        esc(error.message || 'YouTube search failed') + '</span></div>';
+    });
   }
 
   // ── Music Share ──────────────────────────────────────────

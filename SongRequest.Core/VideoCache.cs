@@ -18,6 +18,13 @@ public class VideoData
     public string Creator { get; set; } = string.Empty;
     public long DurationTicks { get; set; }
     public string ThumbnailPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Metadata was already requested (successfully or not). Blacklisted ids have
+    /// no panel/download to populate the cache, so without this every fetch poll
+    /// would ask YouTube again for the same entry.
+    /// </summary>
+    public bool MetadataFetched { get; set; }
     public string SubtitleText { get; set; } = string.Empty;
     public string SubtitleTimedText { get; set; } = string.Empty;
 

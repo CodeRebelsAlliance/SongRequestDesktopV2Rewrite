@@ -849,6 +849,30 @@ port; they affect the desktop app too):
   and supplies a server-generated QR data URL, so a TV with no internet still
   shows the request QR instead of a white tile.
 
+- **Settings & search polish**: the Requests settings page is a real Material
+  page (two-column tab grid, one scrolling surface, sticky footer, M3 fields and
+  cards) instead of a horizontally scrolling modal. Library import/scan now
+  emits `libraryScanProgress` with the current file to both the requests page and
+  the player, and the player's settings sheet shows a progress bar/current item
+  and the final result. The player search has an explicit YouTube toggle (and
+  keeps the “search YouTube for …” fallback), so external tracks are reachable
+  from the same search field as the library.
+- **Blacklist metadata**: blacklisted ids have no download/panel that would
+  populate the video cache, so `FetchDataAsync` now fetches their title, creator
+  and duration once (bounded concurrency, `MetadataFetched` persisted). Desktop
+  and mobile blacklist rows show real metadata instead of only artwork + id.
+- **Startup & navigation**: the native tab bar stays hidden until the launch
+  mode and cookie decision are complete. If Android recreates the Requests
+  webview (memory pressure/tab switch), the page skips the splash/launch/auth
+  sequence; tab destinations are also no longer evicted by the memory-trim
+  callback.
+- **Android signing**: the CI fallback key is now generated once in
+  `.android-signing/debug.keystore` and cached there. The old cache pointed at
+  `~/.android/debug.keystore`, but .NET Android actually writes the debug key
+  under `~/.local/share/Xamarin/Mono for Android/`, so every run generated a new
+  key and in-app updates were rejected. Repository secrets still take precedence
+  for a proper release keystore.
+
 **Milestone totals for the chosen full-parity programme:** Android-only through
 M6 ≈ 16–22 dev-weeks; +iOS ≈ 19–26; +M8 ≈ 21–29. (M0–M2 alone — shared core,
 mobile shell, native audio — is a usable "control the queue and play from the

@@ -366,3 +366,6 @@ FodyWeavers.xsd
 
 # Test results / coverage
 TestResults/
+
+# CI fallback Android signing key (cached between workflow runs, never committed)
+.android-signing/

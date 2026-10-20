@@ -56,6 +56,53 @@ test('soundboard uses a dedicated single audio file picker', () => {
   assert.match(pickers, /audio\/\*/);
 });
 
+test('Android CI keeps one fallback signing key between workflow runs', () => {
+  const root = path.join(__dirname, '..', '..');
+  const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'release.yml'), 'utf8');
+
+  assert.match(workflow, /\.android-signing/);
+  assert.match(workflow, /android-fallback-keystore-v2/);
+  assert.match(workflow, /keytool -genkeypair/);
+  assert.doesNotMatch(workflow, /path:\s*~\/\.android\/debug\.keystore/,
+    'the old cache path is not where .NET Android stores its debug key');
+});
+
+test('startup is not replayed when a page is recreated', () => {
+  const root = path.join(__dirname, '..', '..');
+  const app = fs.readFileSync(path.join(ui, 'app.js'), 'utf8');
+  const page = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'MainPage.cs'), 'utf8');
+  const shell = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'MobileShell.cs'), 'utf8');
+
+  assert.match(app, /data\.setupComplete/);
+  assert.match(page, /SetNavigationVisible\(false\)/);
+  assert.match(shell, /SetNavigationVisible\(true\)/);
+});
+
+test('mobile player offers a YouTube search mode next to library search', () => {
+  const html = read('mobilemusic.html');
+  const js = read('mobilemusic.js');
+  assert.match(html, /id="mm-home-youtube"/);
+  assert.match(js, /youtubeSearchMode/);
+  assert.match(js, /searchYoutubeFor\(query\)/);
+});
+
+test('music settings sheet shows library import progress and current item', () => {
+  const js = read('mobilemusic.js');
+  assert.match(js, /mm-import-progress/);
+  assert.match(js, /mm-import-label/);
+  assert.match(js, /libraryScanProgress/);
+});
+
+test('blacklist rows are enriched with metadata, not just artwork', () => {
+  const root = path.join(__dirname, '..', '..');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  const cache = fs.readFileSync(path.join(root, 'SongRequest.Core', 'VideoCache.cs'), 'utf8');
+
+  assert.match(interop, /EnrichBlacklistMetadataAsync/);
+  assert.match(interop, /GetVideoMetadataAsync/);
+  assert.match(cache, /MetadataFetched/);
+});
+
 test('mobile music page exposes repeat state and playlist browsing', () => {
   const html = read('mobilemusic.html');
   assert.match(html, /id="mm-repeat"[^>]*aria-pressed="false"/);

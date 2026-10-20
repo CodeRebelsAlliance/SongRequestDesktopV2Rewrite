@@ -104,8 +104,14 @@ public sealed class MobileShell : IUiShell
 
     /// <summary>
     /// Rebuilds the mobile navigation for the operating mode chosen at startup.
+    /// The startup flow calls this once the user finished launch/auth, so that is
+    /// also when the native navigation bar appears.
     /// </summary>
-    public void SetOperatingMode(StartupMode mode) => _page.ConfigureMode(mode);
+    public void SetOperatingMode(StartupMode mode)
+    {
+        _page.SetNavigationVisible(true);
+        _page.ConfigureMode(mode);
+    }
 
     /// <summary>Quits the app (the web UI's Quit buttons).</summary>
     public void Close() => Application.Current?.Quit();

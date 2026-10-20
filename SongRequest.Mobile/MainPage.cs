@@ -60,6 +60,7 @@ public sealed class MainPage : ContentPage
     private string _baseKey = "requests";
     private string _currentFile = MobileRequestsFile;
     private bool _suppressNextPlayerOpen;
+    private bool _navigationVisible;
 
     // Animated navigation-bar colours (derived from the current song's artwork).
     private Color _barColor = SurfaceContainer;
@@ -101,6 +102,10 @@ public sealed class MainPage : ContentPage
         // The tabs are rebuilt from the operating mode; this shows the default
         // (request) shell until the startup flow reports the chosen mode.
         ConfigureMode(StartupMode.SongRequests);
+
+        // The onboarding splash/launch/auth flow owns the whole screen. The native
+        // navigation appears only after completeSetup (see SetNavigationVisible).
+        SetNavigationVisible(false);
     }
 
     /// <summary>The page file currently shown (used by the shell to route messages).</summary>
@@ -257,6 +262,19 @@ public sealed class MainPage : ContentPage
     /// <summary>Sends a JSON message to the currently visible page.</summary>
     public bool SendToCurrent(string json) => SendTo(_currentFile, json);
 
+    /// <summary>Hides or shows the native navigation bar (hidden during startup).</summary>
+    public void SetNavigationVisible(bool visible)
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(() => SetNavigationVisible(visible));
+            return;
+        }
+
+        _navigationVisible = visible;
+        _tabBar.IsVisible = visible;
+    }
+
     /// <summary>Hides the native tab bar for fullscreen sub-windows (stage/visualization).</summary>
     public void SetImmersive(bool immersive)
     {
@@ -266,7 +284,7 @@ public sealed class MainPage : ContentPage
             return;
         }
 
-        _tabBar.IsVisible = !immersive;
+        _tabBar.IsVisible = _navigationVisible && !immersive;
     }
 
     /// <summary>
@@ -539,9 +557,8 @@ public sealed class MainPage : ContentPage
                 .Where(file => file != keep && file != _currentFile)
                 .ToList();                      // newest first
 
-            var victim = candidates.FirstOrDefault(file => !IsTabDestination(file))
-                         ?? candidates.LastOrDefault();
-            if (victim == null) break;
+            var victim = candidates.FirstOrDefault(file => !IsTabDestination(file));
+            if (victim == null) break;      // never evict a tab destination
 
             _recent.Remove(victim);
             DisposeView(victim);
@@ -552,9 +569,10 @@ public sealed class MainPage : ContentPage
         => _destinationFile.Values.Contains(file, StringComparer.Ordinal);
 
     /// <summary>
-    /// Drops every hidden web view. Called when Android reports memory pressure:
-    /// pages then load again on their next visit (their state is re-requested on
-    /// load), but normal tab switching never does.
+    /// Drops hidden web views under memory pressure. Tab destinations are kept:
+    /// recreating the Requests page in particular used to restart the onboarding
+    /// flow when the user came back to the tab. Alternate stage pages (visualize/
+    /// announce) are the safe things to drop and reload.
     /// </summary>
     public void TrimResidentViews()
     {
@@ -567,6 +585,7 @@ public sealed class MainPage : ContentPage
         foreach (var key in _views.Keys.ToList())
         {
             if (string.Equals(key, _currentFile, StringComparison.Ordinal)) continue;
+            if (IsTabDestination(key)) continue;
             DisposeView(key);
         }
     }
