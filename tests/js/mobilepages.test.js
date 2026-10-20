@@ -125,6 +125,29 @@ test('mobile startup and request navigation use the Material layout', () => {
   assert.match(html, /data-tab="all-songs"[^>]*><i /);
 });
 
+test('requests offer Play Now and playlists start immediately', () => {
+  const app = read('app.js');
+  const interop = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  assert.match(app, /data-action="playNow"/);
+  assert.match(app, /action === 'playNow'/);
+  assert.match(interop, /actionToTake == "play"/);
+  assert.match(interop, /AdvanceFromPlaylistQueue\(\)/);
+});
+
+test('mobile deletes use confirmation sheets and recent rows show timestamps', () => {
+  const music = read('mobilemusic.js');
+  const board = read('mobilesoundboard.js');
+  assert.match(music, /openConfirmSheet/);
+  assert.match(board, /openConfirmSheet/);
+  assert.match(music, /Played ' \+ esc\(played\)/);
+});
+
+test('visualization has a mobile Material layout', () => {
+  const css = read('visualization.css');
+  assert.match(css, /:root\[data-shell="mobile"\] #viz-toolbar/);
+  assert.match(css, /:root\[data-shell="mobile"\] #viz-modes/);
+});
+
 test('mobile music page exposes repeat state and playlist browsing', () => {
   const html = read('mobilemusic.html');
   assert.match(html, /id="mm-repeat"[^>]*aria-pressed="false"/);

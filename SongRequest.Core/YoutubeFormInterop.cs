@@ -1598,17 +1598,31 @@ public class YoutubeFormInterop
                 }
             }
 
-            // Stage 6: Auto-enqueue / auto-play-next
-            if (_ytForm.InitialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true && File.Exists(mp3Path))
+            // Stage 6: Auto-enqueue / auto-play-next / play now
+            if (File.Exists(mp3Path))
             {
                 var song = new Song(title ?? videoId, creator ?? "", null, length, mp3Path);
-                PostToUi(() =>
+                if (actionToTake == "play")
                 {
-                    if (actionToTake == "playNext")
-                        _ytForm.Music.AddNextSongExternal(song);
-                    else
-                        _ytForm.Music.AddSongExternal(song);
-                });
+                    PostToUi(() =>
+                    {
+                        var mp = _ytForm.Music;
+                        if (mp == null) return;
+                        mp.ClearQueue();
+                        mp.Queue.Add(song);
+                        mp.PlaySong(song);
+                    });
+                }
+                else if (_ytForm.InitialLoadComplete && ConfigService.Instance.Current?.AutoEnqueue == true)
+                {
+                    PostToUi(() =>
+                    {
+                        if (actionToTake == "playNext")
+                            _ytForm.Music.AddNextSongExternal(song);
+                        else
+                            _ytForm.Music.AddSongExternal(song);
+                    });
+                }
             }
 
             // Done
@@ -4593,7 +4607,15 @@ public class YoutubeFormInterop
         var songs = ResolvePlaylistToSongs(playlist);
         if (songs.Count == 0) return new { error = "Playlist is empty" };
         _libraryService.MarkPlaylistPlayed(playlist.Id);
-        PostToUi(() => _ytForm.Music.LoadPlaylist(songs, false));
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            mp.ClearQueue();
+            mp.LoadPlaylist(songs, false);
+            // "Play playlist" means start now, not just append to the playlist
+            // buffer. Move the first track into the queue and begin playback.
+            mp.AdvanceFromPlaylistQueue();
+        });
         return new { success = true, count = songs.Count };
     }
 
@@ -4606,7 +4628,13 @@ public class YoutubeFormInterop
         var songs = ResolvePlaylistToSongs(playlist);
         if (songs.Count == 0) return new { error = "Playlist is empty" };
         _libraryService.MarkPlaylistPlayed(playlist.Id);
-        PostToUi(() => _ytForm.Music.LoadPlaylist(songs, true));
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            mp.ClearQueue();
+            mp.LoadPlaylist(songs, true);
+            mp.AdvanceFromPlaylistQueue();
+        });
         return new { success = true, count = songs.Count };
     }
 

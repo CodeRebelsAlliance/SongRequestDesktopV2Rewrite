@@ -48,7 +48,7 @@ public sealed class SoundboardEngine : IDisposable
     public int FadeDurationMs { get; set; } = 300;
 
     /// <summary>Creates the output device for a playback (replaced in tests).</summary>
-    internal Func<IAudioOutput> OutputFactory { get; set; } = AudioOutputFactory.Create;
+    internal Func<IAudioOutput> OutputFactory { get; set; } = AudioOutputFactory.CreateForSoundboard;
 
     /// <summary>Opens the audio source for a sound file (replaced in tests).</summary>
     internal Func<string, IAudioSource> SourceFactory { get; set; } = null!;

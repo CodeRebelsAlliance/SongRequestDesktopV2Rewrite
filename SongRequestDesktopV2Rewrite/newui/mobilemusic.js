@@ -28,6 +28,21 @@
     return parts[0] || 0;
   }
 
+  function relativeTime(value) {
+    if (!value) return '';
+    var then = new Date(value);
+    if (isNaN(then.getTime())) return '';
+    var secs = Math.max(0, Math.round((Date.now() - then.getTime()) / 1000));
+    if (secs < 60) return 'just now';
+    var mins = Math.round(secs / 60);
+    if (mins < 60) return mins + 'm ago';
+    var hours = Math.round(mins / 60);
+    if (hours < 24) return hours + 'h ago';
+    var days = Math.round(hours / 24);
+    if (days < 7) return days + 'd ago';
+    return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
   // Small transient message (no external library).
   function toast(message, type) {
     var host = $('mm-toasts');
@@ -380,11 +395,16 @@
   function songRow(song) {
     var id = song.songId || song.id || '';
     var duration = song.durationDisplay || formatTime(song.duration || 0);
+    var sub = esc(song.artist || '—');
+    if (song.playedUtc) {
+      var played = relativeTime(song.playedUtc);
+      if (played) sub += ' · Played ' + esc(played);
+    }
     return '<button class="mm-song" data-song-id="' + esc(id) + '">' +
       '<div class="mm-thumb">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-song-text">' +
         '<div class="mm-song-title">' + esc(song.title || 'Unknown') + '</div>' +
-        '<div class="mm-song-sub">' + esc(song.artist || '—') + '</div>' +
+        '<div class="mm-song-sub">' + sub + '</div>' +
       '</div>' +
       '<span class="mm-song-dur">' + esc(duration) + '</span>' +
       '</button>';
@@ -494,19 +514,24 @@
     }
 
     if (action === 'delete') {
-      if (!window.confirm('Delete playlist “' + (currentPlaylist.name || 'Playlist') + '”? The songs stay in your library.')) return;
       var id = currentPlaylist.id;
-      request('deletePlaylist', { playlistId: id }).then(function (result) {
-        if (result && result.error) { toast(result.error, 'error'); return; }
-        toast('Playlist deleted', 'success');
-        closeSheet();
-        currentPlaylist = null;
-        feed = null;
-        feedAt = 0;
-        lib.page = 0;
-        setTab('library');
-        setLibraryMode('playlists');
-      }).catch(function (error) { toast(error.message, 'error'); });
+      openConfirmSheet(
+        'Delete playlist',
+        'Delete “' + (currentPlaylist.name || 'Playlist') + '”? The songs stay in your library.',
+        'Delete',
+        function () {
+          request('deletePlaylist', { playlistId: id }).then(function (result) {
+            if (result && result.error) { toast(result.error, 'error'); return; }
+            toast('Playlist deleted', 'success');
+            currentPlaylist = null;
+            feed = null;
+            feedAt = 0;
+            lib.page = 0;
+            setTab('library');
+            setLibraryMode('playlists');
+          }).catch(function (error) { toast(error.message, 'error'); });
+        }
+      );
     }
   }
 
@@ -1056,6 +1081,7 @@
   var sheet = $('mm-sheet');
   var sheetScrim = $('mm-sheet-scrim');
   var sheetBody = $('mm-sheet-body');
+  var pendingConfirm = null;
 
   function openSheet(html) {
     sheetBody.innerHTML = html;
@@ -1065,6 +1091,20 @@
       sheet.classList.add('is-open');
       sheetScrim.classList.add('is-open');
     });
+  }
+
+  // window.confirm() is unreliable inside Android's HybridWebView; destructive
+  // actions use an in-app confirmation sheet instead.
+  function openConfirmSheet(title, message, confirmLabel, callback) {
+    pendingConfirm = callback;
+    openSheet(
+      '<h3>' + esc(title) + '</h3>' +
+      '<div class="mm-confirm-text">' + esc(message) + '</div>' +
+      '<div class="mm-confirm-actions">' +
+        '<button id="mm-confirm-cancel" class="mm-btn">Cancel</button>' +
+        '<button id="mm-confirm-ok" class="mm-btn mm-danger">' + esc(confirmLabel) + '</button>' +
+      '</div>'
+    );
   }
 
   function closeSheet() {
@@ -1343,13 +1383,17 @@
         openPlaylistPicker(songId);
         break;
       case 'delete':
-        if (window.confirm('Remove this song from the library?')) {
-          request('deleteLibrarySong', { songId: songId }).then(function (result) {
-            if (result && result.error) toast(result.error, 'error');
-            else { toast('Removed from library', 'success'); refreshLibraryViews(); }
-            closeSheet();
-          }).catch(function (error) { toast(error.message, 'error'); });
-        }
+        openConfirmSheet(
+          'Remove from library',
+          'Remove this song from the library?',
+          'Remove',
+          function () {
+            request('deleteLibrarySong', { songId: songId }).then(function (result) {
+              if (result && result.error) toast(result.error, 'error');
+              else { toast('Removed from library', 'success'); refreshLibraryViews(); }
+            }).catch(function (error) { toast(error.message, 'error'); });
+          }
+        );
         break;
     }
   }
@@ -1510,6 +1554,20 @@
   $('mm-library-settings').addEventListener('click', openSettingsSheet);
 
   sheetBody.addEventListener('click', function (event) {
+    var confirmOk = event.target.closest('#mm-confirm-ok');
+    if (confirmOk) {
+      var callback = pendingConfirm;
+      pendingConfirm = null;
+      closeSheet();
+      if (callback) callback();
+      return;
+    }
+    if (event.target.closest('#mm-confirm-cancel')) {
+      pendingConfirm = null;
+      closeSheet();
+      return;
+    }
+
     var playlistAction = event.target.closest('button[data-playlist-action]');
     if (playlistAction) { onPlaylistAction(playlistAction.dataset.playlistAction); return; }
 

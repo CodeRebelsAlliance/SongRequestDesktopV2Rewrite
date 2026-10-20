@@ -137,6 +137,7 @@ body { background: #121212; color: #e0e0e0; }
 .btn-unblacklist { background: #2a4a2a; color: #5f5; }
 .btn-queue { background: #1a3a6a; color: #8af; }
 .btn-playnext { background: #4a2a6a; color: #c8f; }
+.btn-playnow { background: #1a5a3a; color: #7f7; }
 
 /* Word filter */
 #wordfilter-controls { display: flex; gap: 10px; margin-bottom: 16px; flex-shrink: 0; }

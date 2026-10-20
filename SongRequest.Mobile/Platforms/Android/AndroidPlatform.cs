@@ -15,6 +15,7 @@ internal static class AndroidPlatform
     {
         // ── Playback ──────────────────────────────────────────────────────────
         AudioOutputFactory.Provider = () => new AndroidAudioOutput();
+        AudioOutputFactory.SoundboardProvider = () => new AndroidAudioOutput(requestAudioFocus: false);
         AudioOutputFactory.DeviceEnumerator = AndroidAudioDevices.Enumerate;
 
         // ── Decode: the platform's own demuxer + decoder ──────────────────────

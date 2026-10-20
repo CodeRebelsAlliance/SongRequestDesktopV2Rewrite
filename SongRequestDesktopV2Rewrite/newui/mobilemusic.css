@@ -936,6 +936,24 @@ input[type="search"] {
 
 .mm-sheet-empty { padding: 14px 4px; color: var(--mm-muted); font-size: 13.5px; }
 
+.mm-confirm-text {
+  padding: 2px 4px 14px;
+  color: var(--mm-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.mm-confirm-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+.mm-confirm-actions .mm-btn { flex: 1; }
+.mm-btn.mm-danger {
+  background: rgba(255, 180, 171, 0.14);
+  border-color: rgba(255, 180, 171, 0.28);
+  color: #ffb4ab;
+}
+
 /* Library import / scan progress inside the settings sheet. */
 .mm-import-progress {
   margin-top: 12px;

@@ -493,6 +493,15 @@ select option { background-color: var(--msb-surface-2); color: var(--msb-text); 
 .msb-sheet-action.is-danger { color: var(--msb-danger); }
 .msb-sheet-action.is-danger i { color: var(--msb-danger); }
 
+.msb-confirm-text {
+  padding: 2px 12px 14px;
+  color: var(--msb-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.msb-confirm-actions { display: flex; gap: 8px; padding: 0 12px; }
+.msb-confirm-actions .msb-btn { flex: 1; }
+
 /* ── Toasts ──────────────────────────────────────────────── */
 #msb-toasts {
   position: fixed;

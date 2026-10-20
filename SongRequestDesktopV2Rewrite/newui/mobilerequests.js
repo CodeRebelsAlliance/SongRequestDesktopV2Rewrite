@@ -83,6 +83,7 @@
   var ICONS = {
     queueSong: 'fas fa-list',
     playNext: 'fas fa-forward-step',
+    playNow: 'fas fa-play',
     approve: 'fas fa-check-circle',
     unapprove: 'fas fa-times-circle',
     delete: 'fas fa-trash-alt',

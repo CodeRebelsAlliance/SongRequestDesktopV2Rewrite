@@ -895,6 +895,18 @@ port; they affect the desktop app too):
   sign-in) now keep their per-page response target across awaits, which fixes
   selecting a local sound file from the soundboard editor.
 
+- **Visualization / soundboard**: the mobile stage visualization now uses the same
+  Material app bar, mode-chip grid and canvas layout as the rest of the mobile UI.
+  Soundboard deletes use an in-app confirmation sheet (Android WebView's
+  `confirm()` was unreliable), and Android soundboard clips no longer request
+  audio focus per instance — overlay clips now mix instead of pausing/restarting
+  each other. Overlay has a dedicated engine test.
+- **Requests / library**: request and blacklist rows gained **Play Now** on both
+  desktop and mobile (downloads if needed, then replaces the queue and starts).
+  Library/playlist deletes on mobile use the same confirmation sheet. Playlist
+  **Play/Shuffle** now starts the first track immediately instead of only filling
+  the playlist buffer. Recently Played rows show “Played … ago” timestamps.
+
 **Milestone totals for the chosen full-parity programme:** Android-only through
 M6 ≈ 16–22 dev-weeks; +iOS ≈ 19–26; +M8 ≈ 21–29. (M0–M2 alone — shared core,
 mobile shell, native audio — is a usable "control the queue and play from the

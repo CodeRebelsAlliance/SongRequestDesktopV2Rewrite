@@ -286,6 +286,7 @@
   var sheet = $('msb-sheet');
   var sheetScrim = $('msb-sheet-scrim');
   var sheetBody = $('msb-sheet-body');
+  var pendingConfirm = null;
 
   function openSheet(html) {
     sheetBody.innerHTML = html;
@@ -295,6 +296,20 @@
       sheet.classList.add('is-open');
       sheetScrim.classList.add('is-open');
     });
+  }
+
+  // Android's HybridWebView does not reliably return from window.confirm(), so
+  // destructive actions get an in-app confirmation sheet.
+  function openConfirmSheet(title, message, confirmLabel, callback) {
+    pendingConfirm = callback;
+    openSheet(
+      '<div class="msb-sheet-title">' + esc(title) + '</div>' +
+      '<div class="msb-confirm-text">' + esc(message) + '</div>' +
+      '<div class="msb-confirm-actions">' +
+        '<button id="msb-confirm-cancel" class="msb-btn">Cancel</button>' +
+        '<button id="msb-confirm-ok" class="msb-btn msb-btn-danger">' + esc(confirmLabel) + '</button>' +
+      '</div>'
+    );
   }
 
   function closeSheet() {
@@ -324,6 +339,20 @@
   }
 
   sheetBody.addEventListener('click', function (event) {
+    var confirmOk = event.target.closest('#msb-confirm-ok');
+    if (confirmOk) {
+      var callback = pendingConfirm;
+      pendingConfirm = null;
+      closeSheet();
+      if (callback) callback();
+      return;
+    }
+    if (event.target.closest('#msb-confirm-cancel')) {
+      pendingConfirm = null;
+      closeSheet();
+      return;
+    }
+
     var action = event.target.closest('button[data-pad-action]');
     if (!action) return;
 
@@ -338,18 +367,25 @@
         openEdit(button);
         break;
       case 'clear-midi':
-        if (!window.confirm('Clear the MIDI mapping for “' + (button.name || 'this pad') + '”?')) return;
-        request('soundboardClearMidi', { row: row, col: col }).then(function () {
-          toast('MIDI mapping cleared', 'success');
-          refreshState(true);
-        }).catch(function (error) { toast(error.message, 'error'); });
+        openConfirmSheet('Clear MIDI mapping',
+          'Clear the MIDI mapping for “' + (button.name || 'this pad') + '”?', 'Clear',
+          function () {
+            request('soundboardClearMidi', { row: row, col: col }).then(function () {
+              toast('MIDI mapping cleared', 'success');
+              refreshState(true);
+            }).catch(function (error) { toast(error.message, 'error'); });
+          });
         break;
       case 'delete':
-        if (!window.confirm('Delete “' + (button.name || 'this sound') + '”?')) return;
-        request('soundboardDeleteButton', { row: row, col: col }).then(function () {
-          toast('Sound deleted', 'success');
-          refreshState(true);
-        }).catch(function (error) { toast(error.message, 'error'); });
+        openConfirmSheet('Delete sound',
+          'Delete “' + (button.name || 'this sound') + '”?', 'Delete',
+          function () {
+            request('soundboardDeleteButton', { row: row, col: col }).then(function (result) {
+              if (result && result.error) { toast(result.error, 'error'); return; }
+              toast('Sound deleted', 'success');
+              refreshState(true);
+            }).catch(function (error) { toast(error.message, 'error'); });
+          });
         break;
     }
   });
@@ -509,12 +545,15 @@
 
   $('msb-edit-midi-clear').addEventListener('click', function () {
     if (!editing) return;
-    if (!window.confirm('Clear the MIDI mapping for this pad?')) return;
-    request('soundboardClearMidi', { row: editing.row, col: editing.col }).then(function () {
-      toast('MIDI mapping cleared', 'success');
-      refreshState(true);
-      if (editing) renderEditMidi(findButton(editing.row, editing.col) || {});
-    }).catch(function (error) { toast(error.message, 'error'); });
+    openConfirmSheet('Clear MIDI mapping', 'Clear the MIDI mapping for this pad?', 'Clear', function () {
+      if (!editing) return;
+      request('soundboardClearMidi', { row: editing.row, col: editing.col }).then(function () {
+        toast('MIDI mapping cleared', 'success');
+        var row = editing.row, col = editing.col;
+        refreshState(true);
+        renderEditMidi(findButton(row, col) || {});
+      }).catch(function (error) { toast(error.message, 'error'); });
+    });
   });
 
   $('msb-edit-midi-assign').addEventListener('click', function () {
@@ -575,13 +614,16 @@
 
   $('msb-edit-delete').addEventListener('click', function () {
     if (!editing) return;
-    if (!window.confirm('Delete this sound?')) return;
-    request('soundboardDeleteButton', { row: editing.row, col: editing.col }).then(function () {
-      toast('Sound deleted', 'success');
-      editing = null;
-      showView('board');
-      refreshState(true);
-    }).catch(function (error) { toast(error.message, 'error'); });
+    var target = { row: editing.row, col: editing.col };
+    openConfirmSheet('Delete sound', 'Delete this sound?', 'Delete', function () {
+      request('soundboardDeleteButton', target).then(function (result) {
+        if (result && result.error) { toast(result.error, 'error'); return; }
+        toast('Sound deleted', 'success');
+        editing = null;
+        showView('board');
+        refreshState(true);
+      }).catch(function (error) { toast(error.message, 'error'); });
+    });
   });
 
   $('msb-edit-back').addEventListener('click', function () {
@@ -686,12 +728,15 @@
   $('msb-page-delete').addEventListener('click', function () {
     var page = state.pages[pagesSelected];
     if (!page || state.pages.length <= 1) return;
-    if (!window.confirm('Delete page “' + page.name + '”?')) return;
-    request('soundboardDeletePage', { index: pagesSelected }).then(function () {
-      toast('Page deleted', 'success');
-      pagesSelected = Math.max(0, pagesSelected - 1);
-      refreshState(true);
-    }).catch(function (error) { toast(error.message, 'error'); });
+    var index = pagesSelected;
+    openConfirmSheet('Delete page', 'Delete page “' + page.name + '”?', 'Delete', function () {
+      request('soundboardDeletePage', { index: index }).then(function (result) {
+        if (result && result.error) { toast(result.error, 'error'); return; }
+        toast('Page deleted', 'success');
+        pagesSelected = Math.max(0, index - 1);
+        refreshState(true);
+      }).catch(function (error) { toast(error.message, 'error'); });
+    });
   });
 
   $('msb-page-up').addEventListener('click', function () {

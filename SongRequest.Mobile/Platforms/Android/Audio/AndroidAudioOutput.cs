@@ -54,9 +54,11 @@ internal sealed class AndroidAudioOutput : IAudioOutput
     private long _samplesWritten;
     private AudioFocusRequestClass? _focusRequest;
     private bool _resumeOnFocusGain;
+    private readonly bool _requestAudioFocus;
 
-    public AndroidAudioOutput()
+    public AndroidAudioOutput(bool requestAudioFocus = true)
     {
+        _requestAudioFocus = requestAudioFocus;
         try { _audioManager = (AudioManager?)Android.App.Application.Context.GetSystemService(Context.AudioService); }
         catch { _audioManager = null; }
     }
@@ -132,7 +134,7 @@ internal sealed class AndroidAudioOutput : IAudioOutput
             }
         }
 
-        RequestAudioFocus();
+        if (_requestAudioFocus) RequestAudioFocus();
 
         // Android 13+: the playback notification needs POST_NOTIFICATIONS. Ask the
         // first time the user actually starts something — not at launch, where the
@@ -172,7 +174,7 @@ internal sealed class AndroidAudioOutput : IAudioOutput
         try { track?.Release(); } catch { }
         try { thread?.Join(250); } catch { }
 
-        AbandonAudioFocus();
+        if (_requestAudioFocus) AbandonAudioFocus();
         PlaybackStopped?.Invoke(this, EventArgs.Empty);
     }
 

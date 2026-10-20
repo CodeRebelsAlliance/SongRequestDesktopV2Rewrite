@@ -25,3 +25,99 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ge
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     color: #555; font-size: 24px; font-weight: 700; pointer-events: none;
 }
+
+/* ── Mobile Material layout ──────────────────────────────── */
+:root[data-shell="mobile"] {
+  --vz-bg: #121212;
+  --vz-surface: #1d1b20;
+  --vz-surface-2: #26232c;
+  --vz-text: #ece7f0;
+  --vz-muted: #a9a4b3;
+  --vz-primary: #d0bcff;
+  --vz-outline: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-shell="mobile"] body {
+  background: var(--vz-bg);
+  color: var(--vz-text);
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Roboto', sans-serif;
+}
+
+:root[data-shell="mobile"] #viz-root { height: 100vh; height: 100dvh; background: var(--vz-bg); }
+
+:root[data-shell="mobile"] #viz-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: calc(6px + env(safe-area-inset-top)) 10px 6px;
+  background: var(--vz-surface);
+  border-bottom: 1px solid var(--vz-outline);
+}
+
+:root[data-shell="mobile"] #viz-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--vz-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+:root[data-shell="mobile"] #viz-title i { color: var(--vz-primary); margin: 0; font-size: 16px; }
+
+:root[data-shell="mobile"] #viz-fullscreen {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--vz-text);
+  font-size: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+:root[data-shell="mobile"] #viz-fullscreen:active { background: rgba(255, 255, 255, 0.08); }
+
+:root[data-shell="mobile"] #viz-modes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+
+:root[data-shell="mobile"] .viz-mode {
+  flex: 1 1 calc(33.333% - 4px);
+  min-height: 54px;
+  padding: 7px 6px;
+  border-radius: 14px;
+  border: 1px solid var(--vz-outline);
+  background: var(--vz-surface-2);
+  color: var(--vz-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: normal;
+}
+:root[data-shell="mobile"] .viz-mode i { font-size: 15px; }
+:root[data-shell="mobile"] .viz-mode.active {
+  background: #40384f;
+  border-color: transparent;
+  color: #f5f0ff;
+}
+:root[data-shell="mobile"] .viz-mode.active i { color: var(--vz-primary); }
+
+:root[data-shell="mobile"] #viz-stage { background: #0a0a0a; }
+:root[data-shell="mobile"] #viz-idle {
+  color: var(--vz-muted);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}

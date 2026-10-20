@@ -289,8 +289,8 @@ and notification; `adb shell dumpsys activity services` reported
 
 - [x] `node --test tests/js` covers the new bridge diff (`stagebridge.test.js`)
       and the mobile page wiring (`mobilepages.test.js`).
-- [x] Desktop regression suite green with the new pages: 512 unit, 44/45
-      integration (1 environment skip, FFmpeg/cookies), 54 JS tests; mobile
+- [x] Desktop regression suite green with the new pages: 513 unit, 44/45
+      integration (1 environment skip, FFmpeg/cookies), 57 JS tests; mobile
       Android Release build 0 warnings.
 - [x] **Requests (device)**: Requests/Pending/Blacklist/Word Filter/Dashboard
       tabs scroll as chips; tapping a card opens the M3 action sheet; Submit Song,
@@ -348,6 +348,15 @@ and notification; `adb shell dumpsys activity services` reported
       before the track ends; loudness analysis no longer delays it.
 - [x] **Stage source**: Player → Music Share → Player restores the player
       track/lyrics; zoom controls are hidden until hovered on desktop.
+- [x] **Visualization**: the stage tab shows the Material toolbar/mode grid and
+      canvas; fullscreen still hides the native navigation bar.
+- [x] **Soundboard overlay/delete**: two presses of an overlay pad produce two
+      simultaneous clips; Delete opens an in-app confirmation and clears the pad.
+- [x] **Requests Play Now**: request and blacklist rows have Play Now on desktop
+      and in the mobile action sheet; it downloads if needed and starts playback.
+- [x] **Library delete / playlist play**: deleting a regular library song removes
+      it; Play/Shuffle on a playlist starts the first song immediately.
+- [x] **Recently Played**: rows show the played timestamp (relative time).
 - [ ] Still to check on real hardware: HDMI second display, a TV browser over
       Wi-Fi, long-press timing on low-end phones and the MIDI assign page with a
       physical controller.

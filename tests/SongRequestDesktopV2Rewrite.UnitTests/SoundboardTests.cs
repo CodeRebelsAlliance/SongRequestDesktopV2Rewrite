@@ -165,6 +165,43 @@ public class SoundboardTests
         => Assert.IsType<VolumeSampleProvider>(output.Source);
 
     [Fact]
+    public void PlayButton_Overlay_StartsAnotherInstanceWithoutStoppingTheFirst()
+    {
+        TestSupport.ResetSoundboardConfig();
+        using var engine = new SoundboardEngine { FadeDurationMs = 0 };
+
+        var folder = SoundboardConfiguration.GetSoundboardFolder();
+        Directory.CreateDirectory(folder);
+        var fileName = "overlay-test-" + Guid.NewGuid().ToString("N") + ".wav";
+        File.WriteAllBytes(Path.Combine(folder, fileName), new byte[] { 0 });
+
+        var outputs = new List<FakeAudioOutput>();
+        engine.OutputFactory = () =>
+        {
+            var output = new FakeAudioOutput();
+            outputs.Add(output);
+            return output;
+        };
+        engine.SourceFactory = _ => new FakeAudioSource(frames: 44100);
+
+        var page = engine.Config.GetCurrentPage();
+        var button = page.GetButton(0, 0);
+        button.Name = "Overlay";
+        button.SoundFile = fileName;
+        button.IsEnabled = true;
+        button.RepeatMode = "overlay";
+        page.SetButton(0, 0, button);
+        engine.Config.Save();
+
+        engine.PlayButton(0, 0);
+        engine.PlayButton(0, 0);
+
+        Assert.Equal(2, outputs.Count);
+        Assert.Equal(0, outputs[0].StopCount);
+        Assert.Equal(1, outputs[1].PlayCount);
+    }
+
+    [Fact]
     public void PlayButton_WithoutFadeIn_StartsAtTargetVolume()
     {
         var (engine, output) = PrepareFadeEngine(fadeIn: false, fadeOut: false, volume: 0.5);

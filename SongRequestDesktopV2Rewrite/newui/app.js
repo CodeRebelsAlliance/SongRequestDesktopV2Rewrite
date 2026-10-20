@@ -1662,6 +1662,7 @@
       actions.innerHTML =
         '<button class="btn-queue" data-action="queueSong" data-ytid="' + v.ytid + '"><i class="fas fa-list"></i> Queue</button>' +
         '<button class="btn-playnext" data-action="playNext" data-ytid="' + v.ytid + '"><i class="fas fa-forward"></i> Play Next</button>' +
+        '<button class="btn-playnow" data-action="playNow" data-ytid="' + v.ytid + '"><i class="fas fa-play"></i> Play Now</button>' +
         (label === 'approved'
           ? '<button class="btn-unapprove" data-action="unapprove" data-ytid="' + v.ytid + '"><i class="fas fa-times-circle"></i> Unapprove</button>'
           : '<button class="btn-approve" data-action="approve" data-ytid="' + v.ytid + '"><i class="fas fa-check-circle"></i> Approve</button>') +
@@ -1727,6 +1728,26 @@
   }
 
   function doAction(action, ytid) {
+    if (action === 'playNow') {
+      setStatus('Preparing ' + ytid + '...');
+      send('downloadAndProcess', { ytid, action: 'play' }, { timeout: 30 * 60 * 1000 })
+        .then(res => {
+          if (res && res.error) {
+            toast('Failed to play: ' + res.error, 'error');
+            log('Failed to play: ' + res.error, 'error');
+            return;
+          }
+          toast('Playing ' + ytid, 'success');
+          log('Playing ' + ytid, 'success');
+          loadData();
+        })
+        .catch(e => {
+          toast('Failed to play: ' + e.message, 'error');
+          log('Failed to play: ' + e.message, 'error');
+        });
+      return;
+    }
+
     if (action === 'queueSong' || action === 'playNext') {
       setStatus('Checking ' + ytid + '...');
       send('isFileDownloaded', { ytid }).then(res => {
