@@ -48,6 +48,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _globalKeyboardShortcuts = false;
         private bool _toolPromptDismissed = false;
         private string _cookieBrowser = string.Empty;
+        private bool _autoGrabCookies = false;
         private bool _systemMediaIntegration = true;
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -314,6 +315,18 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _cookieBrowser;
             set => SetField(ref _cookieBrowser, value ?? string.Empty);
+        }
+
+        /// <summary>
+        /// When enabled, the desktop imports cookies from the selected browser
+        /// automatically during startup/settings instead of waiting for a click.
+        /// On mobile it makes the in-app YouTube sign-in press Done automatically
+        /// once the logged-in YouTube cookies are present.
+        /// </summary>
+        public bool AutoGrabCookies
+        {
+            get => _autoGrabCookies;
+            set => SetField(ref _autoGrabCookies, value);
         }
 
         /// <summary>

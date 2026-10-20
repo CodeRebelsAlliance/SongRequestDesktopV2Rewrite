@@ -289,8 +289,8 @@ and notification; `adb shell dumpsys activity services` reported
 
 - [x] `node --test tests/js` covers the new bridge diff (`stagebridge.test.js`)
       and the mobile page wiring (`mobilepages.test.js`).
-- [x] Desktop regression suite green with the new pages: 511 unit, 43/44
-      integration (1 environment skip, FFmpeg/cookies), 52 JS tests; mobile
+- [x] Desktop regression suite green with the new pages: 512 unit, 44/45
+      integration (1 environment skip, FFmpeg/cookies), 54 JS tests; mobile
       Android Release build 0 warnings.
 - [x] **Requests (device)**: Requests/Pending/Blacklist/Word Filter/Dashboard
       tabs scroll as chips; tapping a card opens the M3 action sheet; Submit Song,
@@ -331,6 +331,23 @@ and notification; `adb shell dumpsys activity services` reported
 - [x] **Android signing**: CI generates/caches one fallback key at
       `.android-signing/debug.keystore`; re-running the workflow produces the
       same certificate (or uses the repository release keystore secrets).
+- [x] **Onboarding**: splash/update/launch/auth are Material pages on mobile; the
+      native navbar stays hidden until setup completes, then appears in the chosen
+      mode.
+- [x] **Auto cookie import**: enable the setting, pick a browser and reload the
+      desktop app — cookies import without pressing “Grab cookies”. On mobile,
+      sign-in continues automatically once the signed-in YouTube page has loaded.
+- [x] **Requests tabs/settings**: tabs wrap as an icon grid; settings uses a
+      two-column tab grid, fills the viewport and has no dead space below the
+      footer; Remote Control mappings render as labelled cards.
+- [x] **Soundboard file pick**: Browse → choose an audio file → the response
+      reaches the soundboard page and the file name/selected state is applied.
+- [x] **Library removal**: removing a sent-in song from the library removes the
+      row and keeps the file for sent-in.
+- [x] **Crossfade**: last queue song → first playlist song starts a crossfade
+      before the track ends; loudness analysis no longer delays it.
+- [x] **Stage source**: Player → Music Share → Player restores the player
+      track/lyrics; zoom controls are hidden until hovered on desktop.
 - [ ] Still to check on real hardware: HDMI second display, a TV browser over
       Wi-Fi, long-press timing on low-end phones and the MIDI assign page with a
       physical controller.

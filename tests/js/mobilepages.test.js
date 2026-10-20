@@ -103,6 +103,28 @@ test('blacklist rows are enriched with metadata, not just artwork', () => {
   assert.match(cache, /MetadataFetched/);
 });
 
+test('automatic cookie import is available on desktop and mobile', () => {
+  const root = path.join(__dirname, '..', '..');
+  const config = fs.readFileSync(path.join(root, 'SongRequest.Core', 'ConfigService.cs'), 'utf8');
+  const signIn = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'Platforms', 'Android', 'AndroidSignInPage.cs'), 'utf8');
+  const desktop = read('index.html');
+  const mobile = read('mobilerequests.html');
+
+  assert.match(config, /AutoGrabCookies/);
+  assert.match(signIn, /HasYouTubeSession/);
+  assert.match(desktop, /id="s-yt-auto"/);
+  assert.match(mobile, /id="s-yt-auto"/);
+});
+
+test('mobile startup and request navigation use the Material layout', () => {
+  const css = read('mobilerequests.css');
+  const html = read('mobilerequests.html');
+  assert.match(css, /#startup-overlay/);
+  assert.match(css, /#startup-launch-grid/);
+  assert.match(css, /#tabbar \{/);
+  assert.match(html, /data-tab="all-songs"[^>]*><i /);
+});
+
 test('mobile music page exposes repeat state and playlist browsing', () => {
   const html = read('mobilemusic.html');
   assert.match(html, /id="mm-repeat"[^>]*aria-pressed="false"/);

@@ -468,6 +468,7 @@
       // Pre-select the browser remembered from a previous cookie import.
       await ensureAuthBrowsers();
       selectAuthBrowser(cfg.cookieBrowser || '');
+      document.getElementById('s-yt-auto').checked = cfg.autoGrabCookies === true;
 
       statusEl.textContent = 'Loaded.'; loadData();
       loadLibraryStats();
@@ -519,6 +520,7 @@
         closeToTray: document.getElementById('s-close-tray').checked,
         globalKeyboardShortcuts: document.getElementById('s-global-hotkeys').checked,
         systemMediaIntegration: document.getElementById('s-system-media').checked,
+        autoGrabCookies: document.getElementById('s-yt-auto').checked,
         libraryScanFolders: _libraryScanFolders,
         libraryAllowedExtensions: document.getElementById('s-library-extensions').value.split(',').map(function(e){return e.trim()}).filter(function(e){return e}),
         libraryAutoScanOnStartup: document.getElementById('s-library-auto-scan').checked,
@@ -944,10 +946,14 @@
 
   ensureAuthBrowsers();
   document.getElementById('s-yt-browser').addEventListener('change', function () {
-    send('saveCookieBrowser', { browser: this.value }).catch(() => { });
+    const browser = this.value;
+    send('saveCookieBrowser', { browser }).catch(() => { });
+    if (document.getElementById('s-yt-auto').checked && browser) {
+      grabCookies(browser);
+    }
   });
-  document.getElementById('s-yt-grab').onclick = async () => {
-    const browser = document.getElementById('s-yt-browser').value;
+
+  async function grabCookies(browser) {
     if (!browser) { ytStatusEl.textContent = 'No browser available.'; return; }
     ytStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + browser + '...</span>';
     try {
@@ -957,7 +963,19 @@
         : 'Failed: ' + (r.error || 'no cookies found');
       if (r.success) await send('saveCookieBrowser', { browser }).catch(() => { });
     } catch (e) { ytStatusEl.textContent = 'Error: ' + e.message; }
+  }
+
+  document.getElementById('s-yt-grab').onclick = () => {
+    const browser = document.getElementById('s-yt-browser').value;
+    grabCookies(browser);
   };
+  document.getElementById('s-yt-auto').addEventListener('change', function () {
+    send('saveSettings', { settings: { autoGrabCookies: this.checked } }).catch(() => { });
+    if (this.checked) {
+      const browser = document.getElementById('s-yt-browser').value;
+      if (browser) grabCookies(browser);
+    }
+  });
   document.getElementById('s-yt-save').onclick = async () => {
     const text = document.getElementById('s-yt-cookies').value;
     if (!text.trim()) { ytStatusEl.textContent = 'Paste some cookies first.'; return; }
@@ -2138,51 +2156,75 @@
         '<button id="startup-auth-no" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
     }
 
-    await new Promise(resolve => {
-      document.getElementById('startup-auth-no').onclick = () => resolve();
-      document.getElementById('startup-auth-yes').onclick = async () => {
-        if (signInSupported) {
-          authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Waiting for sign-in...</span>';
+    let autoAuthSucceeded = false;
+    if (!signInSupported && data.autoGrabCookies) {
+      const autoBrowser = data.cookieBrowser || (authBrowsers.length ? authBrowsers[0] : '');
+      if (autoBrowser) {
+        authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + autoBrowser + '…</span>';
+        try {
+          const r = await send('grabCookies', { browser: autoBrowser });
+          if (r.success) {
+            authStatusEl.textContent = 'Authentication successful (' + r.cookieCount + ' cookies)';
+            await send('saveCookieBrowser', { browser: autoBrowser }).catch(() => { });
+            autoAuthSucceeded = true;
+          } else {
+            authStatusEl.textContent = 'Automatic import failed: ' + (r.error || 'no cookies found');
+          }
+        } catch (e) {
+          authStatusEl.textContent = 'Automatic import error: ' + e.message;
+        }
+      }
+    }
+
+    if (autoAuthSucceeded) {
+      await delay(700);
+    } else {
+      await new Promise(resolve => {
+        document.getElementById('startup-auth-no').onclick = () => resolve();
+        document.getElementById('startup-auth-yes').onclick = async () => {
+          if (signInSupported) {
+            authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Waiting for sign-in...</span>';
+            try {
+              const r = await send('signIn');
+              if (r.success) {
+                authStatusEl.textContent = 'Signed in (' + r.cookieCount + ' cookies)';
+                resolve();
+              } else if (r.cancelled) {
+                authStatusEl.textContent = 'Sign-in cancelled.';
+              } else {
+                authStatusEl.innerHTML = 'Sign-in failed: ' + (r.error || 'no cookies') +
+                  '<br><br><button id="startup-auth-retry" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px">Retry</button> ' +
+                  '<button id="startup-auth-skip" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
+                document.getElementById('startup-auth-retry').onclick = () => document.getElementById('startup-auth-yes').click();
+                document.getElementById('startup-auth-skip').onclick = () => resolve();
+              }
+            } catch (e) {
+              authStatusEl.textContent = 'Sign-in error: ' + e.message;
+            }
+            return;
+          }
+
+          const browser = document.getElementById('startup-auth-browser').value;
+          authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + browser + '...</span>';
           try {
-            const r = await send('signIn');
+            const r = await send('grabCookies', { browser });
             if (r.success) {
-              authStatusEl.textContent = 'Signed in (' + r.cookieCount + ' cookies)';
+              authStatusEl.textContent = 'Authentication successful (' + r.cookieCount + ' cookies)';
+              await send('saveCookieBrowser', { browser }).catch(() => { });
               resolve();
-            } else if (r.cancelled) {
-              authStatusEl.textContent = 'Sign-in cancelled.';
             } else {
-              authStatusEl.innerHTML = 'Sign-in failed: ' + (r.error || 'no cookies') +
+              authStatusEl.innerHTML = 'Import failed: ' + (r.error || 'no cookies found') +
                 '<br><br><button id="startup-auth-retry" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px">Retry</button> ' +
                 '<button id="startup-auth-skip" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
               document.getElementById('startup-auth-retry').onclick = () => document.getElementById('startup-auth-yes').click();
               document.getElementById('startup-auth-skip').onclick = () => resolve();
             }
           } catch (e) {
-            authStatusEl.textContent = 'Sign-in error: ' + e.message;
+            authStatusEl.textContent = 'Authentication error: ' + e.message;
           }
-          return;
-        }
-
-        const browser = document.getElementById('startup-auth-browser').value;
-        authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + browser + '...</span>';
-        try {
-          const r = await send('grabCookies', { browser });
-          if (r.success) {
-            authStatusEl.textContent = 'Authentication successful (' + r.cookieCount + ' cookies)';
-            await send('saveCookieBrowser', { browser }).catch(() => { });
-            resolve();
-          } else {
-            authStatusEl.innerHTML = 'Import failed: ' + (r.error || 'no cookies found') +
-              '<br><br><button id="startup-auth-retry" class="action-btn" style="width:auto;padding:8px 20px;font-size:13px">Retry</button> ' +
-              '<button id="startup-auth-skip" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
-            document.getElementById('startup-auth-retry').onclick = () => document.getElementById('startup-auth-yes').click();
-            document.getElementById('startup-auth-skip').onclick = () => resolve();
-          }
-        } catch (e) {
-          authStatusEl.textContent = 'Authentication error: ' + e.message;
-        }
-      };
-    });
+        };
+      });
+    }
     await delay(600);
 
     // Complete setup

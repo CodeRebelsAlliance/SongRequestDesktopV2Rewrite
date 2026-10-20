@@ -418,8 +418,12 @@ public sealed class MusicEngine
     public float CalculateNormalizedVolume(Song song, float baseVolume)
     {
         var cfg = ConfigAccessor();
+        // -1 is the "not calculated yet" sentinel; treat it like a missing value
+        // instead of applying a huge gain while the background scan is running.
+        var loudnessUnknown = song.PerceivedLoudness < -50 ||
+                              System.Math.Abs(song.PerceivedLoudness + 1.0) < 0.0001;
         if (cfg == null || !cfg.NormalizeVolume || !cfg.NormalizationActive ||
-            cfg.DefaultVolume < 0 || song.PerceivedLoudness < -50)
+            cfg.DefaultVolume < 0 || loudnessUnknown)
         {
             return baseVolume;
         }
@@ -730,8 +734,14 @@ public sealed class MusicEngine
         if ((nowUtc - _lastSecondaryTickUtc) < TimeSpan.FromMilliseconds(250)) return;
         _lastSecondaryTickUtc = nowUtc;
 
-        double cross = CrossfadeSeconds;
-        if (cross <= 0) cross = 4;
+        // Fill the next queue slot from the playlist *before* the crossfade check.
+        // Previously the last queue song hit the "Queue.Count == 1" branch and was
+        // replaced only after it had ended, so the playlist song could never
+        // crossfade in.
+        if (!IsCrossfading && Queue.Count == 1 && PlaylistQueue.Count > 0)
+            RefillQueueFromPlaylist();
+
+        double cross = System.Math.Max(0, CrossfadeSeconds);
         var remaining = remainingTime.TotalSeconds;
 
         if (!IsCrossfading && Queue.Count > 1)
@@ -791,8 +801,11 @@ public sealed class MusicEngine
         if (CurrentReader == null) return;
         if (!System.IO.File.Exists(nextSong.songPath)) return;
 
+        // Loudness analysis is slow (seconds). It must never delay the fade: start
+        // it in the background and use the base volume for this transition. The
+        // next transition/poll uses the cached value.
         if (nextSong.PerceivedLoudness < 0)
-            await System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(nextSong));
+            _ = System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(nextSong));
 
         float targetNextVolume = CalculateNormalizedVolume(nextSong, Volume);
 
@@ -808,7 +821,7 @@ public sealed class MusicEngine
         Mixer.AddMixerInput(NextVolProvider);
 
         double cross = CrossfadeSeconds;
-        if (cross <= 0) cross = 4;
+        if (cross <= 0) cross = 0.15;
 
         float currentStartVolume = CurrentVolProvider?.Volume ?? Volume;
         int steps = 40;
@@ -877,7 +890,7 @@ public sealed class MusicEngine
         try
         {
             if (nextSong.PerceivedLoudness < 0)
-                await System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(nextSong));
+                _ = System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(nextSong));
 
             StopPlayback();
 
@@ -989,6 +1002,15 @@ public sealed class MusicEngine
         PlaylistQueue.Clear();
         var ordered = shuffle ? songs.OrderBy(_ => Random.Shared.Next()).ToList() : songs.ToList();
         foreach (var s in ordered) PlaylistQueue.Add(s);
+
+        var cfg = ConfigAccessor();
+        if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+        {
+            // Warm the next few tracks only; calculating a 500-song playlist at once
+            // would saturate the CPU. Refill/transition warms the rest as needed.
+            foreach (var song in ordered.Take(3))
+                _ = System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(song));
+        }
     }
 
     public void ClearPlaylistQueue() => PlaylistQueue.Clear();
@@ -1013,6 +1035,13 @@ public sealed class MusicEngine
             var next = PlaylistQueue[0];
             PlaylistQueue.RemoveAt(0);
             Queue.Add(next);
+
+            var cfg = ConfigAccessor();
+            if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive &&
+                next.PerceivedLoudness < 0)
+            {
+                _ = System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(next));
+            }
         }
     }
 }

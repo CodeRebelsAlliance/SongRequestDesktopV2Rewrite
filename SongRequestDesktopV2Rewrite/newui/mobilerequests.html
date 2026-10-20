@@ -27,11 +27,11 @@
     </div>
   </div>
   <div id="tabbar" class="startup-hide">
-    <button class="tab-btn active" data-tab="all-songs">All Songs</button>
-    <button class="tab-btn" data-tab="pending">Pending Approval</button>
-    <button class="tab-btn" data-tab="blacklist">Blacklist</button>
-    <button class="tab-btn" data-tab="wordfilter">Word Filter</button>
-    <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn active" data-tab="all-songs"><i class="fas fa-list-ul"></i><span>All Songs</span></button>
+    <button class="tab-btn" data-tab="pending"><i class="fas fa-hourglass-half"></i><span>Pending</span></button>
+    <button class="tab-btn" data-tab="blacklist"><i class="fas fa-ban"></i><span>Blacklist</span></button>
+    <button class="tab-btn" data-tab="wordfilter"><i class="fas fa-filter"></i><span>Word Filter</span></button>
+    <button class="tab-btn" data-tab="dashboard"><i class="fas fa-chart-simple"></i><span>Dashboard</span></button>
   </div>
   <div id="main" class="startup-hide">
     <div id="panel-all-songs" class="panel active">
@@ -399,6 +399,7 @@
               </div>
               <div class="settings-hint">Requires yt-dlp. Sign in to YouTube in the selected browser first.</div>
             </div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-yt-auto" /> Automatically import cookies from the selected browser (and finish in-app sign-in on mobile)</label>
             <div class="settings-field">
               <label>Or paste cookies (cookies.txt or a Cookie header)</label>
               <textarea id="s-yt-cookies" class="settings-input" rows="3" placeholder="name=value; name2=value2; ..."></textarea>

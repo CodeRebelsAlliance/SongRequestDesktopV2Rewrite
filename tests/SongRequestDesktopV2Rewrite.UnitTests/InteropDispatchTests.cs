@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Net;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -80,6 +81,53 @@ public class InteropDispatchTests
 
         Assert.NotNull(devices);
         Assert.Contains(devices!, d => d["number"]?.ToObject<int>() == -1);
+    }
+
+    [Fact]
+    public async Task SoundboardBrowseFile_ResponseGoesToTheRequestingWindow_AfterAwait()
+    {
+        var (_, interop, defaultResponses) = Create();
+        var targeted = new ConcurrentQueue<string>();
+
+        var temp = Path.Combine(Path.GetTempPath(), "sr-sound-" + Guid.NewGuid().ToString("N") + ".wav");
+        try
+        {
+            File.WriteAllBytes(temp, new byte[] { 0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45 });
+            interop.PickSoundFile = async _ =>
+            {
+                await Task.Delay(50);       // forces the async continuation onto another thread
+                return temp;
+            };
+
+            var msg = new JObject
+            {
+                ["type"] = "request",
+                ["id"] = "browse-1",
+                ["method"] = "soundboardBrowseFile",
+                ["row"] = 0,
+                ["col"] = 0
+            };
+
+            interop.HandleMessage(msg.ToString(Formatting.None), targeted.Enqueue);
+
+            for (int i = 0; i < 300 && targeted.IsEmpty; i++) await Task.Delay(10);
+            Assert.True(targeted.TryDequeue(out var json), "no response reached the requesting page");
+
+            var response = JObject.Parse(json!);
+            Assert.Equal("browse-1", response["id"]?.ToString());
+            Assert.True(response["result"]?["success"]?.ToObject<bool>() == true);
+            Assert.Empty(defaultResponses);
+
+            var fileName = response["result"]?["fileName"]?.ToString();
+            if (!string.IsNullOrEmpty(fileName))
+            {
+                try { File.Delete(Path.Combine(SoundboardConfiguration.GetSoundboardFolder(), fileName)); } catch { }
+            }
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+        }
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
@@ -56,10 +57,15 @@ internal static class AndroidSignInPage
     private static ContentPage BuildPage()
     {
         var web = new Microsoft.Maui.Controls.WebView { Source = LoginUrl };
+        var autoDone = ConfigService.Instance.Current?.AutoGrabCookies == true;
+        var finished = false;
+        var checking = false;
 
         var status = new Label
         {
-            Text = "Sign in to YouTube, then tap Done.",
+            Text = autoDone
+                ? "Sign in to YouTube. The app continues automatically once the account page has loaded."
+                : "Sign in to YouTube, then tap Done.",
             FontSize = 12,
             TextColor = Colors.Gray,
             VerticalOptions = LayoutOptions.Center,
@@ -70,16 +76,61 @@ internal static class AndroidSignInPage
 
         cancel.Clicked += async (_, _) =>
         {
+            if (finished) return;
+            finished = true;
             await CloseAsync();
             _pending?.TrySetResult(null);
         };
 
         done.Clicked += async (_, _) =>
         {
+            if (finished) return;
+            finished = true;
             var cookies = HarvestCookies();
             await CloseAsync();
             _pending?.TrySetResult(cookies);
         };
+
+        if (autoDone)
+        {
+            // Google's login flow ends on youtube.com. Once that page has loaded and
+            // the signed-in session cookies are present, press Done for the user.
+            web.Navigated += async (_, e) =>
+            {
+                if (finished || checking || e.Result != WebNavigationResult.Success) return;
+
+                var url = e.Url ?? string.Empty;
+                if (!url.Contains("youtube.com", StringComparison.OrdinalIgnoreCase) &&
+                    !url.Contains("accounts.google.com", StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                checking = true;
+                status.Text = "Waiting for YouTube sign-in to complete…";
+                try
+                {
+                    for (var attempt = 0; attempt < 6 && !finished; attempt++)
+                    {
+                        await Task.Delay(1000);
+                        if (finished) return;
+
+                        var cookies = HarvestCookies();
+                        if (!HasYouTubeSession(cookies)) continue;
+
+                        finished = true;
+                        status.Text = "Signed in. Continuing…";
+                        await CloseAsync();
+                        _pending?.TrySetResult(cookies);
+                        return;
+                    }
+
+                    status.Text = "Sign in to YouTube, then tap Done.";
+                }
+                finally
+                {
+                    checking = false;
+                }
+            };
+        }
 
         var page = new ContentPage
         {
@@ -118,6 +169,18 @@ internal static class AndroidSignInPage
         Grid.SetRow((BindableObject)((Grid)page.Content).Children[1], 1);
 
         return page;
+    }
+
+    /// <summary>True when the cookie jar contains a real signed-in YouTube session.</summary>
+    private static bool HasYouTubeSession(List<System.Net.Cookie>? cookies)
+    {
+        if (cookies == null || cookies.Count == 0) return false;
+
+        var names = new HashSet<string>(cookies.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
+        return names.Contains("SAPISID") ||
+               names.Contains("__Secure-3PSID") ||
+               names.Contains("LOGIN_INFO") ||
+               names.Contains("SID");
     }
 
     private static async Task CloseAsync()

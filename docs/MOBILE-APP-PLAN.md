@@ -873,6 +873,28 @@ port; they affect the desktop app too):
   key and in-app updates were rejected. Repository secrets still take precedence
   for a proper release keystore.
 
+- **Onboarding & settings polish**: the startup splash/update/launch/auth flow is
+  now a Material page on mobile (safe-area insets, cards, progress, 2-column mode
+  picker). The requests tab switcher is a wrapping icon grid instead of a
+  horizontal scroller, the settings page uses a two-column tab grid and fills the
+  viewport (no dead space under the save bar), and the Remote Control tab renders
+  each mapping as a mobile card with labelled key/MIDI fields.
+- **Automatic cookie import**: `AutoGrabCookies` is a persisted setting (desktop
+  and mobile). On desktop the startup flow and browser selection import cookies
+  automatically; on mobile the in-app sign-in page watches successful YouTube
+  navigations and presses Done once the signed-in session cookies exist.
+- **Playback / presentation fixes**: the last queue song now refills the next slot
+  from the playlist before the crossfade check, and loudness analysis no longer
+  blocks a transition (it runs in the background), so queue → playlist crossfades
+  start on time. Switching the stage source back to Player now re-pushes the
+  player state instead of leaving the stale Music Share view. Presentation zoom
+  controls hide until hovered on mouse devices and stay available on touch/TV.
+- **Library / soundboard fixes**: removing a song from the library works even when
+  it is still in the sent-in list (the file is kept for sent-in, the library row
+  is removed). Async interop responses (soundboard file picker, library import,
+  sign-in) now keep their per-page response target across awaits, which fixes
+  selecting a local sound file from the soundboard editor.
+
 **Milestone totals for the chosen full-parity programme:** Android-only through
 M6 ≈ 16–22 dev-weeks; +iOS ≈ 19–26; +M8 ≈ 21–29. (M0–M2 alone — shared core,
 mobile shell, native audio — is a usable "control the queue and play from the

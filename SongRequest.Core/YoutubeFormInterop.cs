@@ -245,7 +245,7 @@ public class YoutubeFormInterop
     /// </summary>
     public async void HandleMessage(string json, Action<string> responseTarget)
     {
-        _responseTarget = responseTarget;
+        _responseTarget.Value = responseTarget;
         try
         {
             var msg = JObject.Parse(json);
@@ -266,18 +266,17 @@ public class YoutubeFormInterop
         catch { }
         finally
         {
-            _responseTarget = null;
+            _responseTarget.Value = null;
         }
     }
 
-    [ThreadStatic]
-    private static Action<string>? _responseTarget;
+    private static readonly AsyncLocal<Action<string>?> _responseTarget = new();
 
     private async Task HandleRequest(JObject msg)
     {
         var id = msg["id"]?.ToString();
         var method = msg["method"]?.ToString();
-        var responseTarget = _responseTarget ?? SendMessage;
+        var responseTarget = _responseTarget.Value ?? SendMessage;
 
         try
         {
@@ -340,7 +339,10 @@ public class YoutubeFormInterop
                     {
                         presentationSource = source
                     });
-                    SendPresentationQueueUpdate();
+                    // Switching back to "player" must also push the player's current
+                    // track/lyrics again; previously only the visibility changed and
+                    // the window kept showing stale (or empty) music-share state.
+                    SendPresentationCurrentState();
 
                     SendResponse(id, new { success = true });
                     return;
@@ -1041,7 +1043,7 @@ public class YoutubeFormInterop
     {
         if (id == null) return;
         var json = JsonConvert.SerializeObject(new { type = "response", id, result });
-        (target ?? _responseTarget ?? SendMessage)?.Invoke(json);
+        (target ?? _responseTarget.Value ?? SendMessage)?.Invoke(json);
     }
 
     public void SendEvent(string eventName, object? data)
@@ -2444,6 +2446,7 @@ public class YoutubeFormInterop
             registeredGlobalShortcuts = RemoteControlService.Instance.RegisteredGlobalShortcuts,
             toolPromptDismissed = cfg.ToolPromptDismissed,
             cookieBrowser = cfg.CookieBrowser ?? string.Empty,
+            autoGrabCookies = cfg.AutoGrabCookies,
             systemMediaIntegration = cfg.SystemMediaIntegration,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
@@ -2775,6 +2778,7 @@ public class YoutubeFormInterop
                 }
                 if (settings.TryGetValue("globalKeyboardShortcuts", out var gks)) cfg.GlobalKeyboardShortcuts = gks.ToObject<bool>();
                 if (settings.TryGetValue("systemMediaIntegration", out var smi)) cfg.SystemMediaIntegration = smi.ToObject<bool>();
+                if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
 
                 if (settings.TryGetValue("normalizeVolume", out var nv2) && !nv2.ToObject<bool>())
                 {
@@ -2967,6 +2971,7 @@ public class YoutubeFormInterop
             // the splash/launch/auth sequence again.
             setupComplete = _ytForm.SetupComplete,
             cookieBrowser = ConfigService.Instance.Current?.CookieBrowser ?? string.Empty,
+            autoGrabCookies = ConfigService.Instance.Current?.AutoGrabCookies ?? false,
             launchOptions = new
             {
                 rememberSelection = state.RememberSelection,
@@ -3750,14 +3755,17 @@ public class YoutubeFormInterop
         var songId = msg["songId"]?.ToString();
         if (string.IsNullOrEmpty(songId)) return new { error = "No songId" };
 
+        bool stillInSentIn = false;
         lock (_libraryService.Data)
         {
             var song = _libraryService.Data.FindSong(songId);
             if (song == null) return new { error = "Song not found" };
 
-            // If the song is in the sent-in database, it's still needed there — don't delete
-            if (!string.IsNullOrEmpty(song.YouTubeId) && _ytForm.fetchedYtids.Contains(song.YouTubeId))
-                return new { error = "This song is still in the sent-in list. Remove it from the Sent In tab instead." };
+            // The sent-in list still needs the downloaded file, but the user asked
+            // to remove the entry from the *library*. Keep the file/artwork in that
+            // case; remove everything otherwise.
+            stillInSentIn = !string.IsNullOrEmpty(song.YouTubeId) &&
+                            _ytForm.fetchedYtids.Contains(song.YouTubeId);
         }
 
         string? filePath = null;
@@ -3773,23 +3781,26 @@ public class YoutubeFormInterop
 
         _libraryService.Save();
 
-        // Delete file from disk
-        try
+        if (!stillInSentIn)
         {
-            if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
-                File.Delete(filePath);
-        }
-        catch { }
+            // Delete file from disk
+            try
+            {
+                if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                    File.Delete(filePath);
+            }
+            catch { }
 
-        // Delete thumbnail from disk
-        try
-        {
-            if (!string.IsNullOrEmpty(thumbPath) && File.Exists(thumbPath))
-                File.Delete(thumbPath);
+            // Delete thumbnail from disk
+            try
+            {
+                if (!string.IsNullOrEmpty(thumbPath) && File.Exists(thumbPath))
+                    File.Delete(thumbPath);
+            }
+            catch { }
         }
-        catch { }
 
-        return new { success = true };
+        return new { success = true, keptFile = stillInSentIn };
     }
 
     private object UpdateLibrarySongMetadata(JObject msg)

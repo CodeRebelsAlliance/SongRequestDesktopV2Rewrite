@@ -61,6 +61,18 @@ body {
 #pres-zoom:hover,
 #pres-zoom:focus-within { opacity: 1; }
 
+/* Desktop: keep the controls out of the picture until the pointer reaches them.
+   Touch/TV clients have no hover, so they keep a visible (but subtle) control. */
+@media (hover: hover) and (pointer: fine) {
+  #pres-zoom { opacity: 0; }
+  #pres-zoom:hover,
+  #pres-zoom:focus-within { opacity: 1; }
+}
+
+@media (hover: none) {
+  #pres-zoom { opacity: 0.85; }
+}
+
 #pres-zoom button {
   min-width: 44px;
   height: 44px;

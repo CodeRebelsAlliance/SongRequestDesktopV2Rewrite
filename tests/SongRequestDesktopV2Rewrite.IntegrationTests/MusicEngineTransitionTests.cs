@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using SongRequestDesktopV2Rewrite;
@@ -54,5 +55,37 @@ public class MusicEngineTransitionTests
         foreach (var song in engine.Queue) remaining.Add(song.Title);
         Assert.Equal(new[] { "Second" }, remaining);
         Assert.False(engine.IsPlaying, "engine still reports playback after the queue drained");
+    }
+
+    [SkippableFact]
+    public void LastQueueTrack_CrossfadesIntoThePlaylist()
+    {
+        Skip.IfNot(Fixtures.FfmpegAvailable, "ffmpeg not available");
+        Skip.IfNot(Fixtures.OpenAlAvailable, "OpenAL cannot open an output device here");
+
+        var engine = new MusicEngine { ConfigAccessor = () => new Config { NormalizeVolume = false } };
+        var sawCrossfade = false;
+        var sawPlaylistTrack = false;
+        var emptied = new ManualResetEventSlim(false);
+
+        engine.NowPlayingChanged = song =>
+        {
+            if (song != null && song.Title == "Playlist First") sawPlaylistTrack = true;
+        };
+        engine.NowPlayingTick += (_, _) => { if (engine.IsCrossfading) sawCrossfade = true; };
+        engine.QueueEmptied = () => emptied.Set();
+
+        engine.AddSong(new Song("Queue Last", "Test", null, TimeSpan.FromSeconds(3), Fixtures.Audio.Mp3) { PerceivedLoudness = -14 });
+        engine.LoadPlaylist(new[]
+        {
+            new Song("Playlist First", "Test", null, TimeSpan.FromSeconds(3), Fixtures.Audio.Mp3) { PerceivedLoudness = -14 },
+        }, shuffle: false);
+        engine.SetCrossfade(1.0);
+
+        engine.PlaySong(engine.Queue[0]);
+
+        Assert.True(emptied.Wait(30000), "playback never reached the playlist song");
+        Assert.True(sawPlaylistTrack, "the playlist song never started");
+        Assert.True(sawCrossfade, "the queue → playlist transition did not crossfade");
     }
 }

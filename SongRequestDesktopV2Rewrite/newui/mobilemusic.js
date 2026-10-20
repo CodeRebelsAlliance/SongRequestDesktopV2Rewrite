@@ -1183,6 +1183,8 @@
         '<h3>Server</h3>' +
         '<input id="mm-set-address" class="mm-sheet-input" placeholder="http://127.0.0.1:5000" value="' + esc(cfg.address || '') + '">' +
         '<input id="mm-set-token" class="mm-sheet-input" type="password" placeholder="Bearer token" value="' + esc(cfg.bearerToken || '') + '" style="margin-top:8px">' +
+        '<h3>YouTube</h3>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-auto-yt"' + (cfg.autoGrabCookies ? ' checked' : '') + '> Automatically finish YouTube sign-in when the account page has loaded</label>' +
         '<h3>Library</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-auto-add"' + (cfg.libraryAutoAddDownloads ? ' checked' : '') + '> Add downloads to the library automatically</label>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
@@ -1214,6 +1216,7 @@
       var settings = {
         address: $('mm-set-address').value.trim(),
         bearerToken: $('mm-set-token').value,
+        autoGrabCookies: $('mm-set-auto-yt').checked,
         libraryAutoAddDownloads: $('mm-set-auto-add').checked
       };
 

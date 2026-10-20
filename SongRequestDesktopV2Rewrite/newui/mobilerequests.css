@@ -98,31 +98,39 @@ button { background: none; border: 0; cursor: pointer; }
   background: var(--mr-surface);
   border-bottom: 1px solid var(--mr-outline);
   border-radius: 0;
-  overflow-x: auto;
-  flex-wrap: nowrap;
-  scrollbar-width: none;
+  display: flex;
+  flex-wrap: wrap;
+  overflow: visible;
 }
-#tabbar::-webkit-scrollbar { display: none; }
 
 #tabbar .tab-btn {
-  flex-shrink: 0;
+  flex: 1 1 calc(33.333% - 4px);
   margin: 0;
-  padding: 8px 14px;
-  min-height: 38px;
-  border-radius: 19px;
+  padding: 8px 6px;
+  min-height: 56px;
+  border-radius: 14px;
   background: var(--mr-surface-2);
   border: 1px solid var(--mr-outline);
   color: var(--mr-muted);
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
+
+#tabbar .tab-btn i { font-size: 15px; }
+#tabbar .tab-btn span { line-height: 1.1; }
 
 #tabbar .tab-btn.active {
   background: #40384f;
   border-color: transparent;
   color: #f5f0ff;
 }
+#tabbar .tab-btn.active i { color: var(--mr-primary); }
 
 /* ── Panels ──────────────────────────────────────────────── */
 #main { min-height: 0; }
@@ -307,8 +315,8 @@ select option { background-color: var(--mr-surface-2); color: var(--mr-text); }
 .modal {
   width: 100% !important;
   max-width: 100% !important;
-  height: 100%;
-  max-height: 100%;
+  height: 100% !important;
+  max-height: 100% !important;
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -537,3 +545,212 @@ select option { background-color: var(--mr-surface-2); color: var(--mr-text); }
   .song-card .thumb-wrap { width: 52px; height: 52px; }
   .mr-brand-title { font-size: 16px; }
 }
+
+/* ── Startup / onboarding (Material page) ────────────────── */
+#startup-overlay {
+  background: var(--mr-bg);
+  color: var(--mr-text);
+  padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 12px);
+}
+
+#startup-quit {
+  top: calc(env(safe-area-inset-top) + 8px);
+  right: 12px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  background: var(--mr-surface-2);
+  border: 1px solid var(--mr-outline);
+  color: var(--mr-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+#startup-quit:hover { background: #3a2a2a; border-color: rgba(255, 180, 171, 0.35); color: var(--mr-danger); }
+
+#startup-splash { width: 100%; }
+#startup-splash-inner { width: min(92vw, 460px); margin: 0 auto; text-align: center; }
+#startup-logo { width: 96px; height: 96px; border-radius: 26px; margin-bottom: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+#startup-title { font-size: 28px; font-weight: 800; letter-spacing: -.02em; margin-bottom: 4px; }
+#startup-version { font-size: 12px; color: var(--mr-muted); margin-bottom: 18px; }
+#startup-status { font-size: 14px; color: var(--mr-muted); margin-bottom: 12px; }
+#startup-progress-track { height: 6px; background: rgba(255,255,255,.08); border: 0; border-radius: 999px; margin-bottom: 22px; }
+#startup-progress-fill { background: var(--mr-primary); border-radius: 999px; box-shadow: none; }
+#startup-shimmer { display: none; }
+#startup-footer { font-size: 11px; color: #736f7d; margin-top: 10px; }
+
+#startup-update-panel,
+#startup-launch-panel,
+#startup-auth-panel { width: 100%; height: 100%; padding: 0; }
+
+#startup-update-box,
+#startup-launch-box,
+#startup-auth-box {
+  width: min(92vw, 520px);
+  max-height: calc(100dvh - 100px);
+  padding: 20px;
+  border: 1px solid var(--mr-outline);
+  border-radius: 24px;
+  background: var(--mr-surface);
+  box-shadow: 0 18px 50px rgba(0,0,0,.45);
+  text-align: left;
+}
+
+#startup-update-icon { text-align: center; }
+#startup-update-title { font-size: 20px; font-weight: 700; text-align: center; margin: 8px 0 6px; }
+#startup-update-info { font-size: 13px; color: var(--mr-muted); text-align: center; }
+#startup-update-notes { background: #141216; border: 1px solid var(--mr-outline); border-radius: 14px; padding: 12px; font-size: 12.5px; }
+#startup-update-progress-track { height: 6px; background: rgba(255,255,255,.08); border-radius: 999px; overflow: hidden; }
+#startup-update-progress-fill { height: 100%; background: var(--mr-primary); }
+
+#startup-launch-title { font-size: 20px; font-weight: 700; text-align: center; line-height: 1.25; margin-bottom: 6px; }
+#startup-launch-auto { font-size: 12px; color: var(--mr-muted); text-align: center; margin-bottom: 14px; }
+#startup-launch-bar { height: 4px; background: rgba(255,255,255,.08); border-radius: 999px; overflow: hidden; margin-bottom: 14px; }
+#startup-launch-bar-fill { height: 100%; background: var(--mr-primary); border-radius: 999px; transition: width .1s linear; }
+
+#startup-launch-grid { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px; }
+
+.startup-launch-btn {
+  min-height: 96px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 18px;
+  border: 1px solid var(--mr-outline);
+  background: var(--mr-surface-2);
+  color: var(--mr-text);
+  transition: background .15s ease, border-color .15s ease, transform .1s ease;
+}
+.startup-launch-btn:active { transform: scale(.98); }
+.startup-launch-btn.active { background: rgba(208,188,255,.16); border-color: rgba(208,188,255,.55); }
+.startup-launch-emoji { font-size: 26px; color: var(--mr-primary); line-height: 1; }
+.startup-launch-label { font-size: 13px; font-weight: 650; text-align: center; }
+
+#startup-launch-remember {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--mr-muted);
+}
+#startup-launch-remember input { width: 22px; height: 22px; accent-color: var(--mr-primary); }
+
+#startup-auth-box { text-align: center; }
+#startup-auth-title { font-size: 20px; font-weight: 700; margin: 10px 0 6px; }
+#startup-auth-desc { font-size: 13px; line-height: 1.5; color: var(--mr-muted); }
+#startup-auth-status { margin-top: 12px; font-size: 13px; line-height: 1.55; color: var(--mr-muted); }
+#startup-auth-status .settings-input { margin-top: 4px; }
+#startup-auth-status .action-btn,
+#startup-auth-status .top-btn,
+#startup-update-buttons .action-btn,
+#startup-update-buttons .top-btn {
+  min-height: 46px !important;
+  border-radius: 23px !important;
+  padding: 0 20px !important;
+  font-size: 14px !important;
+}
+#startup-auth-status .action-btn,
+#startup-update-buttons .action-btn,
+#startup-overlay .action-btn {
+  background: var(--mr-primary) !important;
+  color: var(--mr-primary-ink) !important;
+  border-color: transparent !important;
+}
+#startup-auth-status .top-btn,
+#startup-update-buttons .top-btn {
+  background: var(--mr-surface-2) !important;
+  color: var(--mr-text) !important;
+  border: 1px solid var(--mr-outline) !important;
+}
+
+/* ── Remote control / MIDI settings ─────────────────────── */
+.settings-remote-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.settings-remote-grid .rm-header { display: none; }
+
+.settings-remote-grid .rm-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "action action"
+    "key key"
+    "kba kbc"
+    "midi midi"
+    "mia mic";
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--mr-outline);
+  border-radius: 14px;
+  background: var(--mr-surface-2);
+}
+
+.settings-remote-grid .rm-col-action {
+  grid-area: action;
+  color: var(--mr-text);
+  font-size: 14px;
+  font-weight: 650;
+  white-space: normal;
+}
+
+.settings-remote-grid .rm-col-key,
+.settings-remote-grid .rm-col-midi {
+  flex: none;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--mr-primary);
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.settings-remote-grid .rm-col-midi { color: #d7b8ff; }
+
+.settings-remote-grid .rm-col-key::before,
+.settings-remote-grid .rm-col-midi::before {
+  display: block;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mr-muted);
+  margin-bottom: 3px;
+}
+.settings-remote-grid .rm-col-key::before { content: "Key bind"; }
+.settings-remote-grid .rm-col-midi::before { content: "MIDI"; }
+.settings-remote-grid .rm-col-key { grid-area: key; }
+.settings-remote-grid .rm-col-midi { grid-area: midi; }
+
+.settings-remote-grid .rm-assign[data-kb-assign] { grid-area: kba; }
+.settings-remote-grid .rm-clear[data-kb-clear] { grid-area: kbc; }
+.settings-remote-grid .rm-assign[data-midi-assign] { grid-area: mia; }
+.settings-remote-grid .rm-clear[data-midi-clear] { grid-area: mic; }
+
+.settings-remote-grid .rm-row > .rm-col-btn { display: none; }
+
+.settings-remote-grid .rm-assign,
+.settings-remote-grid .rm-clear {
+  min-height: 38px;
+  margin: 0;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.settings-remote-grid .rm-assign { background: rgba(208, 188, 255, 0.14); color: #e9ddff; }
+.settings-remote-grid .rm-clear { background: rgba(255, 180, 171, 0.12); color: var(--mr-danger); }
+.settings-remote-grid .rm-unset { opacity: 0.65; font-style: normal; }
+
+#settings-remote .settings-card { margin-bottom: 10px; }
+#settings-remote .settings-checkbox { margin-bottom: 8px; }
