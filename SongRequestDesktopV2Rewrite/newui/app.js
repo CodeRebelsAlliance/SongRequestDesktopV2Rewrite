@@ -13,6 +13,7 @@
   const thumbCache = {};
   let _authOverlayVisible = false;
   let _authBrowsers = [];
+  let _signInSupported = false;
 
   function postMessageToHost(msg) {
     if (!SongRequestHost.sendToHost(msg)) {
@@ -926,6 +927,7 @@
     try {
       const r = await send('getAuthBrowsers');
       _authBrowsers = r.browsers || [];
+      _signInSupported = !!r.signInSupported;
     } catch { _authBrowsers = []; }
 
     const select = document.getElementById('s-yt-browser');
@@ -933,6 +935,13 @@
       select.innerHTML = _authBrowsers
         .map(b => '<option value="' + b + '">' + b.charAt(0).toUpperCase() + b.slice(1) + '</option>')
         .join('');
+      select.style.display = _signInSupported ? 'none' : '';
+    }
+    const grab = document.getElementById('s-yt-grab');
+    if (grab) {
+      grab.innerHTML = _signInSupported
+        ? '<i class="fab fa-youtube"></i> Sign in with YouTube'
+        : '<i class="fas fa-cookie-bite"></i> Grab cookies';
     }
     return _authBrowsers;
   }
@@ -954,6 +963,17 @@
   });
 
   async function grabCookies(browser) {
+    if (_signInSupported) {
+      ytStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Opening YouTube sign-in…</span>';
+      try {
+        const r = await send('signIn');
+        ytStatusEl.textContent = r.success
+          ? 'Signed in (' + r.cookieCount + ' cookies).'
+          : r.cancelled ? 'Sign-in cancelled.' : 'Sign-in failed: ' + (r.error || 'no cookies');
+      } catch (e) { ytStatusEl.textContent = 'Error: ' + e.message; }
+      return;
+    }
+
     if (!browser) { ytStatusEl.textContent = 'No browser available.'; return; }
     ytStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + browser + '...</span>';
     try {
@@ -2177,10 +2197,20 @@
         '<button id="startup-auth-no" class="top-btn" style="font-size:13px;padding:8px 20px">Skip</button>';
     }
 
+    const manualAuthHtml = authStatusEl.innerHTML;
+    let autoAuthAttempted = false;
+
+    function restoreManualAuth(message) {
+      authStatusEl.innerHTML = (message
+        ? '<div class="startup-auth-message">' + escapeHtml(message) + '</div>'
+        : '') + manualAuthHtml;
+    }
+
     let autoAuthSucceeded = false;
     if (!signInSupported && data.autoGrabCookies) {
       const autoBrowser = data.cookieBrowser || (authBrowsers.length ? authBrowsers[0] : '');
       if (autoBrowser) {
+        autoAuthAttempted = true;
         authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Reading cookies from ' + autoBrowser + '…</span>';
         try {
           const r = await send('grabCookies', { browser: autoBrowser });
@@ -2195,6 +2225,31 @@
           authStatusEl.textContent = 'Automatic import error: ' + e.message;
         }
       }
+    }
+
+    // Mobile: opening the settings/auth page is not enough — if the automatic
+    // option is on, also press the "Sign in with YouTube" action so the in-app
+    // login page opens without another tap.
+    if (signInSupported && data.autoGrabCookies) {
+      autoAuthAttempted = true;
+      authStatusEl.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-pulse"></i> Opening YouTube sign-in…</span>';
+      try {
+        const r = await send('signIn');
+        if (r.success) {
+          authStatusEl.textContent = 'Signed in (' + r.cookieCount + ' cookies)';
+          autoAuthSucceeded = true;
+        } else if (r.cancelled) {
+          authStatusEl.textContent = 'Sign-in cancelled.';
+        } else {
+          authStatusEl.textContent = 'Sign-in failed: ' + (r.error || 'no cookies');
+        }
+      } catch (e) {
+        authStatusEl.textContent = 'Sign-in error: ' + e.message;
+      }
+    }
+
+    if (autoAuthAttempted && !autoAuthSucceeded) {
+      restoreManualAuth('Automatic sign-in did not complete. You can try again or skip.');
     }
 
     if (autoAuthSucceeded) {

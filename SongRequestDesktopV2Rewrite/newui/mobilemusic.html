@@ -132,6 +132,7 @@
       <div class="mm-playlist-actions">
         <button id="mm-playlist-play" class="mm-btn"><i class="fas fa-play"></i> Play</button>
         <button id="mm-playlist-shuffle" class="mm-btn"><i class="fas fa-shuffle"></i> Shuffle</button>
+        <button id="mm-playlist-queue" class="mm-btn"><i class="fas fa-list"></i> Queue</button>
       </div>
 
       <div class="mm-scroll">
@@ -144,7 +145,12 @@
       <div id="mm-player-bg"></div>
 
       <div class="mm-player-top">
-        <button id="mm-more" class="mm-icon-btn" aria-label="Player options"><i class="fas fa-ellipsis-vertical"></i></button>
+        <button id="mm-more" class="mm-pill-btn" aria-label="Player options">
+          <i class="fas fa-ellipsis-vertical"></i><span>Options</span>
+        </button>
+        <button id="mm-queue-toggle" class="mm-pill-btn" aria-pressed="false" aria-label="Queue">
+          <i class="fas fa-list-ul"></i><span>Queue</span>
+        </button>
         <button id="mm-lyrics-toggle" class="mm-pill-btn" aria-pressed="false">
           <i class="fas fa-align-left"></i><span>Lyrics</span>
         </button>

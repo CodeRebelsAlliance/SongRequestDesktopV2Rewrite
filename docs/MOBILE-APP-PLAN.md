@@ -907,6 +907,20 @@ port; they affect the desktop app too):
   **Play/Shuffle** now starts the first track immediately instead of only filling
   the playlist buffer. Recently Played rows show “Played … ago” timestamps.
 
+- **Queue / playlists / mixes**: the native Queue tab is gone; the player has an
+  **Options / Queue / Lyrics** chip row, with Queue acting as the sidebar toggle.
+  Playlists gained **Queue** (append without clearing) on desktop and mobile.
+  Three dynamic mixes are available on both platforms — **Random Mix** (100 random
+  library songs, re-selected and shuffled on play), **Most Played** and
+  **Recently Added** — and are read-only. Dynamic mixes are also listed on the
+  home feed.
+- **Compact requests navigation**: the request tab switcher is now a compact
+  two-row icon+label grid (40 px rows) instead of tall stacked buttons.
+- **Automatic sign-in**: with the auto-cookie/sign-in setting on, mobile startup
+  now opens the in-app YouTube sign-in page itself (and Settings’ “Sign in with
+  YouTube” action does the same), then presses Done once the session cookies are
+  present.
+
 **Milestone totals for the chosen full-parity programme:** Android-only through
 M6 ≈ 16–22 dev-weeks; +iOS ≈ 19–26; +M8 ≈ 21–29. (M0–M2 alone — shared core,
 mobile shell, native audio — is a usable "control the queue and play from the

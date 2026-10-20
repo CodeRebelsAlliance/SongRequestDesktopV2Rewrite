@@ -93,8 +93,8 @@ button { background: none; border: 0; cursor: pointer; }
 /* ── Tab chips ───────────────────────────────────────────── */
 #tabbar {
   margin: 0;
-  padding: 6px 10px 8px;
-  gap: 6px;
+  padding: 5px 8px 6px;
+  gap: 5px;
   background: var(--mr-surface);
   border-bottom: 1px solid var(--mr-outline);
   border-radius: 0;
@@ -106,24 +106,24 @@ button { background: none; border: 0; cursor: pointer; }
 #tabbar .tab-btn {
   flex: 1 1 calc(33.333% - 4px);
   margin: 0;
-  padding: 8px 6px;
-  min-height: 56px;
-  border-radius: 14px;
+  padding: 6px 8px;
+  min-height: 40px;
+  border-radius: 12px;
   background: var(--mr-surface-2);
   border: 1px solid var(--mr-outline);
   color: var(--mr-muted);
   font-size: 11.5px;
   font-weight: 600;
-  white-space: normal;
+  white-space: nowrap;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
 }
 
-#tabbar .tab-btn i { font-size: 15px; }
-#tabbar .tab-btn span { line-height: 1.1; }
+#tabbar .tab-btn i { font-size: 13px; }
+#tabbar .tab-btn span { line-height: 1.1; overflow: hidden; text-overflow: ellipsis; }
 
 #tabbar .tab-btn.active {
   background: #40384f;
@@ -754,3 +754,14 @@ select option { background-color: var(--mr-surface-2); color: var(--mr-text); }
 
 #settings-remote .settings-card { margin-bottom: 10px; }
 #settings-remote .settings-checkbox { margin-bottom: 8px; }
+
+.startup-auth-message {
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: rgba(255, 180, 171, 0.12);
+  border: 1px solid rgba(255, 180, 171, 0.24);
+  color: #ffb4ab;
+  font-size: 12.5px;
+  line-height: 1.45;
+}

@@ -263,7 +263,9 @@
       : (item.emoji
           ? '<span style="font-size:38px">' + escHtml(item.emoji) + '</span>'
           : '<i class="fas fa-list"></i>');
-    var played = item.lastPlayedUtc ? 'Played ' + homeRelativeTime(item.lastPlayedUtc) : 'Never played';
+    var played = item.isDynamic
+      ? (item.description || 'Dynamic playlist')
+      : (item.lastPlayedUtc ? 'Played ' + homeRelativeTime(item.lastPlayedUtc) : 'Never played');
     var count = item.songCount + ' song' + (item.songCount === 1 ? '' : 's');
     return '<div class="home-card home-playlist-card" data-playlistid="' + escHtml(item.id || '') + '">' +
       '<div class="home-card-thumb">' + thumbs +
@@ -2560,6 +2562,7 @@
 
   var allPlaylists = [];
   var currentPlaylistId = null;
+  var currentPlaylistDynamic = false;
 
   function loadPlaylists() {
     hostRequest('getPlaylists', {}).then(function(result) {
@@ -2636,8 +2639,13 @@
   function loadPlaylistDetail(playlistId) {
     hostRequest('getPlaylist', { playlistId: playlistId }).then(function(result) {
       if (!result || result.error) return;
+      currentPlaylistDynamic = !!result.isDynamic;
       document.getElementById('playlist-detail-title').textContent = (result.emoji ? result.emoji + ' ' : '') + result.name;
       document.getElementById('playlist-detail-count').textContent = result.songCount + ' song' + (result.songCount !== 1 ? 's' : '');
+      var deleteBtn = document.getElementById('playlist-detail-delete');
+      if (deleteBtn) deleteBtn.style.display = currentPlaylistDynamic ? 'none' : '';
+      var sortSelect = document.getElementById('playlist-detail-sort');
+      if (sortSelect) sortSelect.style.display = currentPlaylistDynamic ? 'none' : '';
       var listEl = document.getElementById('playlist-detail-list');
       var emptyEl = document.getElementById('playlist-detail-empty');
       if (!listEl) return;
@@ -2649,6 +2657,9 @@
       if (emptyEl) emptyEl.style.display = 'none';
       for (var i = 0; i < result.songs.length; i++) {
         listEl.appendChild(renderPlaylistSong(result.songs[i], i));
+      }
+      if (currentPlaylistDynamic) {
+        listEl.querySelectorAll('.playlist-song-remove, .playlist-song-drag').forEach(function(el) { el.style.display = 'none'; });
       }
     }).catch(function() {});
   }
@@ -2682,6 +2693,7 @@
     // Right-click context menu
     div.addEventListener('contextmenu', function(e) {
       e.preventDefault();
+      if (currentPlaylistDynamic) return;
       showContextMenu(e.clientX, e.clientY, song.songId, div, 'playlist');
     });
     // Drag and drop
@@ -2823,12 +2835,19 @@
       hostSend('shufflePlaylist', { playlistId: currentPlaylistId });
     });
   }
+  var plQueueBtn = document.getElementById('playlist-detail-queue');
+  if (plQueueBtn) {
+    plQueueBtn.addEventListener('click', function() {
+      if (!currentPlaylistId) return;
+      hostSend('queuePlaylist', { playlistId: currentPlaylistId });
+    });
+  }
 
   // ── Delete playlist ───────────────────────────────────
   var plDeleteBtn = document.getElementById('playlist-detail-delete');
   if (plDeleteBtn) {
     plDeleteBtn.addEventListener('click', function() {
-      if (!currentPlaylistId) return;
+      if (!currentPlaylistId || currentPlaylistDynamic) return;
       if (!confirm('Delete this playlist?')) return;
       hostRequest('deletePlaylist', { playlistId: currentPlaylistId }).then(function() {
         currentPlaylistId = null;

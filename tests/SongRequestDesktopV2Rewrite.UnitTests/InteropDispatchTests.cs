@@ -72,6 +72,38 @@ public class InteropDispatchTests
     }
 
     [Fact]
+    public async Task GetPlaylists_IncludesTheDynamicMixes()
+    {
+        var (_, interop, responses) = Create();
+
+        var response = await Request(interop, responses, "getPlaylists");
+        var playlists = response["result"]?["playlists"] as JArray;
+
+        Assert.NotNull(playlists);
+        var ids = playlists!.Select(p => p["id"]?.ToString()).ToList();
+        Assert.Contains("dynamic:random-mix", ids);
+        Assert.Contains("dynamic:most-played", ids);
+        Assert.Contains("dynamic:recently-added", ids);
+        Assert.All(playlists.Where(p => p["id"]?.ToString()?.StartsWith("dynamic:") == true),
+            p => Assert.True(p["isDynamic"]?.ToObject<bool>()));
+    }
+
+    [Fact]
+    public async Task GetPlaylist_DynamicMix_IsReadOnly()
+    {
+        var (_, interop, responses) = Create();
+
+        var response = await Request(interop, responses, "getPlaylist", customize: msg =>
+            msg["playlistId"] = "dynamic:random-mix");
+
+        var result = response["result"];
+        Assert.NotNull(result);
+        Assert.True(result!["isDynamic"]?.ToObject<bool>());
+        Assert.False(result["canModify"]?.ToObject<bool>());
+        Assert.Equal("Random Mix", result["name"]?.ToString());
+    }
+
+    [Fact]
     public async Task GetMusicAudioDevices_AlwaysListsTheSystemDefault()
     {
         var (_, interop, responses) = Create();

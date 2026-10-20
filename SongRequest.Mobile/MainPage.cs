@@ -351,14 +351,12 @@ public sealed class MainPage : ContentPage
             new TabDef("home", "Home", MobileMusicFile, "\uf015"),       // fa-house
             new TabDef("library", "Library", MobileMusicFile, "\uf51f"), // fa-compact-disc
             new TabDef("player", "Player", MobileMusicFile, "\uf025"),   // fa-headphones
-            new TabDef("queue", "Queue", MobileMusicFile, "\uf0ca"),     // fa-list-ul
             new TabDef("stage", "Stage", MobileStageFile, "\uf26c"),     // fa-tv
         },
         StartupMode.MusicShare => new[]
         {
             new TabDef("share", "Share", MobileMusicFile, "\uf519"),     // fa-tower-broadcast
             new TabDef("player", "Player", MobileMusicFile, "\uf025"),   // fa-headphones
-            new TabDef("queue", "Queue", MobileMusicFile, "\uf0ca"),     // fa-list-ul
             new TabDef("stage", "Stage", MobileStageFile, "\uf26c"),     // fa-tv
         },
         StartupMode.Soundboard => new[]

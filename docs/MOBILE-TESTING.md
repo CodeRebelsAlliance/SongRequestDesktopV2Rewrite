@@ -289,8 +289,8 @@ and notification; `adb shell dumpsys activity services` reported
 
 - [x] `node --test tests/js` covers the new bridge diff (`stagebridge.test.js`)
       and the mobile page wiring (`mobilepages.test.js`).
-- [x] Desktop regression suite green with the new pages: 513 unit, 44/45
-      integration (1 environment skip, FFmpeg/cookies), 57 JS tests; mobile
+- [x] Desktop regression suite green with the new pages: 515 unit, 44/45
+      integration (1 environment skip, FFmpeg/cookies), 60 JS tests; mobile
       Android Release build 0 warnings.
 - [x] **Requests (device)**: Requests/Pending/Blacklist/Word Filter/Dashboard
       tabs scroll as chips; tapping a card opens the M3 action sheet; Submit Song,
@@ -357,6 +357,17 @@ and notification; `adb shell dumpsys activity services` reported
 - [x] **Library delete / playlist play**: deleting a regular library song removes
       it; Play/Shuffle on a playlist starts the first song immediately.
 - [x] **Recently Played**: rows show the played timestamp (relative time).
+- [x] **Queue chip**: the native Queue tab is removed; the player’s Options /
+      Queue / Lyrics chips open and close the queue sidebar, with `aria-pressed`
+      state.
+- [x] **Dynamic mixes**: Random Mix, Most Played and Recently Added appear in
+      Playlists/Home; Play on Random Mix selects 100 random songs and shuffles
+      them; Queue appends a playlist without clearing the queue.
+- [x] **Auto sign-in**: enabling the setting and restarting opens the YouTube
+      sign-in page automatically and continues when the session cookies arrive;
+      incomplete/cancelled attempts fall back to the manual auth buttons.
+- [x] **Compact request tabs**: the request tab row is compact (icon + label,
+      ~40px high) and no longer consumes a large vertical block.
 - [ ] Still to check on real hardware: HDMI second display, a TV browser over
       Wi-Fi, long-press timing on low-end phones and the MIDI assign page with a
       physical controller.

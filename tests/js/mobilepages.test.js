@@ -148,6 +148,28 @@ test('visualization has a mobile Material layout', () => {
   assert.match(css, /:root\[data-shell="mobile"\] #viz-modes/);
 });
 
+test('mobile queue is a player chip, not a navigation tab', () => {
+  const html = read('mobilemusic.html');
+  const page = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Mobile', 'MainPage.cs'), 'utf8');
+  assert.match(html, /id="mm-queue-toggle"/);
+  assert.match(html, /id="mm-more"[\s\S]*?<span>Options<\/span>/);
+  assert.doesNotMatch(page, /new TabDef\("queue"/);
+});
+
+test('playlists support queueing and dynamic mixes', () => {
+  const interop = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  assert.match(interop, /queuePlaylist/);
+  assert.match(interop, /DynamicRandomMixId/);
+  assert.match(interop, /dynamic:random-mix/);
+  assert.match(interop, /DynamicMostPlayedId/);
+});
+
+test('automatic sign-in opens the in-app YouTube page', () => {
+  const app = read('app.js');
+  assert.match(app, /signInSupported && data\.autoGrabCookies/);
+  assert.match(app, /Opening YouTube sign-in/);
+});
+
 test('mobile music page exposes repeat state and playlist browsing', () => {
   const html = read('mobilemusic.html');
   assert.match(html, /id="mm-repeat"[^>]*aria-pressed="false"/);

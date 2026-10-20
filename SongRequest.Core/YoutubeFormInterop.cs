@@ -871,6 +871,9 @@ public class YoutubeFormInterop
                 case "playPlaylist":
                     result = PlayPlaylist(msg);
                     break;
+                case "queuePlaylist":
+                    result = QueuePlaylist(msg);
+                    break;
                 case "shufflePlaylist":
                     result = ShufflePlaylist(msg);
                     break;
@@ -4057,8 +4060,24 @@ public class YoutubeFormInterop
         Thumbnails.BeginRequest(0);
         var data = _libraryService.Data;
 
-        // ── Playlists: most recently listened first, then most recently changed ──
-        var playlists = data.Playlists
+        // ── Playlists: dynamic mixes first, then most recently listened/changed ──
+        var playlists = new List<object>();
+        var presentCount = data.Songs.Count(s => !s.IsMissing);
+        foreach (var dynamicPlaylist in DynamicPlaylists)
+        {
+            playlists.Add(new
+            {
+                id = dynamicPlaylist.Id,
+                name = dynamicPlaylist.Name,
+                emoji = dynamicPlaylist.Emoji,
+                description = dynamicPlaylist.Description,
+                songCount = Math.Min(100, presentCount),
+                lastPlayedUtc = (DateTime?)null,
+                thumbnail = (string?)null,
+                isDynamic = true
+            });
+        }
+        playlists.AddRange(data.Playlists
             .OrderByDescending(p => p.LastPlayedUtc ?? DateTime.MinValue)
             .ThenByDescending(p => p.LastModifiedUtc)
             .Take(count)
@@ -4073,9 +4092,9 @@ public class YoutubeFormInterop
                     .Select(e => data.FindSong(e.SongId))
                     .Where(s => s != null && !string.IsNullOrEmpty(s!.ThumbnailPath))
                     .Select(s => GetLibrarySongThumbnail(s!))
-                    .FirstOrDefault(t => t != null)
-            })
-            .ToList();
+                    .FirstOrDefault(t => t != null),
+                isDynamic = false
+            }));
 
         // ── Songs recommended to you (library-indexed songs only) ──
         var recommendedEnabled = ConfigService.Instance.Current?.LibraryRecommendationsEnabled ?? true;
@@ -4496,15 +4515,122 @@ public class YoutubeFormInterop
     //  Playlist interop
     // ────────────────────────────────────────────────────────
 
+    private const string DynamicRandomMixId = "dynamic:random-mix";
+    private const string DynamicMostPlayedId = "dynamic:most-played";
+    private const string DynamicRecentlyAddedId = "dynamic:recently-added";
+
+    private sealed record DynamicPlaylistDefinition(string Id, string Name, string Emoji, string Description);
+
+    private static readonly DynamicPlaylistDefinition[] DynamicPlaylists =
+    {
+        new(DynamicRandomMixId, "Random Mix", "🎲", "100 random songs from your library"),
+        new(DynamicMostPlayedId, "Most Played", "🔥", "Your 100 most played songs"),
+        new(DynamicRecentlyAddedId, "Recently Added", "🆕", "Your 100 newest songs"),
+    };
+
+    private static bool IsDynamicPlaylist(string? id)
+        => !string.IsNullOrEmpty(id) && DynamicPlaylists.Any(p => p.Id == id);
+
+    private List<LibrarySong> SelectDynamicSongs(string id, bool shuffle)
+    {
+        List<LibrarySong> available;
+        lock (_libraryService.Data)
+        {
+            available = _libraryService.Data.Songs
+                .Where(s => !s.IsMissing)
+                .ToList();
+        }
+
+        IEnumerable<LibrarySong> selected = id switch
+        {
+            DynamicRandomMixId => available.OrderBy(_ => Random.Shared.Next()),
+            DynamicMostPlayedId => available
+                .OrderByDescending(s => s.PlayCount)
+                .ThenByDescending(s => s.LastPlayedUtc ?? DateTime.MinValue),
+            DynamicRecentlyAddedId => available.OrderByDescending(s => s.DateAddedUtc),
+            _ => Enumerable.Empty<LibrarySong>(),
+        };
+
+        var songs = selected.Take(100).ToList();
+        if (shuffle || id == DynamicRandomMixId)
+            songs = songs.OrderBy(_ => Random.Shared.Next()).ToList();
+        return songs;
+    }
+
+    private object BuildDynamicPlaylist(string id)
+    {
+        var definition = DynamicPlaylists.First(p => p.Id == id);
+        var songs = new List<object>();
+        foreach (var song in SelectDynamicSongs(id, shuffle: false))
+        {
+            songs.Add(new
+            {
+                entryId = "dynamic:" + song.Id,
+                songId = song.Id,
+                title = song.Title,
+                artist = song.Artist,
+                duration = song.Duration.TotalSeconds,
+                durationDisplay = song.DurationDisplay,
+                thumbnail = GetThumbnailForSongPath(song.FilePath),
+                filePath = song.FilePath,
+                isMissing = song.IsMissing
+            });
+        }
+
+        return new
+        {
+            id = definition.Id,
+            name = definition.Name,
+            emoji = definition.Emoji,
+            description = definition.Description,
+            songCount = songs.Count,
+            songs,
+            isDynamic = true,
+            canModify = false
+        };
+    }
+
     private object GetPlaylists()
     {
-        return new { playlists = _libraryService.GetPlaylistsSummary() };
+        var playlists = new List<object>();
+
+        int presentCount;
+        lock (_libraryService.Data)
+            presentCount = _libraryService.Data.Songs.Count(s => !s.IsMissing);
+
+        foreach (var dynamicPlaylist in DynamicPlaylists)
+        {
+            playlists.Add(new
+            {
+                id = dynamicPlaylist.Id,
+                name = dynamicPlaylist.Name,
+                emoji = dynamicPlaylist.Emoji,
+                description = dynamicPlaylist.Description,
+                songCount = Math.Min(100, presentCount),
+                createdUtc = "",
+                lastModifiedUtc = "",
+                lastPlayedUtc = "",
+                isDynamic = true
+            });
+        }
+
+        foreach (var playlist in _libraryService.GetPlaylistsSummary())
+        {
+            playlist["isDynamic"] = false;
+            playlists.Add(playlist);
+        }
+
+        return new { playlists };
     }
 
     private object GetPlaylist(JObject msg)
     {
         var playlistId = msg["playlistId"]?.ToString();
         if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+
+        if (IsDynamicPlaylist(playlistId))
+            return BuildDynamicPlaylist(playlistId);
+
         var pl = _libraryService.GetPlaylist(playlistId);
         if (pl == null) return new { error = "Playlist not found" };
 
@@ -4534,7 +4660,9 @@ public class YoutubeFormInterop
             name = pl.Name,
             emoji = pl.Emoji ?? "",
             songCount = songs.Count,
-            songs
+            songs,
+            isDynamic = false,
+            canModify = true
         };
     }
 
@@ -4586,6 +4714,7 @@ public class YoutubeFormInterop
     {
         var playlistId = msg["playlistId"]?.ToString();
         if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+        if (IsDynamicPlaylist(playlistId)) return new { error = "Dynamic playlists cannot be deleted" };
         return new { success = _libraryService.DeletePlaylist(playlistId) };
     }
 
@@ -4593,6 +4722,7 @@ public class YoutubeFormInterop
     {
         var playlistId = msg["playlistId"]?.ToString();
         if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+        if (IsDynamicPlaylist(playlistId)) return new { error = "Dynamic playlists cannot be renamed" };
         var name = msg["name"]?.ToString();
         var emoji = msg["emoji"]?.ToString();
         return new { success = _libraryService.UpdatePlaylist(playlistId, name, emoji) };
@@ -4602,11 +4732,24 @@ public class YoutubeFormInterop
     {
         var playlistId = msg["playlistId"]?.ToString();
         if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
-        var playlist = _libraryService.GetPlaylist(playlistId);
-        if (playlist == null) return new { error = "Playlist not found" };
-        var songs = ResolvePlaylistToSongs(playlist);
+
+        List<Song> songs;
+        if (IsDynamicPlaylist(playlistId))
+        {
+            songs = SelectDynamicSongs(playlistId, shuffle: playlistId == DynamicRandomMixId)
+                .Select(CreateSongFromLibrary)
+                .ToList();
+        }
+        else
+        {
+            var playlist = _libraryService.GetPlaylist(playlistId);
+            if (playlist == null) return new { error = "Playlist not found" };
+            songs = ResolvePlaylistToSongs(playlist);
+            if (songs.Count > 0) _libraryService.MarkPlaylistPlayed(playlist.Id);
+        }
+
         if (songs.Count == 0) return new { error = "Playlist is empty" };
-        _libraryService.MarkPlaylistPlayed(playlist.Id);
+
         PostToUi(() =>
         {
             var mp = _ytForm.Music;
@@ -4619,15 +4762,58 @@ public class YoutubeFormInterop
         return new { success = true, count = songs.Count };
     }
 
+    private object QueuePlaylist(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
+
+        List<Song> songs;
+        if (IsDynamicPlaylist(playlistId))
+        {
+            songs = SelectDynamicSongs(playlistId, shuffle: playlistId == DynamicRandomMixId)
+                .Select(CreateSongFromLibrary)
+                .ToList();
+        }
+        else
+        {
+            var playlist = _libraryService.GetPlaylist(playlistId);
+            if (playlist == null) return new { error = "Playlist not found" };
+            songs = ResolvePlaylistToSongs(playlist);
+        }
+
+        if (songs.Count == 0) return new { error = "Playlist is empty" };
+
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            foreach (var song in songs)
+                mp.AddSong(song);
+        });
+        return new { success = true, count = songs.Count };
+    }
+
     private object ShufflePlaylist(JObject msg)
     {
         var playlistId = msg["playlistId"]?.ToString();
         if (string.IsNullOrEmpty(playlistId)) return new { error = "No playlistId" };
-        var playlist = _libraryService.GetPlaylist(playlistId);
-        if (playlist == null) return new { error = "Playlist not found" };
-        var songs = ResolvePlaylistToSongs(playlist);
+
+        List<Song> songs;
+        if (IsDynamicPlaylist(playlistId))
+        {
+            songs = SelectDynamicSongs(playlistId, shuffle: true)
+                .Select(CreateSongFromLibrary)
+                .ToList();
+        }
+        else
+        {
+            var playlist = _libraryService.GetPlaylist(playlistId);
+            if (playlist == null) return new { error = "Playlist not found" };
+            songs = ResolvePlaylistToSongs(playlist);
+            if (songs.Count > 0) _libraryService.MarkPlaylistPlayed(playlist.Id);
+        }
+
         if (songs.Count == 0) return new { error = "Playlist is empty" };
-        _libraryService.MarkPlaylistPlayed(playlist.Id);
+
         PostToUi(() =>
         {
             var mp = _ytForm.Music;
