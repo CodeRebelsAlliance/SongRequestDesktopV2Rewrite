@@ -68,6 +68,8 @@
       if (message.type === 'event') {
         if (message.eventName === 'stageStatus' || message.eventName === 'stageServer') {
           applyStatus(message.data || {});
+        } else if (message.eventName === 'mobileThemeColors') {
+          if (window.SongRequestTheme) window.SongRequestTheme.apply(message.data || {}, 'ms', '#211f26', '#2a2632');
         } else if (message.eventName === 'refresh') {
           loadStatus();
         }

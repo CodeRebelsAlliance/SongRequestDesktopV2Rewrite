@@ -1150,6 +1150,9 @@
       case 'soundboardImportProgress':
         onImportProgress(data);
         break;
+      case 'mobileThemeColors':
+        if (window.SongRequestTheme) window.SongRequestTheme.apply(data, 'msb', '#1d1b20', '#26232c');
+        break;
     }
   }
 

@@ -343,6 +343,7 @@
   <div id="playlist-context-menu" class="context-menu" style="display:none" data-playlist-id="">
     <button class="context-menu-item" data-action="playPlaylist"><i class="fas fa-play"></i> Play</button>
     <button class="context-menu-item" data-action="shufflePlaylist"><i class="fas fa-shuffle"></i> Shuffle Play</button>
+    <button class="context-menu-item" data-action="queuePlaylist"><i class="fas fa-list"></i> Add to Queue</button>
     <div class="context-menu-separator"></div>
     <button class="context-menu-item context-menu-danger" data-action="deletePlaylist"><i class="fas fa-trash"></i> Delete</button>
   </div>
@@ -356,7 +357,9 @@
       </div>
       <div class="modal-body">
         <input type="text" id="create-playlist-name" class="playlist-name-input" placeholder="Playlist name" maxlength="64">
-        <input type="text" id="create-playlist-emoji" class="playlist-emoji-input" placeholder="Emoji (optional)" maxlength="4">
+        <div class="playlist-icon-heading">Icon</div>
+        <input type="hidden" id="create-playlist-icon" value="fa-list">
+        <div id="create-playlist-icon-picker" class="playlist-icon-picker"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
           <button id="create-playlist-cancel" class="btn-cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #444;background:#2a2a2a;color:#ccc;cursor:pointer;font-size:13px">Cancel</button>
           <button id="create-playlist-ok" class="btn-danger" style="padding:8px 18px;border-radius:8px;border:none;background:#2a5a2a;color:#fff;cursor:pointer;font-size:13px">Create</button>
@@ -483,6 +486,7 @@
 </div>
 <script src="_framework/hybridwebview.js"></script>
 <script src="hostbridge.js"></script>
+<script src="playlisticons.js"></script>
 <script src="musicplayer.js"></script>
 </body>
 </html>

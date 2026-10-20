@@ -239,7 +239,7 @@ namespace SongRequestDesktopV2Rewrite
         //  Playlists
         // ──────────────────────────────────────────────────
 
-        public Playlist CreatePlaylist(string name, string? emoji = null)
+        public Playlist CreatePlaylist(string name, string? emoji = null, string? icon = null)
         {
             lock (_lock)
             {
@@ -247,6 +247,7 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     Name = string.IsNullOrWhiteSpace(name) ? "Untitled Playlist" : name.Trim(),
                     Emoji = emoji,
+                    Icon = icon,
                     CreatedUtc = DateTime.UtcNow,
                     LastModifiedUtc = DateTime.UtcNow
                 };
@@ -273,6 +274,7 @@ namespace SongRequestDesktopV2Rewrite
                     ["id"] = p.Id,
                     ["name"] = p.Name,
                     ["emoji"] = p.Emoji ?? "",
+                    ["icon"] = p.Icon ?? "",
                     ["songCount"] = p.Entries.Count,
                     ["createdUtc"] = p.CreatedUtc,
                     ["lastModifiedUtc"] = p.LastModifiedUtc,
@@ -365,7 +367,7 @@ namespace SongRequestDesktopV2Rewrite
             }
         }
 
-        public bool UpdatePlaylist(string playlistId, string? name = null, string? emoji = null)
+        public bool UpdatePlaylist(string playlistId, string? name = null, string? emoji = null, string? icon = null)
         {
             lock (_lock)
             {
@@ -373,6 +375,7 @@ namespace SongRequestDesktopV2Rewrite
                 if (pl == null) return false;
                 if (name != null) pl.Name = name.Trim();
                 if (emoji != null) pl.Emoji = emoji;
+                if (icon != null) pl.Icon = icon;
                 pl.LastModifiedUtc = DateTime.UtcNow;
                 Save();
                 return true;

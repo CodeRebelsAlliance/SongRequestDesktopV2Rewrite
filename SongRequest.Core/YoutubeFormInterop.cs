@@ -3335,55 +3335,7 @@ public class YoutubeFormInterop
         }
 
         var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
-        LyricsResult result;
-
-        try
-        {
-            // Priority 1: Embedded LRC in audio file
-            var embedded = LyricsService.GetEmbeddedLyrics(song.songPath);
-            if (embedded != null && embedded.Found)
-            {
-                result = embedded;
-            }
-            else
-            {
-                // Priority 2: .lrc file with same name in same folder
-                var lrcFile = LyricsService.GetLrcFileLyrics(song.songPath);
-                if (lrcFile != null && lrcFile.Found)
-                {
-                    result = lrcFile;
-                }
-                else
-                {
-                    // Priority 3: LRCLIB cached
-                    var query = LyricsQueryNormalizer.Build(song);
-                    result = await lyricsService.GetCachedLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
-                    if (!result.Found)
-                    {
-                        // Priority 4: LRCLIB live
-                        result = await lyricsService.GetLyricsAsync(query.Artist, query.Title, song.Duration).ConfigureAwait(false);
-                    }
-                }
-            }
-        }
-        catch
-        {
-            result = new LyricsResult();
-        }
-
-        var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
-        if (fallbackEnabled
-            && (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
-            && TryGetCachedSubtitleFallback(song.songPath, out var timedSub, out var plainSub))
-        {
-            result = new LyricsResult
-            {
-                Found = true,
-                SyncedLyrics = timedSub ?? string.Empty,
-                PlainLyrics = plainSub ?? string.Empty,
-                Provider = LyricsProvider.YouTubeCaptions
-            };
-        }
+        var result = await ResolveLyricsAsync(song, lyricsService).ConfigureAwait(false);
 
         lock (_musicPlayerLyricsCacheLock)
         {
@@ -3396,6 +3348,107 @@ public class YoutubeFormInterop
         if (source == "player") PresentationSendLyricsResult(result);
 
         _ = PrefetchNextLyricsAsync();
+    }
+
+    /// <summary>
+    /// The single lyrics resolution order used by playback, prefetch, presentation
+    /// and the legacy lyrics panel:
+    ///   embedded tag LRC → sidecar .lrc → cached LRCLIB → live LRCLIB (cached on
+    ///   success) → cached YouTube captions (sent-in downloads only).
+    /// </summary>
+    private async Task<LyricsResult> ResolveLyricsAsync(Song song, LyricsService lyricsService)
+    {
+        try
+        {
+            var embedded = LyricsService.GetEmbeddedLyrics(song.songPath);
+            if (embedded != null && embedded.Found) return embedded;
+
+            var lrcFile = LyricsService.GetLrcFileLyrics(song.songPath);
+            if (lrcFile != null && lrcFile.Found) return lrcFile;
+
+            var persistent = GetCachedLrcLib(song);
+            if (persistent != null) return persistent;
+
+            var query = LyricsQueryNormalizer.Build(song);
+            var result = await lyricsService
+                .GetCachedLyricsAsync(query.Artist, query.Title, song.Duration)
+                .ConfigureAwait(false);
+
+            if (!result.Found)
+            {
+                result = await lyricsService
+                    .GetLyricsAsync(query.Artist, query.Title, song.Duration)
+                    .ConfigureAwait(false);
+            }
+
+            if (result.Found)
+            {
+                CacheLrcLib(song, result);
+                return result;
+            }
+        }
+        catch
+        {
+            // Fall through to captions / no lyrics.
+        }
+
+        var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
+        if (fallbackEnabled &&
+            TryGetCachedSubtitleFallback(song.songPath, out var timedSub, out var plainSub))
+        {
+            return new LyricsResult
+            {
+                Found = true,
+                SyncedLyrics = timedSub ?? string.Empty,
+                PlainLyrics = plainSub ?? string.Empty,
+                Provider = LyricsProvider.YouTubeCaptions
+            };
+        }
+
+        return new LyricsResult();
+    }
+
+    private LyricsResult? GetCachedLrcLib(Song song)
+    {
+        try
+        {
+            var videoId = Path.GetFileNameWithoutExtension(song.songPath);
+            if (string.IsNullOrWhiteSpace(videoId)) return null;
+
+            var data = _ytForm.GetOrCreateVideoData(videoId);
+            if (!string.Equals(data.LyricsProvider, "LRCLIB", StringComparison.OrdinalIgnoreCase))
+                return null;
+            if (string.IsNullOrWhiteSpace(data.LyricsSyncedText) &&
+                string.IsNullOrWhiteSpace(data.LyricsText))
+                return null;
+
+            return new LyricsResult
+            {
+                Found = true,
+                SyncedLyrics = data.LyricsSyncedText ?? string.Empty,
+                PlainLyrics = data.LyricsText ?? string.Empty,
+                Provider = LyricsProvider.LRCLIB
+            };
+        }
+        catch { return null; }
+    }
+
+    private void CacheLrcLib(Song song, LyricsResult result)
+    {
+        try
+        {
+            if (!result.Found) return;
+            var videoId = Path.GetFileNameWithoutExtension(song.songPath);
+            if (string.IsNullOrWhiteSpace(videoId)) return;
+
+            var data = _ytForm.GetOrCreateVideoData(videoId);
+            data.LyricsSyncedText = result.SyncedLyrics ?? string.Empty;
+            data.LyricsText = result.PlainLyrics ?? string.Empty;
+            data.LyricsProvider = "LRCLIB";
+            data.LyricsFetched = true;
+            _ytForm.SaveVideoDataCache();
+        }
+        catch { }
     }
 
     private async Task PrefetchNextLyricsAsync()
@@ -3421,48 +3474,7 @@ public class YoutubeFormInterop
             }
 
             var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
-            LyricsResult result;
-
-            // Priority 1: Embedded LRC in audio file
-            var embedded = LyricsService.GetEmbeddedLyrics(next.songPath);
-            if (embedded != null && embedded.Found)
-            {
-                result = embedded;
-            }
-            else
-            {
-                // Priority 2: .lrc file with same name in same folder
-                var lrcFile = LyricsService.GetLrcFileLyrics(next.songPath);
-                if (lrcFile != null && lrcFile.Found)
-                {
-                    result = lrcFile;
-                }
-                else
-                {
-                    // Priority 3: LRCLIB cached
-                    var query = LyricsQueryNormalizer.Build(next);
-                    result = await lyricsService.GetCachedLyricsAsync(query.Artist, query.Title, next.Duration).ConfigureAwait(false);
-                    if (!result.Found)
-                    {
-                        // Priority 4: LRCLIB live
-                        result = await lyricsService.GetLyricsAsync(query.Artist, query.Title, next.Duration).ConfigureAwait(false);
-                    }
-                }
-            }
-
-            var fallbackEnabled = ConfigService.Instance.Current?.UseCaptionLyricsFallback ?? true;
-            if (fallbackEnabled
-                && (!result.Found || (!result.HasSynced && string.IsNullOrWhiteSpace(result.PlainLyrics)))
-                && TryGetCachedSubtitleFallback(next.songPath, out var timedSub, out var plainSub))
-            {
-                result = new LyricsResult
-                {
-                    Found = true,
-                    SyncedLyrics = timedSub ?? string.Empty,
-                    PlainLyrics = plainSub ?? string.Empty,
-                    Provider = LyricsProvider.YouTubeCaptions
-                };
-            }
+            var result = await ResolveLyricsAsync(next, lyricsService).ConfigureAwait(false);
 
             lock (_musicPlayerLyricsCacheLock)
             {
@@ -3499,7 +3511,6 @@ public class YoutubeFormInterop
                 .ToList();
             data["plainLyrics"] = plainLines;
             data["hasSynced"] = false;
-            provider = "LRCLIB";
         }
         else
         {
@@ -3546,11 +3557,11 @@ public class YoutubeFormInterop
             var videoId = Path.GetFileNameWithoutExtension(songPath);
             if (string.IsNullOrWhiteSpace(videoId)) return false;
 
-            var cachePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppPaths.DownloadPath, "video-metadata-cache.json"));
+            var cachePath = AppPaths.VideoMetadataCachePath;
             if (!File.Exists(cachePath)) return false;
 
             var json = File.ReadAllText(cachePath);
-            var cache = JsonConvert.DeserializeObject<System.Collections.Generic.Dictionary<string, CachedSubtitleData>>(json);
+            var cache = JsonConvert.DeserializeObject<System.Collections.Generic.Dictionary<string, VideoData>>(json);
             if (cache == null) return false;
             if (!cache.TryGetValue(videoId, out var cached)) return false;
             if (string.IsNullOrWhiteSpace(cached?.SubtitleText) && string.IsNullOrWhiteSpace(cached?.SubtitleTimedText)) return false;
@@ -4079,7 +4090,7 @@ public class YoutubeFormInterop
             {
                 id = dynamicPlaylist.Id,
                 name = dynamicPlaylist.Name,
-                emoji = dynamicPlaylist.Emoji,
+                icon = dynamicPlaylist.Icon,
                 description = dynamicPlaylist.Description,
                 songCount = Math.Min(100, presentCount),
                 lastPlayedUtc = (DateTime?)null,
@@ -4095,7 +4106,7 @@ public class YoutubeFormInterop
             {
                 id = p.Id,
                 name = p.Name,
-                emoji = p.Emoji ?? "",
+                icon = p.Icon ?? "",
                 songCount = p.Entries.Count,
                 lastPlayedUtc = p.LastPlayedUtc,
                 thumbnail = p.Entries
@@ -4529,13 +4540,13 @@ public class YoutubeFormInterop
     private const string DynamicMostPlayedId = "dynamic:most-played";
     private const string DynamicRecentlyAddedId = "dynamic:recently-added";
 
-    private sealed record DynamicPlaylistDefinition(string Id, string Name, string Emoji, string Description);
+    private sealed record DynamicPlaylistDefinition(string Id, string Name, string Icon, string Description);
 
     private static readonly DynamicPlaylistDefinition[] DynamicPlaylists =
     {
-        new(DynamicRandomMixId, "Random Mix", "🎲", "100 random songs from your library"),
-        new(DynamicMostPlayedId, "Most Played", "🔥", "Your 100 most played songs"),
-        new(DynamicRecentlyAddedId, "Recently Added", "🆕", "Your 100 newest songs"),
+        new(DynamicRandomMixId, "Random Mix", "fa-dice", "100 random songs from your library"),
+        new(DynamicMostPlayedId, "Most Played", "fa-fire", "Your 100 most played songs"),
+        new(DynamicRecentlyAddedId, "Recently Added", "fa-clock-rotate-left", "Your 100 newest songs"),
     };
 
     private static bool IsDynamicPlaylist(string? id)
@@ -4591,7 +4602,7 @@ public class YoutubeFormInterop
         {
             id = definition.Id,
             name = definition.Name,
-            emoji = definition.Emoji,
+            icon = definition.Icon,
             description = definition.Description,
             songCount = songs.Count,
             songs,
@@ -4614,7 +4625,7 @@ public class YoutubeFormInterop
             {
                 id = dynamicPlaylist.Id,
                 name = dynamicPlaylist.Name,
-                emoji = dynamicPlaylist.Emoji,
+                icon = dynamicPlaylist.Icon,
                 description = dynamicPlaylist.Description,
                 songCount = Math.Min(100, presentCount),
                 createdUtc = "",
@@ -4668,7 +4679,7 @@ public class YoutubeFormInterop
         {
             id = pl.Id,
             name = pl.Name,
-            emoji = pl.Emoji ?? "",
+            icon = pl.Icon ?? "",
             songCount = songs.Count,
             songs,
             isDynamic = false,
@@ -4679,14 +4690,15 @@ public class YoutubeFormInterop
     private object CreatePlaylist(JObject msg)
     {
         var name = msg["name"]?.ToString() ?? "Untitled Playlist";
+        var icon = msg["icon"]?.ToString();
         var emoji = msg["emoji"]?.ToString();
-        var pl = _libraryService.CreatePlaylist(name, emoji);
+        var pl = _libraryService.CreatePlaylist(name, emoji, icon);
         return new
         {
             success = true,
             id = pl.Id,
             name = pl.Name,
-            emoji = pl.Emoji ?? "",
+            icon = pl.Icon ?? "",
             songCount = 0
         };
     }
@@ -4735,7 +4747,8 @@ public class YoutubeFormInterop
         if (IsDynamicPlaylist(playlistId)) return new { error = "Dynamic playlists cannot be renamed" };
         var name = msg["name"]?.ToString();
         var emoji = msg["emoji"]?.ToString();
-        return new { success = _libraryService.UpdatePlaylist(playlistId, name, emoji) };
+        var icon = msg["icon"]?.ToString();
+        return new { success = _libraryService.UpdatePlaylist(playlistId, name, emoji, icon) };
     }
 
     private object PlayPlaylist(JObject msg)
@@ -5108,42 +5121,7 @@ public class YoutubeFormInterop
         if (presSend == null) return;
 
         var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
-        LyricsResult result;
-
-        try
-        {
-            var embedded = LyricsService.GetEmbeddedLyrics(song.songPath);
-            if (embedded != null && embedded.Found)
-            {
-                result = embedded;
-            }
-            else
-            {
-                var lrcFile = LyricsService.GetLrcFileLyrics(song.songPath);
-                if (lrcFile != null && lrcFile.Found)
-                {
-                    result = lrcFile;
-                }
-                else
-                {
-                    var cached = await lyricsService.GetCachedLyricsAsync(song.Artist ?? "", song.Title ?? "", song.Duration);
-                    if (cached != null && cached.Found)
-                    {
-                        result = cached;
-                    }
-                    else
-                    {
-                        var fetched = await lyricsService.GetLyricsAsync(song.Artist ?? "", song.Title ?? "", song.Duration);
-                        result = fetched ?? new LyricsResult { Found = false };
-                    }
-                }
-            }
-        }
-        catch
-        {
-            result = new LyricsResult { Found = false };
-        }
-
+        var result = await ResolveLyricsAsync(song, lyricsService).ConfigureAwait(false);
         PresentationSendLyricsResult(result);
     }
 
@@ -5174,7 +5152,6 @@ public class YoutubeFormInterop
                 .ToList();
             data["plainLyrics"] = plainLines;
             data["hasSynced"] = false;
-            provider = "LRCLIB";
         }
         else
         {

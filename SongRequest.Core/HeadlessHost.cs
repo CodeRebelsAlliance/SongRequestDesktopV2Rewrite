@@ -203,6 +203,25 @@ public sealed class HeadlessHost : ISongRequestHost
                 Progress("downloading", 100, "Download complete");
             }
 
+            // The automatic request pipeline downloads sent-in songs; cache their
+            // YouTube captions here so the lyrics fallback works later without a
+            // network request. Manual/local library songs are not touched.
+            if (DownloadedAudio.IsComplete(mp3) && !data.SubtitlesFetched)
+            {
+                try
+                {
+                    var subtitles = await YoutubeService.TryGetSubtitlesAsync(videoUrl).ConfigureAwait(false);
+                    data.SubtitleText = subtitles?.PlainText ?? string.Empty;
+                    data.SubtitleTimedText = subtitles?.TimedLrcText ?? string.Empty;
+                    data.SubtitlesFetched = true;
+                    SaveVideoDataCache();
+                }
+                catch
+                {
+                    // Captions are optional; never fail the download over them.
+                }
+            }
+
             // The automatic fetch loop is the normal path for song requests, so it
             // must honour the "add downloads to the library automatically" setting
             // too (it used to be applied only by the manual download button).

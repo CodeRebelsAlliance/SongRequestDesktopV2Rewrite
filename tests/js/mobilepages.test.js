@@ -186,6 +186,39 @@ test('visualization mode chips are as compact as the request tabs', () => {
   assert.match(viz, /flex-direction: row/);
 });
 
+test('playlist icons use the shared Font Awesome picker on both platforms', () => {
+  const shared = read('playlisticons.js');
+  const desktop = read('musicplayer.html');
+  const mobile = read('mobilemusic.html');
+  assert.match(shared, /SongRequestPlaylistIcons/);
+  assert.match(desktop, /playlisticons\.js/);
+  assert.match(desktop, /create-playlist-icon-picker/);
+  assert.match(mobile, /playlisticons\.js/);
+  assert.match(read('mobilemusic.js'), /mm-playlist-icon-picker/);
+});
+
+test('artwork colours are broadcast to every mobile page', () => {
+  const theme = read('mobiletheme.js');
+  const music = read('mobilemusic.js');
+  const requests = read('app.js');
+  const page = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Mobile', 'MainPage.cs'), 'utf8');
+  assert.match(theme, /SongRequestTheme/);
+  assert.match(music, /mobileThemeColors/);
+  assert.match(requests, /mobileThemeColors/);
+  assert.match(page, /BroadcastThemeColors/);
+  assert.match(page, /mobileThemeColors/);
+});
+
+test('mobile player shows colour-coded quality and lyrics source in Options', () => {
+  const js = read('mobilemusic.js');
+  const css = read('mobilemusic.css');
+  assert.match(js, /id="mm-options-meta"/);
+  assert.match(js, /function setQuality/);
+  assert.match(js, /function setLyricsSource/);
+  assert.match(css, /\.mm-quality\.is-lossless/);
+  assert.match(css, /\.mm-quality\.is-high/);
+});
+
 test('mobile music page exposes repeat state and playlist browsing', () => {
   const html = read('mobilemusic.html');
   assert.match(html, /id="mm-repeat"[^>]*aria-pressed="false"/);
