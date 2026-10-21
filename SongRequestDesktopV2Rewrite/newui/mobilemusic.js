@@ -952,7 +952,7 @@
         '<button class="mm-icon-btn" data-move="down" data-source="' + moveSource + '" data-index="' + index + '"' + (canDown ? '' : ' disabled') + ' aria-label="Move down"><i class="fas fa-chevron-down"></i></button>';
     }
 
-    return '<div class="mm-queue-row' + (current ? ' is-current' : '') + '">' +
+    return '<div class="mm-queue-row' + (current ? ' is-current' : '') + '" data-song-path="' + esc(item.songPath || '') + '">' +
       (current ? '<div class="mm-now-bar"></div>' : '') +
       '<div class="mm-thumb">' + (item.thumbnail ? '<img src="' + esc(item.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-queue-text">' +
@@ -963,6 +963,34 @@
       '<button class="mm-icon-btn" data-remove="' + esc(removeMethod) + '" data-index="' + index + '" aria-label="Remove">' +
         '<i class="fas fa-times"></i></button>' +
       '</div>';
+  }
+
+  // Artwork arrives after the queue when the background cache was cold; patch the
+  // existing rows instead of re-rendering a potentially huge queue.
+  function applyQueueThumbnails(items) {
+    if (!items || !items.length) return;
+
+    var byPath = {};
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item && item.songPath && item.thumbnail) byPath[item.songPath] = item.thumbnail;
+    }
+    if (!Object.keys(byPath).length) return;
+
+    [queue, playlistQueue].forEach(function (list) {
+      list.forEach(function (entry) {
+        var thumb = byPath[entry.songPath];
+        if (thumb) entry.thumbnail = thumb;
+      });
+    });
+
+    var rows = queueListEl.querySelectorAll('.mm-queue-row[data-song-path]');
+    for (var r = 0; r < rows.length; r++) {
+      var thumb = byPath[rows[r].getAttribute('data-song-path')];
+      if (!thumb) continue;
+      var host = rows[r].querySelector('.mm-thumb');
+      if (host) host.innerHTML = '<img src="' + esc(thumb) + '" alt="">';
+    }
   }
 
   // ── Colours from the artwork ─────────────────────────────
@@ -1109,6 +1137,10 @@
 
       case 'queueUpdate':
         onQueue(data);
+        break;
+
+      case 'queueThumbnails':
+        applyQueueThumbnails(data && data.items);
         break;
 
       case 'lyricsUpdate':

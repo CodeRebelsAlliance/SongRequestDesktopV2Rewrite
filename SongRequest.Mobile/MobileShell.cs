@@ -116,6 +116,9 @@ public sealed class MobileShell : IUiShell
     /// <summary>Quits the app (the web UI's Quit buttons).</summary>
     public void Close() => Application.Current?.Quit();
 
+    /// <summary>Marshals background callbacks onto MAUI's UI thread.</summary>
+    public void PostToUi(Action action) => Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(action);
+
     private static string? FileFor(string? windowName) => windowName switch
     {
         "visualization" => "visualization.html",

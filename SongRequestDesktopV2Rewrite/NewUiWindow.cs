@@ -154,6 +154,20 @@ public class NewUiWindow : IUiShell
 
     public void SendEvent(string eventName, object? data) => _interop.SendEvent(eventName, data);
 
+    /// <summary>Dispatches work onto the Photino UI thread (queue/artwork refreshes).</summary>
+    public void PostToUi(Action action)
+    {
+        var window = _window;
+        if (window == null)
+        {
+            action();
+            return;
+        }
+
+        try { window.Invoke(action); }
+        catch { }
+    }
+
     public NewUiWindow(YoutubeFormInterop interop, ISongRequestHost ytForm)
     {
         _interop = interop;

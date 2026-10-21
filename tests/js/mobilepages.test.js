@@ -170,6 +170,17 @@ test('mobile queue reorders both the play queue and the playlist queue', () => {
   assert.match(css, /\.mm-queue-row \.mm-icon-btn:disabled/);
 });
 
+test('queue artwork that arrives after the first update patches rows', () => {
+  const desktop = read('musicplayer.js');
+  const mobile = read('mobilemusic.js');
+
+  for (const js of [desktop, mobile]) {
+    assert.match(js, /case 'queueThumbnails'/);
+    assert.match(js, /function applyQueueThumbnails/);
+    assert.match(js, /data-song-path/);
+  }
+});
+
 test('playlists support queueing and dynamic mixes', () => {
   const interop = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
   assert.match(interop, /queuePlaylist/);

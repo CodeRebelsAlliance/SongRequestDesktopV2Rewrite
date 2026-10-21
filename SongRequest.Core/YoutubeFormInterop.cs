@@ -124,6 +124,18 @@ public class YoutubeFormInterop
     public Action? QuitRequested { get; set; }
 
     private string? _currentSongPath;
+
+    // Artwork already pushed via queueUpdate / queueThumbnails, keyed by song path.
+    // Bulk queue loading removes the repeated queue updates that used to act as
+    // thumbnail retries while the background cache caught up, so missing artwork is
+    // filled in by targeted queueThumbnails events instead.
+    private readonly object _queueThumbnailSync = new();
+    private readonly Dictionary<string, string> _queueThumbnailsSent = new(StringComparer.OrdinalIgnoreCase);
+    private int _queueThumbnailRefreshScheduled;
+    private int _queueThumbnailRefreshes;
+
+    /// <summary>Stops a pathological loop if the cache never makes progress.</summary>
+    private const int MaxQueueThumbnailRefreshes = 120;
     private bool _musicPlayerSubscribed;
     private bool _pendingMusicShareOpen;
     private LyricsService? _musicPlayerLyricsService;
@@ -1966,14 +1978,9 @@ public class YoutubeFormInterop
             if (mp == null) return;
 
             // Build a path→library lookup for enriching queue items
-            Dictionary<string, LibrarySong> libByPath = new(StringComparer.OrdinalIgnoreCase);
-            try
-            {
-                foreach (var s in _libraryService.Data.Songs)
-                    if (!string.IsNullOrEmpty(s.FilePath))
-                        libByPath[s.FilePath] = s;
-            }
-            catch { }
+            var libByPath = BuildLibraryLookupByPath();
+
+            bool anyThumbnailMissing = false;
 
             var queueData = mp.Queue.Select((song, i) =>
             {
@@ -1982,6 +1989,8 @@ public class YoutubeFormInterop
                     libByPath.TryGetValue(song.songPath, out lib);
 
                 var thumb = GetThumbnailForSongPath(song.songPath, lib);
+                if (thumb == null) anyThumbnailMissing = true;
+                else RememberQueueThumbnail(song.songPath, thumb);
 
                 var ext = !string.IsNullOrEmpty(song.songPath)
                     ? System.IO.Path.GetExtension(song.songPath).TrimStart('.').ToUpperInvariant()
@@ -2013,6 +2022,8 @@ public class YoutubeFormInterop
                     libByPath.TryGetValue(song.songPath, out lib);
 
                 var thumb = GetThumbnailForSongPath(song.songPath, lib);
+                if (thumb == null) anyThumbnailMissing = true;
+                else RememberQueueThumbnail(song.songPath, thumb);
 
                 var ext = !string.IsNullOrEmpty(song.songPath)
                     ? System.IO.Path.GetExtension(song.songPath).TrimStart('.').ToUpperInvariant()
@@ -2046,10 +2057,140 @@ public class YoutubeFormInterop
                 }
             });
             mpSend(json);
+
+            // A single batched queue update no longer repeats while artwork is still
+            // being downscaled in the background; kick off a targeted retry for the
+            // entries that had no thumbnail yet.
+            _queueThumbnailRefreshes = 0;
+            if (anyThumbnailMissing) ScheduleQueueThumbnailRefresh();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[SendQueueUpdate] {ex.Message}");
+        }
+    }
+
+    private Dictionary<string, LibrarySong> BuildLibraryLookupByPath()
+    {
+        var byPath = new Dictionary<string, LibrarySong>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            lock (_libraryService.Data)
+            {
+                foreach (var song in _libraryService.Data.Songs)
+                    if (!string.IsNullOrEmpty(song.FilePath))
+                        byPath[song.FilePath] = song;
+            }
+        }
+        catch { }
+        return byPath;
+    }
+
+    private void RememberQueueThumbnail(string? songPath, string thumbnail)
+    {
+        if (string.IsNullOrEmpty(songPath)) return;
+        lock (_queueThumbnailSync) _queueThumbnailsSent[songPath] = thumbnail;
+    }
+
+    /// <summary>Repeats a small thumbnail-only update while the cache is still filling.</summary>
+    private void ScheduleQueueThumbnailRefresh()
+    {
+        if (_queueThumbnailRefreshes >= MaxQueueThumbnailRefreshes) return;
+        if (Interlocked.CompareExchange(ref _queueThumbnailRefreshScheduled, 1, 0) != 0) return;
+
+        _ = System.Threading.Tasks.Task.Run(async () =>
+        {
+            try { await System.Threading.Tasks.Task.Delay(800).ConfigureAwait(false); }
+            catch { }
+
+            void Run()
+            {
+                Interlocked.Exchange(ref _queueThumbnailRefreshScheduled, 0);
+                SendQueueThumbnailUpdate();
+            }
+
+            // Reading the queue collections must happen on the shell's UI thread.
+            try
+            {
+                var shell = _ytForm.NewUiRef;
+                if (shell != null) shell.PostToUi(Run);
+                else _ytForm.PostToUi(Run);
+            }
+            catch { Interlocked.Exchange(ref _queueThumbnailRefreshScheduled, 0); }
+        });
+    }
+
+    /// <summary>
+    /// Sends only the queue artwork that became available since the last update
+    /// (<c>queueThumbnails</c>). Keeps the page in sync without re-sending the whole
+    /// queue for every image the background converter finishes.
+    /// </summary>
+    private void SendQueueThumbnailUpdate()
+    {
+        var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
+        var mp = _ytForm.Music;
+        if (mpSend == null || mp == null)
+        {
+            _queueThumbnailRefreshes = 0;
+            return;
+        }
+
+        _queueThumbnailRefreshes++;
+
+        try
+        {
+            var libByPath = BuildLibraryLookupByPath();
+            var items = new List<object>();
+            bool anyMissing = false;
+
+            void Add(Song song)
+            {
+                var path = song.songPath;
+                if (string.IsNullOrEmpty(path)) return;
+
+                lock (_queueThumbnailSync)
+                    if (_queueThumbnailsSent.ContainsKey(path)) return;
+
+                LibrarySong? lib = null;
+                libByPath.TryGetValue(path, out lib);
+
+                var thumb = GetThumbnailForSongPath(path, lib);
+                if (thumb == null)
+                {
+                    anyMissing = true;
+                    return;
+                }
+
+                lock (_queueThumbnailSync) _queueThumbnailsSent[path] = thumb;
+                items.Add(new { songPath = path, thumbnail = thumb });
+            }
+
+            foreach (var song in mp.Queue) Add(song);
+            foreach (var song in mp.PlaylistQueue) Add(song);
+
+            if (items.Count > 0)
+            {
+                var json = JsonConvert.SerializeObject(new
+                {
+                    type = "event",
+                    eventName = "queueThumbnails",
+                    data = new { items }
+                });
+                mpSend(json);
+            }
+
+            if (anyMissing && Thumbnails.PendingCount > 0)
+            {
+                ScheduleQueueThumbnailRefresh();
+            }
+            else
+            {
+                _queueThumbnailRefreshes = 0;
+            }
+        }
+        catch
+        {
+            _queueThumbnailRefreshes = 0;
         }
     }
 

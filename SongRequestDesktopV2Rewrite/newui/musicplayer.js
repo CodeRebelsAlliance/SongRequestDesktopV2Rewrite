@@ -1000,6 +1000,9 @@
         updateQueue(data);
         if (data && data.repeatEnabled != null) setRepeatState(!!data.repeatEnabled);
         break;
+      case 'queueThumbnails':
+        applyQueueThumbnails(data && data.items);
+        break;
       case 'lyricsUpdate':
         renderLyrics(data);
         break;
@@ -1169,6 +1172,38 @@
     });
   }
 
+  // Artwork that was still being downscaled when the queue was rendered arrives
+  // later; patch the rows in place instead of rebuilding a large queue.
+  function applyQueueThumbnails(items) {
+    if (!items || !items.length) return;
+
+    var byPath = {};
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item && item.songPath && item.thumbnail) byPath[item.songPath] = item.thumbnail;
+    }
+    if (!Object.keys(byPath).length) return;
+
+    if (lastQueueData) {
+      (lastQueueData.queue || []).forEach(function (entry) {
+        var thumb = byPath[entry.songPath];
+        if (thumb) entry.thumbnail = thumb;
+      });
+      (lastQueueData.playlistQueue || []).forEach(function (entry) {
+        var thumb = byPath[entry.songPath];
+        if (thumb) entry.thumbnail = thumb;
+      });
+    }
+
+    var rows = queueList.querySelectorAll('.queue-item[data-song-path]');
+    for (var r = 0; r < rows.length; r++) {
+      var thumb = byPath[rows[r].getAttribute('data-song-path')];
+      if (!thumb) continue;
+      var host = rows[r].querySelector('.queue-item-thumb');
+      if (host) host.innerHTML = '<img src="' + thumb + '" alt="">';
+    }
+  }
+
   function renderQueue(items, playlistItems, isPlaying) {
     var hasQueue = items.length > 0;
     var hasPlaylist = playlistItems.length > 0;
@@ -1308,7 +1343,7 @@
     if (item.isHashDuplicate) pills += '<span class="pill pill-dup"><i class="fas fa-clone"></i> Hash Dup</span>';
 
     return `
-      <div class="queue-item${isNowPlaying ? ' queue-now-playing' : ''}${isPlaylistItem ? ' queue-playlist-item' : ''}" data-index="${item.index}"${draggable}>
+      <div class="queue-item${isNowPlaying ? ' queue-now-playing' : ''}${isPlaylistItem ? ' queue-playlist-item' : ''}" data-index="${item.index}" data-song-path="${escHtml(item.songPath)}"${draggable}>
         ${thumbHtml}
         <div class="queue-item-info">
           <div class="queue-item-title">${escHtml(item.title)}</div>

@@ -56,4 +56,11 @@ public interface IUiShell
 
     /// <summary>Closes the whole application (the web UI's Quit buttons).</summary>
     void Close();
+
+    /// <summary>
+    /// Marshals work onto the shell's UI thread. Background callbacks that read the
+    /// player queues (e.g. delayed artwork refreshes) must use this instead of
+    /// touching the collections from a thread-pool thread.
+    /// </summary>
+    void PostToUi(Action action) => action();
 }
