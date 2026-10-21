@@ -840,7 +840,7 @@ namespace SongRequestDesktopV2Rewrite
                 // Audio properties. Never derive the bitrate from the decoded
                 // WaveFormat: AudioFileReader reports 32-bit float samples, which
                 // made a 192 kbps MP3 look like 3072 kbps (48 kHz × 2 × 32 bit).
-                song.BitrateKbps = Math.Max(0, (int)Math.Round(tagFile.Properties.AudioBitrate));
+                song.BitrateKbps = Math.Max(0, (int)Math.Round((double)tagFile.Properties.AudioBitrate));
                 if (song.BitrateKbps <= 0 && song.Duration > TimeSpan.Zero && fileInfo.Length > 0)
                 {
                     // Last resort for containers TagLib cannot read: average bitrate
