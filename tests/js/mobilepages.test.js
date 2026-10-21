@@ -287,6 +287,34 @@ test('player time displays keep hours for long tracks', () => {
   assert.match(presentation, /if \(h > 0\) return h \+/);
 });
 
+test('presentation zoom controls auto-hide on TV/HDMI and return on activity', () => {
+  const js = read('presentation.js');
+  const css = read('presentation.css');
+
+  assert.match(js, /function wireZoomAutoHide/);
+  assert.match(js, /classList\.add\('is-idle'\)/);
+  assert.match(css, /#pres-zoom\.is-idle/);
+});
+
+test('mobile stage follows the presentation source and sends plain lyrics as lines', () => {
+  const root = path.join(__dirname, '..', '..');
+  const server = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'Platforms', 'Android', 'Stage', 'StageServer.cs'), 'utf8');
+
+  assert.match(server, /MusicSharePresentation\.BuildNowPlaying/);
+  assert.match(server, /MusicSharePresentation\.BuildLyrics/);
+  assert.match(server, /plainLyrics = plain/);
+});
+
+test('visualization frames wait until the native window exists', () => {
+  const root = path.join(__dirname, '..', '..');
+  const window = fs.readFileSync(path.join(root, 'SongRequestDesktopV2Rewrite', 'NewUiWindow.cs'), 'utf8');
+
+  assert.match(window, /visualizationReady/);
+  assert.match(window, /visualizationReady \|\| vw\.WindowHandle == IntPtr\.Zero/);
+  // The 30 fps stream starts from WindowCreated, not before the native window exists.
+  assert.match(window, /StartVisualizationStreaming/);
+});
+
 test('desktop output device menu stays inside the window and scrolls', () => {
   const js = read('musicplayer.js');
   const css = read('musicplayer.css');
@@ -294,6 +322,8 @@ test('desktop output device menu stays inside the window and scrolls', () => {
   // The menu is repositioned after the real device list replaces the loading
   // placeholder, and its list is capped to the available height.
   assert.match(js, /function positionDeviceMenu/);
+  // The menu must leave #player-bar-right so the expanded player cannot hide it.
+  assert.match(js, /document\.body\.appendChild\(deviceMenuEl\)/);
   assert.match(js, /renderDeviceMenu\(\(result && result\.devices\) \|\| \[\], deviceSelected\);[\s\S]*?positionDeviceMenu\(\);/);
   assert.match(js, /deviceMenuListEl\.style\.maxHeight/);
   assert.match(css, /#device-menu-list\s*\{[^}]*overflow-y:\s*auto/s);

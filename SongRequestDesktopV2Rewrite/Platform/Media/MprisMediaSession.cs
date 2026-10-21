@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using Tmds.DBus;
 
@@ -346,14 +347,36 @@ public sealed class MprisMediaSession : ISystemMediaSession, IMprisRoot, IMprisP
             if (current.Duration > TimeSpan.Zero) metadata["mpris:length"] = ToMicroseconds(current.Duration);
             if (!string.IsNullOrEmpty(current.ArtworkPath))
             {
-                var uri = current.ArtworkPath;
-                if (!uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-                    uri = "file://" + uri.Replace("\\", "/");
-                metadata["mpris:artUrl"] = uri;
+                var uri = ToArtworkUri(current.ArtworkPath);
+                if (uri != null) metadata["mpris:artUrl"] = uri;
             }
         }
 
         return metadata;
+    }
+
+    /// <summary>
+    /// MPRIS expects a URI, not a bare path. <see cref="Uri"/> escapes spaces and
+    /// non-ASCII characters (KDE/Plasma rejected unescaped local art URLs).
+    /// </summary>
+    internal static string? ToArtworkUri(string artworkPath)
+    {
+        if (string.IsNullOrWhiteSpace(artworkPath)) return null;
+
+        if (Uri.TryCreate(artworkPath, UriKind.Absolute, out var absolute) &&
+            (absolute.IsFile || artworkPath.Contains("://", StringComparison.Ordinal)))
+        {
+            return absolute.AbsoluteUri;
+        }
+
+        try
+        {
+            return new Uri(Path.GetFullPath(artworkPath)).AbsoluteUri;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void EmitPlayer(PropertyChanges changes)

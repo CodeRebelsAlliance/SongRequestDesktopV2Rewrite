@@ -419,6 +419,34 @@
     });
   }
 
+  // On a TV/HDMI display there is no mouse hover to fade the controls away, so
+  // they used to sit on top of the picture forever. Hide them after a short idle
+  // period and bring them back on any pointer/key activity.
+  function wireZoomAutoHide() {
+    var zoomEl = document.getElementById('pres-zoom');
+    if (!zoomEl) return;
+
+    var idleTimer = null;
+    var IDLE_MS = 4000;
+
+    function scheduleHide() {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(function () { zoomEl.classList.add('is-idle'); }, IDLE_MS);
+    }
+
+    function showControls() {
+      zoomEl.classList.remove('is-idle');
+      scheduleHide();
+    }
+
+    ['pointerdown', 'pointermove', 'touchstart', 'keydown', 'focusin'].forEach(function (name) {
+      document.addEventListener(name, showControls, { passive: true });
+    });
+
+    zoomEl.addEventListener('mouseenter', showControls);
+    showControls();
+  }
+
   function applyLyricsSettings(data) {
     if (data.presentationZoom != null) {
       // The host value wins over the locally stored one: it is the value the TV,
@@ -438,7 +466,11 @@
       setQrCode(data.requestUrl, data.requestQr);
     }
     if (data.presentationSource != null) {
+      var sourceChanged = data.presentationSource !== currentSource;
       setSourceVisibility(data.presentationSource);
+      // Also ask for the complete state: the source may have changed while this
+      // window was hidden or paused by the OS.
+      if (sourceChanged) hostSend('presentationReady');
     }
   }
 
@@ -636,6 +668,14 @@
   // Zoom before the first paint, then let the host's stored setting confirm it.
   restoreZoom();
   wireZoomControls();
+  wireZoomAutoHide();
+
+  // A hidden presentation window (or an HDMI WebView paused by Android) can miss
+  // a source switch. Re-request the full state whenever the page becomes active.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) hostSend('presentationReady');
+  });
+  window.addEventListener('focus', function () { hostSend('presentationReady'); });
 
   // Ready
   hostSend('presentationReady');

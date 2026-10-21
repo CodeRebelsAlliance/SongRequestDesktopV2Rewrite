@@ -61,7 +61,9 @@ internal static class StageMirror
                     AppHost.Current!.Host.Music,
                     StageAssets.WebRoot,
                     // Queue artwork lives in the library, not on the Song object.
-                    songPath => AppHost.Current?.Interop.GetThumbnailDataUrl(songPath))
+                    songPath => AppHost.Current?.Interop.GetThumbnailDataUrl(songPath),
+                    // Source "Music Share" on the stage follows the received share.
+                    () => AppHost.Current?.Interop.LastMusicShareMetadata)
                 {
                     // A TV changing the zoom updates the setting the in-app page and
                     // the HDMI mirror read too.

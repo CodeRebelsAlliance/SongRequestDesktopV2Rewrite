@@ -41,6 +41,20 @@ public class LibraryServiceScanTests
     }
 
     [SkippableFact]
+    public void Import_Mp3_ReportsTheSourceBitrate_NotTheDecodedFloatFormat()
+    {
+        Skip.IfNot(Fixtures.FfmpegAvailable, "ffmpeg not available");
+        Fixtures.ResetLibrary();
+
+        using var lib = new LibraryService();
+        var song = lib.ImportDownloadedSong(Fixtures.Audio.Mp3);
+
+        Assert.NotNull(song);
+        // A decoded 48 kHz stereo float stream would report 3072 kbps.
+        Assert.InRange(song!.BitrateKbps, 32, 512);
+    }
+
+    [SkippableFact]
     public void Import_PersistsAcrossInstances()
     {
         Skip.IfNot(Fixtures.FfmpegAvailable, "ffmpeg not available");

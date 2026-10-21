@@ -73,6 +73,12 @@ body {
   #pres-zoom { opacity: 0.85; }
 }
 
+/* Auto-hidden after inactivity (TV, HDMI, touch); any interaction restores it. */
+#pres-zoom.is-idle {
+  opacity: 0;
+  pointer-events: none;
+}
+
 #pres-zoom button {
   min-width: 44px;
   height: 44px;

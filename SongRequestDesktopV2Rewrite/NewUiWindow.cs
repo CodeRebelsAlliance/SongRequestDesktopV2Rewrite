@@ -582,9 +582,11 @@ public class NewUiWindow : IUiShell
             if (_presentationWindow != null)
             {
                 // The window is only hidden when "closed": show it again and resume
-                // sending it data.
+                // sending it data. Its page may have missed the source switch while
+                // hidden, so push the complete current state again.
                 SetSubWindowVisible("Presentation - ", true);
                 PresentationSendMessage = _presentationSend;
+                _interop.RefreshPresentation();
                 return;
             }
 
@@ -756,6 +758,8 @@ public class NewUiWindow : IUiShell
                 // sending it data.
                 SetSubWindowVisible("Visualization - ", true);
                 VisualizationSendMessage = _visualizationSend;
+                // Closing disposed the streamer; restart it for the reopened window.
+                try { _interop.StartVisualizationStreaming(); } catch { }
                 return;
             }
 
@@ -770,7 +774,19 @@ public class NewUiWindow : IUiShell
                 .Center()
                 .Load(htmlPath);
 
-            vw.WindowCreated += (_, _) => { ApplyInitialGeometry(vw, 1000, 720); BringToFront(vw); };
+            // The audio thread starts pushing ~30 fps frames as soon as the
+            // streamer is created, before WaitForClose() has created the native
+            // window. Calling Invoke on that half-created window crashes WebView2
+            // on Windows, so the send channel stays closed until WindowCreated.
+            var visualizationReady = false;
+
+            vw.WindowCreated += (_, _) =>
+            {
+                visualizationReady = true;
+                ApplyInitialGeometry(vw, 1000, 720);
+                BringToFront(vw);
+                try { _interop.StartVisualizationStreaming(); } catch { }
+            };
 
             vw.RegisterWebMessageReceivedHandler((sender, message) =>
             {
@@ -786,6 +802,10 @@ public class NewUiWindow : IUiShell
 
             VisualizationSendMessage = json =>
             {
+                // Never touch the native window before it exists: the audio
+                // capture thread pushes frames immediately and WebView2 crashes
+                // when Invoked during window construction on Windows.
+                if (!visualizationReady || vw.WindowHandle == IntPtr.Zero) return;
                 try
                 {
                     vw.Invoke(() => vw.SendWebMessage(json));

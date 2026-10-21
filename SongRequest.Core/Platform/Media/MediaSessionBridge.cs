@@ -22,6 +22,8 @@ public sealed class MediaSessionBridge : IDisposable
     private MediaMetadata? _lastMetadata;
     private bool _hasMetadata;
     private bool _disposed;
+    private DateTime _artworkRetryAtUtc;
+    private int _artworkRetries;
 
     /// <summary>Raised when the OS asks to surface the app window (MPRIS <c>Raise</c>).</summary>
     public event EventHandler? RaiseRequested;
@@ -77,6 +79,20 @@ public sealed class MediaSessionBridge : IDisposable
         if (!ReferenceEquals(song, _lastSong))
         {
             _lastSong = song;
+            _artworkRetries = 0;
+            _artworkRetryAtUtc = DateTime.UtcNow.AddSeconds(2);
+            PushMetadata(song);
+        }
+        else if (song != null &&
+                 string.IsNullOrEmpty(_lastMetadata?.ArtworkPath) &&
+                 _artworkRetries < 10 &&
+                 DateTime.UtcNow >= _artworkRetryAtUtc)
+        {
+            // Artwork may be written/converted a moment after playback starts.
+            // Metadata used to be pushed only on the first tick, so the OS media
+            // controls (KDE/MPRIS in particular) never got the cover at all.
+            _artworkRetries++;
+            _artworkRetryAtUtc = DateTime.UtcNow.AddSeconds(3);
             PushMetadata(song);
         }
 

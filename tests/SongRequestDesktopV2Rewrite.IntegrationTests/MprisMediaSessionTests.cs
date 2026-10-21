@@ -70,6 +70,20 @@ public class MprisMediaSessionTests
         }
     }
 
+    [Fact]
+    public void ArtworkUri_EscapesLocalPathsAndKeepsWebUrls()
+    {
+        var local = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "art work", "cover.png");
+        var uri = MprisMediaSession.ToArtworkUri(local);
+
+        Assert.NotNull(uri);
+        Assert.StartsWith("file://", uri);
+        Assert.Contains("%20", uri);
+        Assert.EndsWith("/cover.png", uri);
+        Assert.Equal("https://example.test/cover.png",
+            MprisMediaSession.ToArtworkUri("https://example.test/cover.png"));
+    }
+
     [SkippableFact]
     public async Task Mpris_TransportCommandsRaiseEvents()
     {

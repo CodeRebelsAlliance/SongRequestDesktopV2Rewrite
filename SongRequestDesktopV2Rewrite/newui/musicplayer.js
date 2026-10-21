@@ -532,6 +532,13 @@
   var deviceMenuOpen = false;
   var deviceMenuAnchor = null;
 
+  // The menu lives inside #player-bar-right, which is hidden in expanded mode.
+  // Fixed positioning does not escape a hidden ancestor, so move it to <body>
+  // where it can also paint above the fullscreen player.
+  if (deviceMenuEl && deviceMenuEl.parentElement !== document.body) {
+    document.body.appendChild(deviceMenuEl);
+  }
+
   function hideDeviceMenu() {
     deviceMenuOpen = false;
     deviceMenuAnchor = null;

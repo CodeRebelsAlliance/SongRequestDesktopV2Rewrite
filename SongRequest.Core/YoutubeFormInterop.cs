@@ -204,11 +204,7 @@ public class YoutubeFormInterop
             if (mp != null)
             {
                 mp.OpenMusicShareHandler = () => MusicPlayerSendEvent("openMusicShare", null);
-                mp.OpenVisualizationHandler = () =>
-                {
-                    EnsureVisualization();
-                    _ytForm.NewUiRef?.ShowVisualizationWindow();
-                };
+                mp.OpenVisualizationHandler = ShowVisualization;
                 mp.AnnouncementOpenHandler = () =>
                 {
                     EnsureAnnouncement();
@@ -2215,9 +2211,14 @@ public class YoutubeFormInterop
 
     private void ShowVisualization()
     {
-        EnsureVisualization();
+        // The streamer is started by the window once its native handle exists
+        // (see NewUiWindow.WindowCreated); pushing frames into a half-created
+        // WebView2 window crashes on Windows.
         _ytForm.NewUiRef?.ShowVisualizationWindow();
     }
+
+    /// <summary>Starts the 30 fps audio feed once the visualization window is ready.</summary>
+    public void StartVisualizationStreaming() => EnsureVisualization();
 
     private VisualizationStreamer? EnsureVisualization()
     {
@@ -2982,6 +2983,12 @@ public class YoutubeFormInterop
     {
         get { lock (_mediaSessionLock) return _mediaSessionBridge != null; }
     }
+
+    /// <summary>The latest metadata received from a Music Share, if any.</summary>
+    public MusicShareMetadata? LastMusicShareMetadata => _musicShareLastMetadata;
+
+    /// <summary>Re-sends the current presentation state after a window is shown again.</summary>
+    public void RefreshPresentation() => SendPresentationCurrentState();
 
     /// <summary>
     /// Starts the OS media-control integration (MPRIS/SMTC/...) if it is enabled
@@ -5045,6 +5052,24 @@ public class YoutubeFormInterop
     }
 
     /// <summary>
+    /// Reports a start/connect failure to the share panel. The UI uses these
+    /// events (not request responses) to restore its buttons, so returning only
+    /// <c>{ error }</c> used to leave "Connecting..." disabled forever.
+    /// </summary>
+    private void MusicShareReportFailure(string error)
+    {
+        MusicShareSendEvent("musicShareStatus", new
+        {
+            status = "error",
+            sharing = false,
+            receiving = false,
+            sessionId = _musicShareService?.SessionId,
+            metadataOnly = _musicShareMetadataOnly
+        });
+        MusicShareSendEvent("musicShareError", new { error });
+    }
+
+    /// <summary>
     /// Extracts the base64 payload from a song's platform thumbnail. Thumbnails
     /// are stored as data-URL strings (e.g. "data:image/jpeg;base64,...").
     /// A plain file path is not artwork data and must not be sent as base64.
@@ -5078,24 +5103,6 @@ public class YoutubeFormInterop
         if (song == null) return null;
         return ThumbnailToBase64(song.thumbnail)
             ?? ThumbnailToBase64(GetThumbnailForSongPath(song.songPath));
-    }
-
-    /// <summary>
-    /// Wraps a received share thumbnail in a data URL. The payload can be PNG
-    /// (embedded cover art) even though the protocol calls it JPEG, so the MIME
-    /// type is derived from the base64 signature instead of assuming JPEG.
-    /// </summary>
-    private static string? MusicShareThumbnailDataUrl(string? base64)
-    {
-        if (string.IsNullOrWhiteSpace(base64)) return null;
-
-        // Signatures at the start of the base64 for JPEG, PNG, GIF and WebP.
-        var mime = base64.StartsWith("iVBOR", StringComparison.Ordinal) ? "image/png"
-            : base64.StartsWith("R0lGOD", StringComparison.Ordinal) ? "image/gif"
-            : base64.StartsWith("UklGR", StringComparison.Ordinal) ? "image/webp"
-            : "image/jpeg";
-
-        return $"data:{mime};base64,{base64}";
     }
 
     /// <summary>
@@ -5214,19 +5221,18 @@ public class YoutubeFormInterop
             var lastMeta = _musicShareLastMetadata;
             if (lastMeta != null)
             {
-                PresentationSendEvent("presentationUpdate", new
-                {
-                    title = lastMeta.Title,
-                    artist = lastMeta.Artist,
-                    currentTime = lastMeta.ElapsedSeconds,
-                    totalTime = lastMeta.TotalSeconds,
-                    thumbnail = MusicShareThumbnailDataUrl(lastMeta.ThumbnailData),
-                    isPlaying = true
-                });
+                PresentationSendEvent("presentationUpdate", MusicSharePresentation.BuildNowPlaying(lastMeta));
 
                 // Forced: a newly opened/reloaded page has nothing yet, even when
                 // the dedupe key matches the last broadcast.
                 SendMusicShareLyricsToPresentation(lastMeta, force: true);
+            }
+            else
+            {
+                // No share is connected: clear the player's old track instead of
+                // leaving the previous source's metadata on screen.
+                PresentationSendEvent("presentationUpdate", MusicSharePresentation.EmptyNowPlaying());
+                PresentationSendEvent("presentationLyricsUpdate", MusicSharePresentation.BuildLyrics(new MusicShareMetadata()));
             }
             return;
         }
@@ -5262,6 +5268,13 @@ public class YoutubeFormInterop
             if (thumb != null)
                 updateData["thumbnail"] = thumb;
         }
+        else
+        {
+            // Empty player: clear whatever the other source left on screen.
+            updateData["title"] = "";
+            updateData["artist"] = "";
+            updateData["duration"] = "";
+        }
 
         PresentationSendEvent("presentationUpdate", updateData);
 
@@ -5272,6 +5285,15 @@ public class YoutubeFormInterop
         if (current != null)
         {
             _ = FetchAndSendLyricsForSongPresentationAsync(current);
+        }
+        else
+        {
+            PresentationSendEvent("presentationLyricsUpdate", new
+            {
+                syncedLyrics = new List<object>(),
+                hasSynced = false,
+                provider = ""
+            });
         }
     }
 
@@ -5359,15 +5381,7 @@ public class YoutubeFormInterop
         var source = ConfigService.Instance.Current?.PresentationSource ?? "player";
         if (source == "musicshare")
         {
-            PresentationSendEvent("presentationUpdate", new
-            {
-                title = metadata.Title,
-                artist = metadata.Artist,
-                currentTime = metadata.ElapsedSeconds,
-                totalTime = metadata.TotalSeconds,
-                thumbnail = MusicShareThumbnailDataUrl(metadata.ThumbnailData),
-                isPlaying = true
-            });
+            PresentationSendEvent("presentationUpdate", MusicSharePresentation.BuildNowPlaying(metadata));
 
             // Lyrics arrive a moment after the track (the sharer fetches them
             // asynchronously), so the presentation must be told about them here,
@@ -5393,41 +5407,7 @@ public class YoutubeFormInterop
 
         _musicSharePresentationLyricsKey = key;
 
-        var data = new Dictionary<string, object> { ["provider"] = "MusicShare" };
-        var synced = new List<object>();
-
-        if (metadata.HasSyncedLyrics && !string.IsNullOrWhiteSpace(lyrics))
-        {
-            var parsed = new LyricsResult { Found = true, SyncedLyrics = lyrics };
-            synced = parsed.ParseSyncedLines()
-                .Select(line => (object)new { time = line.Time.TotalSeconds, text = line.Text })
-                .ToList();
-        }
-
-        if (synced.Count > 0)
-        {
-            data["syncedLyrics"] = synced;
-            data["hasSynced"] = true;
-        }
-        else
-        {
-            // No (parseable) lyrics: send an empty list so the presentation clears
-            // the previous song instead of keeping stale lines.
-            data["plainLyrics"] = SplitLyricLines(lyrics);
-            data["hasSynced"] = false;
-        }
-
-        PresentationSendEvent("presentationLyricsUpdate", data);
-    }
-
-    private static List<string> SplitLyricLines(string? lyrics)
-    {
-        if (string.IsNullOrWhiteSpace(lyrics)) return new List<string>();
-        return lyrics
-            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Trim())
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .ToList();
+        PresentationSendEvent("presentationLyricsUpdate", MusicSharePresentation.BuildLyrics(metadata));
     }
 
     private async void MusicShare_OnNowPlayingTick(object? sender, NowPlayingEventArgs e)
@@ -5530,10 +5510,17 @@ public class YoutubeFormInterop
     private async Task<object> MusicShareStart(JObject msg)
     {
         if (_musicShareSharing || _musicShareReceiving)
+        {
+            MusicShareReportFailure("Already sharing or receiving");
             return new { error = "Already sharing or receiving" };
+        }
 
         var mp = _ytForm.Music;
-        if (mp == null) return new { error = "Music Player not open" };
+        if (mp == null)
+        {
+            MusicShareReportFailure("Music Player not open");
+            return new { error = "Music Player not open" };
+        }
 
         try
         {
@@ -5569,6 +5556,7 @@ public class YoutubeFormInterop
                 _musicShareService.ErrorOccurred -= MusicShare_ServiceErrorOccurred;
                 _musicShareService = null;
             }
+            MusicShareReportFailure(ex.Message);
             return new { error = ex.Message };
         }
     }
@@ -5602,6 +5590,7 @@ public class YoutubeFormInterop
             _musicShareCachedThumbnail = null;
             _musicShareThumbnailRetries = -1;
             _musicSharePresentationLyricsKey = null;
+            _musicShareLastMetadata = null;
 
             MusicShareSendEvent("musicShareStatus", new
             {
@@ -5609,6 +5598,10 @@ public class YoutubeFormInterop
                 sharing = false,
                 receiving = false
             });
+
+            // A share page must not keep showing a track from the ended session.
+            if ((ConfigService.Instance.Current?.PresentationSource ?? "player") == "musicshare")
+                SendPresentationCurrentState();
 
             return new { success = true };
         }
@@ -5618,11 +5611,17 @@ public class YoutubeFormInterop
     private async Task<object> MusicShareConnect(JObject msg)
     {
         if (_musicShareSharing || _musicShareReceiving)
+        {
+            MusicShareReportFailure("Already sharing or receiving");
             return new { error = "Already sharing or receiving" };
+        }
 
         var sessionId = msg["sessionId"]?.ToString();
         if (string.IsNullOrEmpty(sessionId) || sessionId.Length != 6)
+        {
+            MusicShareReportFailure("Session ID must be 6 digits");
             return new { error = "Session ID must be 6 digits" };
+        }
 
         try
         {
@@ -5656,6 +5655,7 @@ public class YoutubeFormInterop
                 _musicShareService = null;
             }
             TeardownMusicShareAudio();
+            MusicShareReportFailure(ex.Message);
             return new { error = ex.Message };
         }
     }
@@ -5696,6 +5696,8 @@ public class YoutubeFormInterop
 
             TeardownMusicShareAudio();
             _musicShareReceiving = false;
+            _musicShareLastMetadata = null;
+            _musicSharePresentationLyricsKey = null;
 
             MusicShareSendEvent("musicShareStatus", new
             {
@@ -5703,6 +5705,10 @@ public class YoutubeFormInterop
                 sharing = false,
                 receiving = false
             });
+
+            // A share page must not keep showing a track from the ended session.
+            if ((ConfigService.Instance.Current?.PresentationSource ?? "player") == "musicshare")
+                SendPresentationCurrentState();
 
             return new { success = true };
         }

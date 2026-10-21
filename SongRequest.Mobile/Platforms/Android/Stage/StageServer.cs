@@ -29,6 +29,7 @@ internal sealed class StageServer : IDisposable
     private readonly LyricsService _lyrics;
     private readonly string _webRoot;
     private readonly Func<string?, string?>? _thumbnailResolver;
+    private readonly Func<MusicShareMetadata?>? _musicShareMetadata;
 
     private readonly Dictionary<string, LyricsResult?> _lyricsCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _cacheLock = new();
@@ -38,11 +39,16 @@ internal sealed class StageServer : IDisposable
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
 
-    public StageServer(MusicEngine engine, string webRoot, Func<string?, string?>? thumbnailResolver = null)
+    public StageServer(
+        MusicEngine engine,
+        string webRoot,
+        Func<string?, string?>? thumbnailResolver = null,
+        Func<MusicShareMetadata?>? musicShareMetadata = null)
     {
         _engine = engine;
         _webRoot = webRoot;
         _thumbnailResolver = thumbnailResolver;
+        _musicShareMetadata = musicShareMetadata;
         _lyrics = new LyricsService();
     }
 
@@ -330,43 +336,79 @@ internal sealed class StageServer : IDisposable
 
     private string BuildState()
     {
-        var queue = _engine.Queue.ToList();
-        var current = queue.Count > 0 ? queue[0] : null;
+        var cfg = ConfigService.Instance.Current;
+        var source = cfg?.PresentationSource ?? "player";
 
-        object? nowPlaying = null;
-        if (current != null)
+        object? nowPlaying;
+        object? lyrics;
+        List<object> upcoming = new();
+        var shareMetadata = source == "musicshare" ? _musicShareMetadata?.Invoke() : null;
+
+        if (source == "musicshare")
         {
-            var total = SafeTotalTime();
-            var position = SafeCurrentTime();
-
-            nowPlaying = new
+            // The HDMI mirror and the LAN page must follow the selected source too.
+            var metadata = shareMetadata;
+            if (metadata != null)
             {
-                title = current.Title,
-                artist = current.Artist,
-                duration = Format(total > TimeSpan.Zero ? total : current.Duration),
-                totalTime = total.TotalSeconds,
-                currentTime = position.TotalSeconds,
-                isPlaying = _engine.IsPlaying,
-                thumbnail = Thumbnail(current.thumbnail as string, current.songPath),
-            };
+                nowPlaying = MusicSharePresentation.BuildNowPlaying(metadata);
+                lyrics = MusicSharePresentation.BuildLyrics(metadata);
+            }
+            else
+            {
+                nowPlaying = MusicSharePresentation.EmptyNowPlaying();
+                lyrics = MusicSharePresentation.BuildLyrics(new MusicShareMetadata());
+            }
+        }
+        else
+        {
+            var queue = _engine.Queue.ToList();
+            var current = queue.Count > 0 ? queue[0] : null;
+
+            if (current != null)
+            {
+                var total = SafeTotalTime();
+                var position = SafeCurrentTime();
+
+                nowPlaying = new
+                {
+                    title = current.Title,
+                    artist = current.Artist,
+                    duration = Format(total > TimeSpan.Zero ? total : current.Duration),
+                    totalTime = total.TotalSeconds,
+                    currentTime = position.TotalSeconds,
+                    isPlaying = _engine.IsPlaying,
+                    thumbnail = Thumbnail(current.thumbnail as string, current.songPath),
+                };
+                lyrics = LyricsFor(current);
+            }
+            else
+            {
+                // Always send a clear object: the bridge used to skip null
+                // now-playing updates, so switching to an empty source left the
+                // previous track (and its lyrics) on the TV.
+                nowPlaying = MusicSharePresentation.EmptyNowPlaying();
+                lyrics = MusicSharePresentation.BuildLyrics(new MusicShareMetadata());
+            }
+
+            upcoming = queue.Skip(1).Take(3).Select(song => (object)new
+            {
+                title = song.Title,
+                artist = song.Artist,
+                thumbnail = Thumbnail(song.thumbnail as string, song.songPath),
+                estimatedStart = song.EstimatedStartDisplay ?? string.Empty,
+            }).ToList();
         }
 
-        var upcoming = queue.Skip(1).Take(3).Select(song => new
-        {
-            title = song.Title,
-            artist = song.Artist,
-            thumbnail = Thumbnail(song.thumbnail as string, song.songPath),
-            estimatedStart = song.EstimatedStartDisplay ?? string.Empty,
-        }).ToList();
-
-        var cfg = ConfigService.Instance.Current;
         var requestUrl = cfg?.RequestUrl ?? string.Empty;
+        var isPlaying = source == "musicshare"
+            ? shareMetadata != null
+            : _engine.IsPlaying;
 
         var payload = new
         {
             nowPlaying,
             queue = upcoming,
-            lyrics = current != null ? LyricsFor(current) : null,
+            lyrics,
             settings = new
             {
                 // Names match what presentation.js reads (lyricsFontScale /
@@ -374,12 +416,12 @@ internal sealed class StageServer : IDisposable
                 lyricsFontScale = (double)(cfg?.LyricsFontScale ?? 1.0f),
                 lyricsHidden = cfg?.LyricsHidden ?? false,
                 presentationZoom = Math.Clamp(cfg?.PresentationZoom ?? 1.0, 0.5, 2.0),
-                presentationSource = cfg?.PresentationSource ?? "player",
+                presentationSource = source,
                 requestUrl,
                 // QRCoder on the phone: a TV may have no internet access, and the
                 // page's CDN copy of qrcode.js would then render an empty white box.
                 requestQr = QrDataUrl(requestUrl),
-                isPlaying = _engine.IsPlaying,
+                isPlaying,
             },
         };
 
@@ -474,10 +516,14 @@ internal sealed class StageServer : IDisposable
                     if (embedded != null && embedded.Found) result = embedded;
                     else if (lrc != null && lrc.Found) result = lrc;
 
+                    // Same title/artist cleaning as the desktop player (YouTube
+                    // titles carry "Official Video", "(Lyrics)" and similar noise).
+                    var query = LyricsQueryNormalizer.Build(song);
+
                     if (result == null)
                     {
                         var cached = _lyrics.GetCachedLyricsAsync(
-                                song.Artist ?? "", song.Title ?? "", song.Duration)
+                                query.Artist, query.Title, song.Duration)
                             .GetAwaiter().GetResult();
                         if (cached != null && cached.Found) result = cached;
                     }
@@ -485,7 +531,7 @@ internal sealed class StageServer : IDisposable
                     if (result == null)
                     {
                         result = _lyrics.GetLyricsAsync(
-                                song.Artist ?? "", song.Title ?? "", song.Duration)
+                                query.Artist, query.Title, song.Duration)
                             .GetAwaiter().GetResult();
                     }
                 }
@@ -499,14 +545,31 @@ internal sealed class StageServer : IDisposable
 
         // The page wants { time, text } lines; the service keeps the LRC text.
         var synced = result.ParseSyncedLines()
-            .Select(line => new { time = line.Time.TotalSeconds, text = line.Text })
+            .Select(line => (object)new { time = line.Time.TotalSeconds, text = line.Text })
             .ToList();
+
+        // presentation.js iterates plainLyrics with forEach(), so it must be an
+        // array of lines. Sending the raw string made plain-lyrics songs throw.
+        var plain = (result.PlainLyrics ?? string.Empty)
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        var provider = result.Provider switch
+        {
+            LyricsProvider.FileEmbedded => "Embedded",
+            LyricsProvider.LrcFile => "LRC File",
+            LyricsProvider.LRCLIB => "LRCLIB",
+            LyricsProvider.YouTubeCaptions => "YouTube captions",
+            _ => string.Empty,
+        };
 
         return new
         {
             syncedLyrics = synced,
-            plainLyrics = result.PlainLyrics,
-            provider = result.Provider.ToString(),
+            plainLyrics = plain,
+            provider,
         };
     }
 

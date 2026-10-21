@@ -175,6 +175,28 @@ public class InteropDispatchTests
     }
 
     [Fact]
+    public async Task MusicShareConnect_InvalidCode_ReportsFailureSoThePanelCanRetry()
+    {
+        var (_, interop, responses) = Create();
+        var events = new ConcurrentQueue<(string Name, JObject? Data)>();
+        interop.EventRaised += (name, data) =>
+            events.Enqueue((name, data == null ? null : JObject.FromObject(data)));
+
+        var response = await Request(interop, responses, "musicShareConnect", customize: msg =>
+            msg["sessionId"] = "12");
+
+        Assert.Equal("Session ID must be 6 digits", response["result"]?["error"]?.ToString());
+
+        // The desktop panel responds to events, not to this response.
+        Assert.Contains(events, e => e.Name == "musicShareError");
+        var status = events.Where(e => e.Name == "musicShareStatus")
+            .Select(e => e.Data)
+            .LastOrDefault(d => d?["status"]?.ToString() == "error");
+        Assert.NotNull(status);
+        Assert.False(status!["receiving"]?.ToObject<bool>());
+    }
+
+    [Fact]
     public async Task UnknownMethod_ReturnsError()
     {
         var (_, interop, responses) = Create();

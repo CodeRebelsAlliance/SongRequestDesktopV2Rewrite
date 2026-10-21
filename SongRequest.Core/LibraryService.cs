@@ -833,17 +833,21 @@ namespace SongRequestDesktopV2Rewrite
                 {
                     using var reader = AudioSourceFactory.Open(filePath);
                     if (reader.TotalTime > TimeSpan.Zero)
-                    {
                         song.Duration = reader.TotalTime;
-                        if (song.BitrateKbps <= 0)
-                            song.BitrateKbps = (int)(reader.WaveFormat.AverageBytesPerSecond * 8.0 / 1000.0);
-                    }
                 }
                 catch { }
 
-                // Audio properties
-                if (song.BitrateKbps <= 0)
-                    song.BitrateKbps = (int)(tagFile.Properties.AudioBitrate);
+                // Audio properties. Never derive the bitrate from the decoded
+                // WaveFormat: AudioFileReader reports 32-bit float samples, which
+                // made a 192 kbps MP3 look like 3072 kbps (48 kHz × 2 × 32 bit).
+                song.BitrateKbps = Math.Max(0, (int)Math.Round(tagFile.Properties.AudioBitrate));
+                if (song.BitrateKbps <= 0 && song.Duration > TimeSpan.Zero && fileInfo.Length > 0)
+                {
+                    // Last resort for containers TagLib cannot read: average bitrate
+                    // from the file size (includes a small, usually negligible tag overhead).
+                    song.BitrateKbps = (int)Math.Round(
+                        fileInfo.Length * 8.0 / song.Duration.TotalSeconds / 1000.0);
+                }
                 song.SampleRateHz = tagFile.Properties.AudioSampleRate;
 
                 // Extract and cache thumbnail
