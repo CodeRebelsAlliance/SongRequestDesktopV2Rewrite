@@ -156,6 +156,20 @@ test('mobile queue is a player chip, not a navigation tab', () => {
   assert.doesNotMatch(page, /new TabDef\("queue"/);
 });
 
+test('mobile queue reorders both the play queue and the playlist queue', () => {
+  const js = read('mobilemusic.js');
+  const css = read('mobilemusic.css');
+
+  // Both sections render move controls, tagged with the list they belong to.
+  assert.match(js, /queueRow\(item, index, index === 0, 'removeQueueItem', 'queue'\)/);
+  assert.match(js, /queueRow\(item, index, false, 'removePlaylistQueueItem', 'playlist'\)/);
+  assert.match(js, /data-source=/);
+  assert.match(js, /movePlaylistQueueItem/);
+  // The now-playing slot stays first.
+  assert.match(js, /var minIndex = isPlaylist \? 0 : 1/);
+  assert.match(css, /\.mm-queue-row \.mm-icon-btn:disabled/);
+});
+
 test('playlists support queueing and dynamic mixes', () => {
   const interop = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
   assert.match(interop, /queuePlaylist/);
@@ -310,7 +324,10 @@ test('visualization frames wait until the native window exists', () => {
   const window = fs.readFileSync(path.join(root, 'SongRequestDesktopV2Rewrite', 'NewUiWindow.cs'), 'utf8');
 
   assert.match(window, /visualizationReady/);
-  assert.match(window, /visualizationReady \|\| vw\.WindowHandle == IntPtr\.Zero/);
+  assert.match(window, /if \(!visualizationReady\) return;/);
+  // Photino's WindowHandle throws PlatformNotSupportedException on Linux, which
+  // silently dropped every frame; the ready flag alone must gate the send.
+  assert.doesNotMatch(window, /visualizationReady \|\| vw\.WindowHandle/);
   // The 30 fps stream starts from WindowCreated, not before the native window exists.
   assert.match(window, /StartVisualizationStreaming/);
 });

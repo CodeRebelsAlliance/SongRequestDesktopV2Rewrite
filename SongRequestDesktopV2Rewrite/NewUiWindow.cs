@@ -805,7 +805,13 @@ public class NewUiWindow : IUiShell
                 // Never touch the native window before it exists: the audio
                 // capture thread pushes frames immediately and WebView2 crashes
                 // when Invoked during window construction on Windows.
-                if (!visualizationReady || vw.WindowHandle == IntPtr.Zero) return;
+                //
+                // Only the ready flag is used here: Photino's WindowHandle throws
+                // PlatformNotSupportedException on Linux, and the exception escaped
+                // this lambda before its try block — silently dropping every frame
+                // (the window stayed on "No audio playing"). WindowCreated already
+                // guarantees the native window exists on every platform.
+                if (!visualizationReady) return;
                 try
                 {
                     vw.Invoke(() => vw.SendWebMessage(json));

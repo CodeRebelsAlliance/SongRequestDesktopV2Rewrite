@@ -102,6 +102,65 @@ public class MusicEngineTests
     }
 
     [Fact]
+    public void LoadPlaylist_RaisesOneNotificationForTheWholeLoad()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        int updates = 0;
+        engine.PlaylistQueueChanged += (_, _) => updates++;
+
+        engine.LoadPlaylist(Enumerable.Range(0, 100).Select(i => Track("p" + i)), shuffle: false);
+
+        Assert.Equal(100, engine.PlaylistQueue.Count);
+        Assert.Equal(1, updates);
+    }
+
+    [Fact]
+    public void AddSongs_RaisesOneNotificationForTheWholeBatch()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        int updates = 0;
+        engine.QueueChanged += (_, _) => updates++;
+
+        engine.AddSongs(Enumerable.Range(0, 100).Select(i => Track("q" + i)));
+
+        Assert.Equal(100, engine.Queue.Count);
+        Assert.Equal(1, updates);
+    }
+
+    [Fact]
+    public void ShuffleQueue_RaisesOneNotification()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        for (int i = 0; i < 20; i++) engine.AddSong(Track("s" + i));
+
+        int updates = 0;
+        engine.QueueChanged += (_, _) => updates++;
+
+        engine.ShuffleQueue();
+
+        Assert.Equal(1, updates);
+    }
+
+    [Fact]
+    public void AdvanceFromPlaylistQueue_SendsOneCombinedUpdate()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        engine.LoadPlaylist(new[] { Track("a"), Track("b"), Track("c") }, shuffle: false);
+
+        int combined = 0, single = 0;
+        engine.QueuesChanged += (_, _) => combined++;
+        engine.QueueChanged += (_, _) => single++;
+        engine.PlaylistQueueChanged += (_, _) => single++;
+
+        Assert.True(engine.AdvanceFromPlaylistQueue());
+
+        Assert.Equal(1, combined);
+        Assert.Equal(0, single);
+        Assert.Equal(new[] { "a", "b" }, engine.Queue.Select(s => s.Title));
+        Assert.Single(engine.PlaylistQueue);
+    }
+
+    [Fact]
     public void RefillQueueFromPlaylist_AddsOneWhenQueueShort()
     {
         var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };

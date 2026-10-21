@@ -66,6 +66,14 @@ public sealed class MusicEngine
 
     private readonly SemaphoreSlim _announcementVolumeGate = new SemaphoreSlim(1, 1);
 
+    // While a bulk operation is running, per-item notifications are coalesced into one
+    // update at the end (see BeginBulkUpdate). Adding a 500-song playlist used to fire
+    // 500 full queue updates — each one serializing and resolving artwork for the whole
+    // growing queue — which is what delayed playback by seconds on mobile.
+    private int _bulkUpdateDepth;
+    private bool _queueChangedDuringBatch;
+    private bool _playlistQueueChangedDuringBatch;
+
     public MusicEngine()
     {
         // Wait times depend on every song before them, so they are recomputed *before*
@@ -74,10 +82,76 @@ public sealed class MusicEngine
         // got its wait time (the item then showed a stale value until the next update).
         Queue.CollectionChanged += (_, _) =>
         {
+            if (_bulkUpdateDepth > 0)
+            {
+                _queueChangedDuringBatch = true;
+                return;
+            }
             ComputeQueueTimings();
             QueueChanged?.Invoke(this, EventArgs.Empty);
         };
-        PlaylistQueue.CollectionChanged += (_, _) => PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+        PlaylistQueue.CollectionChanged += (_, _) =>
+        {
+            if (_bulkUpdateDepth > 0)
+            {
+                _playlistQueueChangedDuringBatch = true;
+                return;
+            }
+            PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+        };
+    }
+
+    /// <summary>
+    /// Coalesces queue notifications while many songs are added/removed. Dispose the
+    /// result to send the single update (or one update per queue that actually changed).
+    /// </summary>
+    public IDisposable BeginBulkUpdate()
+    {
+        _bulkUpdateDepth++;
+        return new BulkUpdateScope(this);
+    }
+
+    private sealed class BulkUpdateScope : IDisposable
+    {
+        private MusicEngine? _engine;
+
+        public BulkUpdateScope(MusicEngine engine) => _engine = engine;
+
+        public void Dispose()
+        {
+            var engine = _engine;
+            if (engine == null) return;
+            _engine = null;
+            engine.EndBulkUpdate();
+        }
+    }
+
+    private void EndBulkUpdate()
+    {
+        if (_bulkUpdateDepth == 0) return;
+        if (--_bulkUpdateDepth > 0) return;
+
+        if (_queueChangedDuringBatch && _playlistQueueChangedDuringBatch)
+        {
+            _queueChangedDuringBatch = false;
+            _playlistQueueChangedDuringBatch = false;
+            ComputeQueueTimings();
+            QueuesChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        if (_queueChangedDuringBatch)
+        {
+            _queueChangedDuringBatch = false;
+            ComputeQueueTimings();
+            QueueChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        if (_playlistQueueChangedDuringBatch)
+        {
+            _playlistQueueChangedDuringBatch = false;
+            PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -106,6 +180,36 @@ public sealed class MusicEngine
         }
         catch { }
         AddSong(s);
+    }
+
+    /// <summary>
+    /// Appends a batch of songs with a single queue notification. Used by "play/queue
+    /// playlist": calling <see cref="AddSong"/> per item made large playlists take
+    /// seconds before playback could start.
+    /// </summary>
+    public void AddSongs(IEnumerable<Song> songs)
+    {
+        if (songs == null) return;
+
+        var added = new List<Song>();
+        using (BeginBulkUpdate())
+        {
+            foreach (var song in songs)
+            {
+                if (song == null) continue;
+                Queue.Add(song);
+                added.Add(song);
+            }
+        }
+
+        var cfg = ConfigAccessor();
+        if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
+        {
+            // Warm the next few tracks only; StartPlayback calculates each track when
+            // it actually starts, and calculating hundreds at once saturates the CPU.
+            foreach (var song in added.Take(3))
+                _ = System.Threading.Tasks.Task.Run(() => CalculateSongLoudness(song));
+        }
     }
 
     public void AddNextSongExternal(Song? s)
@@ -471,6 +575,12 @@ public sealed class MusicEngine
     public event EventHandler<float[]>? AudioSamplesCaptured;
     public event EventHandler? QueueChanged;
     public event EventHandler? PlaylistQueueChanged;
+
+    /// <summary>
+    /// Raised once by a bulk update that changed both queues (instead of one event
+    /// per collection). Subscribers that render both queues get a single update.
+    /// </summary>
+    public event EventHandler? QueuesChanged;
 
     // Announcement / share / visualization integration hooks (set by the host).
     public Func<System.Threading.Tasks.Task>? RemoteAnnouncementHandler { get; set; }
@@ -913,19 +1023,24 @@ public sealed class MusicEngine
     public bool AdvanceFromPlaylistQueue()
     {
         if (PlaylistQueue.Count == 0) return false;
-        var song = PlaylistQueue[0];
-        PlaylistQueue.RemoveAt(0);
-        if (Queue.Count > 0) Queue.RemoveAt(0);
-        Queue.Add(song);
-        if (PlaylistQueue.Count > 0)
+
+        // Batch the two queue moves plus the two playlist removals into one update,
+        // and start playback before the (potentially large) queue payload is built.
+        using (BeginBulkUpdate())
         {
-            var next = PlaylistQueue[0];
+            var song = PlaylistQueue[0];
             PlaylistQueue.RemoveAt(0);
-            Queue.Add(next);
+            if (Queue.Count > 0) Queue.RemoveAt(0);
+            Queue.Add(song);
+            if (PlaylistQueue.Count > 0)
+            {
+                var next = PlaylistQueue[0];
+                PlaylistQueue.RemoveAt(0);
+                Queue.Add(next);
+            }
+            ComputeQueueTimings();
+            PlaySong(Queue[0]);
         }
-        ComputeQueueTimings();
-        PlaySong(Queue[0]);
-        PlaylistQueueChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
 
@@ -986,10 +1101,14 @@ public sealed class MusicEngine
         var rnd = new Random();
         var items = Queue.ToList();
         var nowPlaying = items.Count > 0 ? items[0] : null;
-        Queue.Clear();
         var remaining = items.Where(s => s != nowPlaying).OrderBy(x => rnd.Next()).ToList();
-        if (nowPlaying != null) Queue.Add(nowPlaying);
-        foreach (var song in remaining) Queue.Add(song);
+
+        using (BeginBulkUpdate())
+        {
+            Queue.Clear();
+            if (nowPlaying != null) Queue.Add(nowPlaying);
+            foreach (var song in remaining) Queue.Add(song);
+        }
     }
 
     public void ClearQueue()
@@ -999,9 +1118,15 @@ public sealed class MusicEngine
 
     public void LoadPlaylist(IEnumerable<Song> songs, bool shuffle)
     {
-        PlaylistQueue.Clear();
         var ordered = shuffle ? songs.OrderBy(_ => Random.Shared.Next()).ToList() : songs.ToList();
-        foreach (var s in ordered) PlaylistQueue.Add(s);
+
+        // One notification for the whole load. The old per-item adds sent hundreds of
+        // full queue updates before playback could begin.
+        using (BeginBulkUpdate())
+        {
+            PlaylistQueue.Clear();
+            foreach (var s in ordered) PlaylistQueue.Add(s);
+        }
 
         var cfg = ConfigAccessor();
         if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive)
@@ -1033,8 +1158,11 @@ public sealed class MusicEngine
         if (Queue.Count <= 1 && PlaylistQueue.Count > 0)
         {
             var next = PlaylistQueue[0];
-            PlaylistQueue.RemoveAt(0);
-            Queue.Add(next);
+            using (BeginBulkUpdate())
+            {
+                PlaylistQueue.RemoveAt(0);
+                Queue.Add(next);
+            }
 
             var cfg = ConfigAccessor();
             if (cfg != null && cfg.NormalizeVolume && cfg.NormalizationActive &&

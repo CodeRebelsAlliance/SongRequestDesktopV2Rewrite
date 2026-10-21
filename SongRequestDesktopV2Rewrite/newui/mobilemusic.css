@@ -814,6 +814,7 @@ input[type="search"] {
 }
 
 .mm-queue-row .mm-icon-btn { width: 38px; height: 38px; font-size: 14px; color: var(--mm-muted); }
+.mm-queue-row .mm-icon-btn:disabled { opacity: 0.28; }
 
 /* ── Small screens ──────────────────────────────────────── */
 @media (max-height: 620px) {

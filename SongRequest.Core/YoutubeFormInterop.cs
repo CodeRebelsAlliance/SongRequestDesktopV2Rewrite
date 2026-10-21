@@ -1811,6 +1811,7 @@ public class YoutubeFormInterop
         mp.NowPlayingTick += OnNowPlayingTick;
         mp.QueueChanged += OnQueueChanged;
         mp.PlaylistQueueChanged += OnQueueChanged;
+        mp.QueuesChanged += OnQueueChanged;
     }
 
     private void OnNowPlayingTick(object? sender, NowPlayingEventArgs args)
@@ -1976,13 +1977,11 @@ public class YoutubeFormInterop
 
             var queueData = mp.Queue.Select((song, i) =>
             {
-                string? thumb = null;
-                if (!string.IsNullOrEmpty(song.songPath))
-                    thumb = GetThumbnailForSongPath(song.songPath);
-
                 LibrarySong? lib = null;
                 if (!string.IsNullOrEmpty(song.songPath))
                     libByPath.TryGetValue(song.songPath, out lib);
+
+                var thumb = GetThumbnailForSongPath(song.songPath, lib);
 
                 var ext = !string.IsNullOrEmpty(song.songPath)
                     ? System.IO.Path.GetExtension(song.songPath).TrimStart('.').ToUpperInvariant()
@@ -2009,13 +2008,11 @@ public class YoutubeFormInterop
 
             var playlistQueueData = mp.PlaylistQueue.Select((song, i) =>
             {
-                string? thumb = null;
-                if (!string.IsNullOrEmpty(song.songPath))
-                    thumb = GetThumbnailForSongPath(song.songPath);
-
                 LibrarySong? lib = null;
                 if (!string.IsNullOrEmpty(song.songPath))
                     libByPath.TryGetValue(song.songPath, out lib);
+
+                var thumb = GetThumbnailForSongPath(song.songPath, lib);
 
                 var ext = !string.IsNullOrEmpty(song.songPath)
                     ? System.IO.Path.GetExtension(song.songPath).TrimStart('.').ToUpperInvariant()
@@ -2105,25 +2102,36 @@ public class YoutubeFormInterop
 
     private string? GetThumbnailForSongPath(string? songPath)
     {
+        LibrarySong? libSong = null;
+        try
+        {
+            lock (_libraryService.Data)
+            {
+                libSong = _libraryService.Data.Songs.FirstOrDefault(s =>
+                    string.Equals(s.FilePath, songPath, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+        catch { /* fall through to the other sources */ }
+
+        return GetThumbnailForSongPath(songPath, libSong);
+    }
+
+    /// <summary>
+    /// Artwork resolver for callers that already have the library entry. Queue updates
+    /// used to call the single-argument overload per item, scanning the whole library
+    /// again for every queue entry.
+    /// </summary>
+    private string? GetThumbnailForSongPath(string? songPath, LibrarySong? libSong)
+    {
         try
         {
             // 1. Try library thumbnail (saved during download/import)
-            try
+            if (libSong != null && !string.IsNullOrEmpty(libSong.ThumbnailPath) && File.Exists(libSong.ThumbnailPath))
             {
-                LibrarySong? libSong;
-                lock (_libraryService.Data)
-                {
-                    libSong = _libraryService.Data.Songs.FirstOrDefault(s =>
-                        string.Equals(s.FilePath, songPath, StringComparison.OrdinalIgnoreCase));
-                }
-                if (libSong != null && !string.IsNullOrEmpty(libSong.ThumbnailPath) && File.Exists(libSong.ThumbnailPath))
-                {
-                    // Downscaled + cached: the raw artwork is often ~1 MB and inlining it
-                    // made every queue/home update push tens of megabytes to the webview.
-                    return Thumbnails.GetDataUrl(libSong.ThumbnailPath);
-                }
+                // Downscaled + cached: the raw artwork is often ~1 MB and inlining it
+                // made every queue/home update push tens of megabytes to the webview.
+                return Thumbnails.GetDataUrl(libSong.ThumbnailPath);
             }
-            catch { /* fall through */ }
 
             // 2. Try embedded album art (local files and YouTube downloads with embedded art)
             try
@@ -3772,6 +3780,7 @@ public class YoutubeFormInterop
                 mp.NowPlayingTick -= OnNowPlayingTick;
                 mp.QueueChanged -= OnQueueChanged;
                 mp.PlaylistQueueChanged -= OnQueueChanged;
+                mp.QueuesChanged -= OnQueueChanged;
             }
             _musicPlayerSubscribed = false;
         }
@@ -4927,11 +4936,16 @@ public class YoutubeFormInterop
         PostToUi(() =>
         {
             var mp = _ytForm.Music;
-            mp.ClearQueue();
-            mp.LoadPlaylist(songs, false);
-            // "Play playlist" means start now, not just append to the playlist
-            // buffer. Move the first track into the queue and begin playback.
-            mp.AdvanceFromPlaylistQueue();
+            // One combined queue update for the whole playlist; playback starts
+            // before that update is serialized.
+            using (mp.BeginBulkUpdate())
+            {
+                mp.ClearQueue();
+                mp.LoadPlaylist(songs, false);
+                // "Play playlist" means start now, not just append to the playlist
+                // buffer. Move the first track into the queue and begin playback.
+                mp.AdvanceFromPlaylistQueue();
+            }
         });
         return new { success = true, count = songs.Count };
     }
@@ -4959,9 +4973,7 @@ public class YoutubeFormInterop
 
         PostToUi(() =>
         {
-            var mp = _ytForm.Music;
-            foreach (var song in songs)
-                mp.AddSong(song);
+            _ytForm.Music.AddSongs(songs);
         });
         return new { success = true, count = songs.Count };
     }
@@ -4991,9 +5003,12 @@ public class YoutubeFormInterop
         PostToUi(() =>
         {
             var mp = _ytForm.Music;
-            mp.ClearQueue();
-            mp.LoadPlaylist(songs, true);
-            mp.AdvanceFromPlaylistQueue();
+            using (mp.BeginBulkUpdate())
+            {
+                mp.ClearQueue();
+                mp.LoadPlaylist(songs, true);
+                mp.AdvanceFromPlaylistQueue();
+            }
         });
         return new { success = true, count = songs.Count };
     }
@@ -5006,29 +5021,29 @@ public class YoutubeFormInterop
 
     private List<Song> ResolvePlaylistToSongs(Playlist playlist)
     {
-        var songs = new List<Song>();
+        var songs = new List<Song>(playlist.Entries.Count);
+
+        // Index the library once instead of scanning every song for every entry:
+        // a large playlist in a large library used to cost entries × songs string
+        // comparisons before playback could even start.
+        var byId = new Dictionary<string, LibrarySong>(StringComparer.Ordinal);
+        lock (_libraryService.Data)
+        {
+            foreach (var s in _libraryService.Data.Songs)
+                if (!string.IsNullOrEmpty(s.Id)) byId[s.Id] = s;
+        }
+
         foreach (var entry in playlist.Entries)
         {
-            LibrarySong? libSong = null;
-            foreach (var s in _libraryService.Data.Songs)
-            {
-                if (s.Id == entry.SongId)
-                {
-                    libSong = s;
-                    break;
-                }
-            }
-            if (libSong != null)
-            {
-                var song = new Song(
-                    libSong.Title ?? "Unknown",
-                    libSong.Artist ?? "Unknown",
-                    null,
-                    libSong.Duration,
-                    libSong.FilePath ?? ""
-                );
-                songs.Add(song);
-            }
+            if (!byId.TryGetValue(entry.SongId, out var libSong)) continue;
+
+            songs.Add(new Song(
+                libSong.Title ?? "Unknown",
+                libSong.Artist ?? "Unknown",
+                null,
+                libSong.Duration,
+                libSong.FilePath ?? ""
+            ));
         }
         return songs;
     }

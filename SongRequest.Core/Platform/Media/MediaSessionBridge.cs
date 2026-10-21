@@ -44,6 +44,7 @@ public sealed class MediaSessionBridge : IDisposable
 
         _engine.NowPlayingTick += OnNowPlayingTick;
         _engine.QueueChanged += OnQueueChanged;
+        _engine.QueuesChanged += OnQueueChanged;
         _engine.PlayStateChanged += OnPlayStateChanged;
 
         _session.PlayRequested += OnPlayRequested;
@@ -220,6 +221,7 @@ public sealed class MediaSessionBridge : IDisposable
         {
             _engine.NowPlayingTick -= OnNowPlayingTick;
             _engine.QueueChanged -= OnQueueChanged;
+            _engine.QueuesChanged -= OnQueueChanged;
             _engine.PlayStateChanged -= OnPlayStateChanged;
         }
         catch { }

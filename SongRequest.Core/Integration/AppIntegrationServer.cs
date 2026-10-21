@@ -386,6 +386,7 @@ public sealed partial class AppIntegrationServer : IDisposable
         {
             music.QueueChanged += OnQueueChanged;
             music.PlaylistQueueChanged += OnQueueChanged;
+            music.QueuesChanged += OnQueueChanged;
             music.NowPlayingTick += OnNowPlayingTick;
         }
     }
@@ -407,6 +408,7 @@ public sealed partial class AppIntegrationServer : IDisposable
         {
             music.QueueChanged -= OnQueueChanged;
             music.PlaylistQueueChanged -= OnQueueChanged;
+            music.QueuesChanged -= OnQueueChanged;
             music.NowPlayingTick -= OnNowPlayingTick;
         }
     }

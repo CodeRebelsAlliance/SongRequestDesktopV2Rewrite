@@ -924,25 +924,33 @@
 
     if (queue.length) {
       html += queue.map(function (item, index) {
-        return queueRow(item, index, index === 0, 'removeQueueItem', true);
+        return queueRow(item, index, index === 0, 'removeQueueItem', 'queue');
       }).join('');
     }
 
     if (playlistQueue.length) {
       html += '<div class="mm-row" style="margin:12px 0 2px"><h3>Playlist</h3></div>';
       html += playlistQueue.map(function (item, index) {
-        return queueRow(item, index, false, 'removePlaylistQueueItem');
+        return queueRow(item, index, false, 'removePlaylistQueueItem', 'playlist');
       }).join('');
     }
 
     queueListEl.innerHTML = html || '<div class="mm-empty"><i class="fas fa-list"></i><span>Queue is empty</span></div>';
   }
 
-  function queueRow(item, index, current, removeMethod, canMove) {
-    var move = canMove
-      ? '<button class="mm-icon-btn" data-move="up" data-index="' + index + '" aria-label="Move up"><i class="fas fa-chevron-up"></i></button>' +
-        '<button class="mm-icon-btn" data-move="down" data-index="' + index + '" aria-label="Move down"><i class="fas fa-chevron-down"></i></button>'
-      : '';
+  function queueRow(item, index, current, removeMethod, moveSource) {
+    // The first queue item is the now-playing slot and cannot be reordered (the
+    // desktop engine refuses to move anything into index 0).
+    var canMove = !current;
+    var listLength = moveSource === 'playlist' ? playlistQueue.length : queue.length;
+    var move = '';
+    if (canMove) {
+      var canUp = moveSource === 'playlist' ? index > 0 : index > 1;
+      var canDown = index < listLength - 1;
+      move =
+        '<button class="mm-icon-btn" data-move="up" data-source="' + moveSource + '" data-index="' + index + '"' + (canUp ? '' : ' disabled') + ' aria-label="Move up"><i class="fas fa-chevron-up"></i></button>' +
+        '<button class="mm-icon-btn" data-move="down" data-source="' + moveSource + '" data-index="' + index + '"' + (canDown ? '' : ' disabled') + ' aria-label="Move down"><i class="fas fa-chevron-down"></i></button>';
+    }
 
     return '<div class="mm-queue-row' + (current ? ' is-current' : '') + '">' +
       (current ? '<div class="mm-now-bar"></div>' : '') +
@@ -2068,9 +2076,15 @@
     if (move) {
       var index = parseInt(move.dataset.index, 10);
       if (!isFinite(index)) return;
+
+      var isPlaylist = move.dataset.source === 'playlist';
+      var list = isPlaylist ? playlistQueue : queue;
       var target = move.dataset.move === 'up' ? index - 1 : index + 1;
-      if (target < 0 || target >= queue.length) return;
-      send('moveQueueItem', { fromIndex: index, toIndex: target });
+      // The now-playing slot (regular queue index 0) must stay first.
+      var minIndex = isPlaylist ? 0 : 1;
+      if (target < minIndex || target >= list.length) return;
+
+      send(isPlaylist ? 'movePlaylistQueueItem' : 'moveQueueItem', { fromIndex: index, toIndex: target });
       return;
     }
   });
