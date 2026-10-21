@@ -28,6 +28,7 @@
   var lastCurrentTime = 0;
   var currentTitle = '';
   var currentArtist = '';
+  var currentArtwork = '';
   var lyricsFontScale = 1.0;
   var lyricsHidden = false;
   var presentationZoom = 1.0;
@@ -489,16 +490,31 @@
 
   // ── Event handlers ──
   function onNowPlayingUpdate(data) {
+    var songChanged = false;
+
     if (data.title !== undefined) {
+      var nextArtist = data.artist || '—';
+      songChanged = data.title !== currentTitle || nextArtist !== currentArtist;
       currentTitle = data.title;
-      currentArtist = data.artist || '—';
+      currentArtist = nextArtist;
       presTitle.textContent = currentTitle || 'No track playing';
       presArtist.textContent = currentArtist;
     }
 
     if (data.thumbnail) {
-      presArtwork.innerHTML = '<img src="' + data.thumbnail + '" alt="artwork">';
-      extractAccentColors(data.thumbnail);
+      // Music-share metadata repeats the same data URL twice a second; swapping
+      // the <img> each time re-decodes the artwork and makes it flicker.
+      if (songChanged || data.thumbnail !== currentArtwork) {
+        currentArtwork = data.thumbnail;
+        presArtwork.innerHTML = '<img src="' + data.thumbnail + '" alt="artwork">';
+        extractAccentColors(data.thumbnail);
+      }
+    } else if (songChanged) {
+      // A new song without artwork must not keep showing the previous cover
+      // (music-share metadata can legitimately arrive without a thumbnail).
+      currentArtwork = '';
+      presArtwork.innerHTML = '';
+      resetAccentColors();
     }
 
     if (data.duration) {

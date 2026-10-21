@@ -231,14 +231,17 @@ test('mobile lyrics view has synchronization and size controls plus landscape la
   const css = read('mobilemusic.css');
 
   assert.match(html, /id="mm-lyrics-settings-toggle"/);
-  assert.match(html, /id="mm-sync-value"/);
-  assert.match(html, /id="mm-font-value"/);
+  assert.match(js, /id="mm-sync-value"/);
+  assert.match(js, /id="mm-font-value"/);
   assert.match(js, /function setLyricsSyncOffset/);
   assert.match(js, /function setLyricsFontScale/);
   assert.match(js, /function toggleLyricsSettings/);
 
-  // Lyrics mode folds chip labels away and the landscape grid gives lyrics a column.
-  assert.match(css, /\.mm-player\.is-lyrics \.mm-player-top \.mm-pill-btn > span/);
+  // The lyrics menu is a bottom sheet like the Options menu, and lyrics mode
+  // keeps the chip labels visible.
+  assert.match(js, /openSheet\(lyricsSettingsSheetHtml\(\), 'lyrics'\)/);
+  assert.match(js, /class="mm-sheet-row"/);
+  assert.doesNotMatch(css, /\.mm-player\.is-lyrics \.mm-player-top \.mm-pill-btn > span/);
   assert.match(css, /@media \(orientation: landscape\) and \(max-height: 640px\)/);
   assert.match(css, /grid-template-areas:\s*"top top"\s*"hero lyrics"\s*"bottom lyrics"/);
 });

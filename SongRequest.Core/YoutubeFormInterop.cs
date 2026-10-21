@@ -167,7 +167,12 @@ public class YoutubeFormInterop
     private string? _musicShareCachedLyrics;
     private bool _musicShareCachedHasSyncedLyrics;
     private string? _musicShareCachedThumbnail;
+    private DateTime _musicShareThumbnailRetryAt;
+    private int _musicShareThumbnailRetries;
     private MusicShareMetadata? _musicShareLastMetadata;
+    // What the presentation window currently shows for a received share, so the
+    // 500 ms metadata poll does not rebuild (and re-scroll) the lyrics each time.
+    private string? _musicSharePresentationLyricsKey;
     private MusicShareAudioPlayer? _musicShareAudioPlayer;
     private float _musicShareReceiveVolume = 1.0f;
     private sealed class CachedSubtitleData
@@ -5042,12 +5047,55 @@ public class YoutubeFormInterop
     /// <summary>
     /// Extracts the base64 payload from a song's platform thumbnail. Thumbnails
     /// are stored as data-URL strings (e.g. "data:image/jpeg;base64,...").
+    /// A plain file path is not artwork data and must not be sent as base64.
     /// </summary>
     private static string? ThumbnailToBase64(object? thumbnail)
     {
-        if (thumbnail is not string s || string.IsNullOrEmpty(s)) return null;
+        if (thumbnail is not string s || string.IsNullOrWhiteSpace(s)) return null;
+
         var idx = s.IndexOf(";base64,", StringComparison.Ordinal);
-        return idx >= 0 ? s.Substring(idx + 8) : s;
+        if (idx >= 0) return s.Substring(idx + 8);
+
+        // Some sources hand over bare base64 instead of a data URL.
+        try
+        {
+            return Convert.FromBase64String(s).Length > 0 ? s.Trim() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Artwork for the track being shared. <see cref="Song.thumbnail"/> is only
+    /// populated for songs that were loaded with embedded art; library/queue songs
+    /// rely on the library thumbnail or the YouTube thumbnail cache instead, which
+    /// is why a share used to announce artwork it never sent.
+    /// </summary>
+    private string? ResolveMusicShareArtwork(Song? song)
+    {
+        if (song == null) return null;
+        return ThumbnailToBase64(song.thumbnail)
+            ?? ThumbnailToBase64(GetThumbnailForSongPath(song.songPath));
+    }
+
+    /// <summary>
+    /// Wraps a received share thumbnail in a data URL. The payload can be PNG
+    /// (embedded cover art) even though the protocol calls it JPEG, so the MIME
+    /// type is derived from the base64 signature instead of assuming JPEG.
+    /// </summary>
+    private static string? MusicShareThumbnailDataUrl(string? base64)
+    {
+        if (string.IsNullOrWhiteSpace(base64)) return null;
+
+        // Signatures at the start of the base64 for JPEG, PNG, GIF and WebP.
+        var mime = base64.StartsWith("iVBOR", StringComparison.Ordinal) ? "image/png"
+            : base64.StartsWith("R0lGOD", StringComparison.Ordinal) ? "image/gif"
+            : base64.StartsWith("UklGR", StringComparison.Ordinal) ? "image/webp"
+            : "image/jpeg";
+
+        return $"data:{mime};base64,{base64}";
     }
 
     /// <summary>
@@ -5172,42 +5220,13 @@ public class YoutubeFormInterop
                     artist = lastMeta.Artist,
                     currentTime = lastMeta.ElapsedSeconds,
                     totalTime = lastMeta.TotalSeconds,
-                    thumbnail = lastMeta.ThumbnailData != null ? $"data:image/jpeg;base64,{lastMeta.ThumbnailData}" : null,
+                    thumbnail = MusicShareThumbnailDataUrl(lastMeta.ThumbnailData),
                     isPlaying = true
                 });
 
-                if (!string.IsNullOrEmpty(lastMeta.Lyrics))
-                {
-                    if (lastMeta.HasSyncedLyrics)
-                    {
-                        var lines = lastMeta.Lyrics
-                            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                            .Select(l => l.Trim())
-                            .Where(l => !string.IsNullOrWhiteSpace(l))
-                            .ToList();
-                        var synced = new List<object>();
-                        foreach (var line in lines)
-                        {
-                            var match = System.Text.RegularExpressions.Regex.Match(line, @"\[(\d+):(\d+\.?\d*)\](.*)");
-                            if (match.Success)
-                            {
-                                var min = int.Parse(match.Groups[1].Value);
-                                var sec = double.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
-                                synced.Add(new { time = min * 60.0 + sec, text = match.Groups[3].Value.Trim() });
-                            }
-                        }
-                        PresentationSendEvent("presentationLyricsUpdate", new { syncedLyrics = synced, hasSynced = true, provider = "MusicShare" });
-                    }
-                    else
-                    {
-                        var plainLines = lastMeta.Lyrics
-                            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                            .Select(l => l.Trim())
-                            .Where(l => !string.IsNullOrWhiteSpace(l))
-                            .ToList();
-                        PresentationSendEvent("presentationLyricsUpdate", new { plainLyrics = plainLines, hasSynced = false, provider = "MusicShare" });
-                    }
-                }
+                // Forced: a newly opened/reloaded page has nothing yet, even when
+                // the dedupe key matches the last broadcast.
+                SendMusicShareLyricsToPresentation(lastMeta, force: true);
             }
             return;
         }
@@ -5346,10 +5365,69 @@ public class YoutubeFormInterop
                 artist = metadata.Artist,
                 currentTime = metadata.ElapsedSeconds,
                 totalTime = metadata.TotalSeconds,
-                thumbnail = metadata.ThumbnailData != null ? $"data:image/jpeg;base64,{metadata.ThumbnailData}" : null,
+                thumbnail = MusicShareThumbnailDataUrl(metadata.ThumbnailData),
                 isPlaying = true
             });
+
+            // Lyrics arrive a moment after the track (the sharer fetches them
+            // asynchronously), so the presentation must be told about them here,
+            // not only when it first asks for the current state.
+            SendMusicShareLyricsToPresentation(metadata, force: false);
         }
+    }
+
+    /// <summary>
+    /// Sends a received share's lyrics to the presentation window using the same
+    /// field names as the player source. Deduplicated because the receiver polls
+    /// metadata every 500 ms and re-rendering would reset the scroll position.
+    /// </summary>
+    private void SendMusicShareLyricsToPresentation(MusicShareMetadata metadata, bool force)
+    {
+        var lyrics = metadata.Lyrics ?? string.Empty;
+        var key = (metadata.Title ?? string.Empty) + "\u001f" +
+                  (metadata.Artist ?? string.Empty) + "\u001f" +
+                  metadata.HasSyncedLyrics + "\u001f" + lyrics;
+
+        if (!force && string.Equals(key, _musicSharePresentationLyricsKey, StringComparison.Ordinal))
+            return;
+
+        _musicSharePresentationLyricsKey = key;
+
+        var data = new Dictionary<string, object> { ["provider"] = "MusicShare" };
+        var synced = new List<object>();
+
+        if (metadata.HasSyncedLyrics && !string.IsNullOrWhiteSpace(lyrics))
+        {
+            var parsed = new LyricsResult { Found = true, SyncedLyrics = lyrics };
+            synced = parsed.ParseSyncedLines()
+                .Select(line => (object)new { time = line.Time.TotalSeconds, text = line.Text })
+                .ToList();
+        }
+
+        if (synced.Count > 0)
+        {
+            data["syncedLyrics"] = synced;
+            data["hasSynced"] = true;
+        }
+        else
+        {
+            // No (parseable) lyrics: send an empty list so the presentation clears
+            // the previous song instead of keeping stale lines.
+            data["plainLyrics"] = SplitLyricLines(lyrics);
+            data["hasSynced"] = false;
+        }
+
+        PresentationSendEvent("presentationLyricsUpdate", data);
+    }
+
+    private static List<string> SplitLyricLines(string? lyrics)
+    {
+        if (string.IsNullOrWhiteSpace(lyrics)) return new List<string>();
+        return lyrics
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
     }
 
     private async void MusicShare_OnNowPlayingTick(object? sender, NowPlayingEventArgs e)
@@ -5360,21 +5438,31 @@ public class YoutubeFormInterop
             if (_musicShareLastSong != e.Current)
             {
                 _musicShareLastSong = e.Current;
-                _musicShareCachedThumbnail = ThumbnailToBase64(e.Current?.thumbnail);
+                _musicShareCachedThumbnail = ResolveMusicShareArtwork(e.Current);
+                // Artwork may still be converting in the background. Retry briefly
+                // instead of keeping "no artwork" for the whole song.
+                _musicShareThumbnailRetries = _musicShareCachedThumbnail == null ? 0 : -1;
+                _musicShareThumbnailRetryAt = DateTime.UtcNow.AddSeconds(2);
 
                 _musicShareCachedLyrics = null;
                 _musicShareCachedHasSyncedLyrics = false;
 
-                if (e.Current != null)
+                var requestedSong = e.Current;
+                if (requestedSong != null)
                 {
                     _ = Task.Run(async () =>
                     {
                         try
                         {
                             var lyricsResult = await (_musicShareLyricsService ?? new LyricsService()).GetLyricsAsync(
-                                e.Current.Artist.Replace(" - Topic", ""),
-                                e.Current.Title,
-                                e.Current.Duration);
+                                requestedSong.Artist.Replace(" - Topic", ""),
+                                requestedSong.Title,
+                                requestedSong.Duration);
+
+                            // The track may have changed while LRCLIB was answering.
+                            if (!_musicShareSharing || !ReferenceEquals(_musicShareLastSong, requestedSong))
+                                return;
+
                             if (lyricsResult.Found)
                             {
                                 if (lyricsResult.HasSynced)
@@ -5392,6 +5480,15 @@ public class YoutubeFormInterop
                         catch { }
                     });
                 }
+            }
+            else if (_musicShareCachedThumbnail == null &&
+                     _musicShareThumbnailRetries >= 0 && _musicShareThumbnailRetries < 10 &&
+                     DateTime.UtcNow >= _musicShareThumbnailRetryAt)
+            {
+                _musicShareThumbnailRetryAt = DateTime.UtcNow.AddSeconds(3);
+                _musicShareThumbnailRetries++;
+                _musicShareCachedThumbnail = ResolveMusicShareArtwork(e.Current);
+                if (_musicShareCachedThumbnail != null) _musicShareThumbnailRetries = -1;
             }
 
             var metadata = new MusicShareMetadata
@@ -5452,7 +5549,10 @@ public class YoutubeFormInterop
             _musicShareBytesSent = 0;
             _musicShareLastSong = null;
             _musicShareCachedLyrics = null;
+            _musicShareCachedHasSyncedLyrics = false;
             _musicShareCachedThumbnail = null;
+            _musicShareThumbnailRetries = -1;
+            _musicSharePresentationLyricsKey = null;
             _musicShareAccumulatedSamples.Clear();
 
             mp.NowPlayingTick += MusicShare_OnNowPlayingTick;
@@ -5498,7 +5598,10 @@ public class YoutubeFormInterop
             _musicShareAccumulatedSamples.Clear();
             _musicShareLastSong = null;
             _musicShareCachedLyrics = null;
+            _musicShareCachedHasSyncedLyrics = false;
             _musicShareCachedThumbnail = null;
+            _musicShareThumbnailRetries = -1;
+            _musicSharePresentationLyricsKey = null;
 
             MusicShareSendEvent("musicShareStatus", new
             {

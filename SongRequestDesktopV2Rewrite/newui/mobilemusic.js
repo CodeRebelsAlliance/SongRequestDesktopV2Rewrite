@@ -168,11 +168,7 @@
   var lyricsEl = $('mm-lyrics');
   var lyricsToggle = $('mm-lyrics-toggle');
   var lyricsSettingsToggle = $('mm-lyrics-settings-toggle');
-  var lyricsSettings = $('mm-lyrics-settings');
-  var syncValueEl = $('mm-sync-value');
-  var syncResetEl = $('mm-sync-reset');
-  var fontValueEl = $('mm-font-value');
-  var fontResetEl = $('mm-font-reset');
+  var lyricsSheetOpen = false;
   var playBtn = $('mm-play');
   var repeatBtn = $('mm-repeat');
   var queueToggle = $('mm-queue-toggle');
@@ -736,6 +732,8 @@
     lyricsEl.hidden = !lyricsOpen;
     lyricsToggle.setAttribute('aria-pressed', lyricsOpen ? 'true' : 'false');
 
+    // The chips keep their labels in lyrics mode; only the extra settings chip
+    // is revealed (and hidden again when lyrics are closed).
     if (lyricsSettingsToggle) {
       lyricsSettingsToggle.hidden = !lyricsOpen;
       if (!lyricsOpen) closeLyricsSettings();
@@ -747,36 +745,76 @@
     }
   }
 
-  function toggleLyricsSettings() {
-    if (!lyricsSettings) return;
-    if (lyricsSettings.hidden) openLyricsSettings(); else closeLyricsSettings();
+  function setLyricsSettingsChipActive(active) {
+    if (!lyricsSettingsToggle) return;
+    lyricsSettingsToggle.classList.toggle('is-active', !!active);
+    lyricsSettingsToggle.setAttribute('aria-expanded', active ? 'true' : 'false');
   }
 
+  function toggleLyricsSettings() {
+    if (lyricsSheetOpen) closeLyricsSettings(); else openLyricsSettings();
+  }
+
+  // The lyrics panel uses the same bottom sheet as the Options chip, so both
+  // player menus look and behave the same way.
   function openLyricsSettings() {
-    if (!lyricsSettings) return;
-    lyricsSettings.hidden = false;
-    if (lyricsSettingsToggle) {
-      lyricsSettingsToggle.classList.add('is-active');
-      lyricsSettingsToggle.setAttribute('aria-expanded', 'true');
-    }
+    lyricsSheetOpen = true;
+    setLyricsSettingsChipActive(true);
+    openSheet(lyricsSettingsSheetHtml(), 'lyrics');
+    wireLyricsSettingsSheet();
+  }
+
+  function closeLyricsSettings() {
+    lyricsSheetOpen = false;
+    setLyricsSettingsChipActive(false);
+    var body = $('mm-sheet-body');
+    if (body && body.dataset.sheet === 'lyrics') closeSheet();
+  }
+
+  function lyricsSettingsSheetHtml() {
+    return '<h3>Lyrics</h3>' +
+      '<div class="mm-sheet-row">' +
+        '<div class="mm-sheet-label">Sync<div class="mm-sheet-sub">Match lyrics to the song</div></div>' +
+        '<button id="mm-sync-back" class="mm-settings-btn" aria-label="Show lyrics earlier" title="Earlier"><i class="fas fa-minus"></i></button>' +
+        '<span id="mm-sync-value" class="mm-settings-value">0.00s</span>' +
+        '<button id="mm-sync-forward" class="mm-settings-btn" aria-label="Show lyrics later" title="Later"><i class="fas fa-plus"></i></button>' +
+        '<button id="mm-sync-reset" class="mm-settings-btn" aria-label="Reset lyrics synchronization" title="Reset sync"><i class="fas fa-undo"></i></button>' +
+      '</div>' +
+      '<div class="mm-sheet-row">' +
+        '<div class="mm-sheet-label">Size<div class="mm-sheet-sub">Lyrics text size</div></div>' +
+        '<button id="mm-font-decrease" class="mm-settings-btn mm-font-btn" aria-label="Decrease lyrics size" title="Smaller">A<span>-</span></button>' +
+        '<span id="mm-font-value" class="mm-settings-value">100%</span>' +
+        '<button id="mm-font-increase" class="mm-settings-btn mm-font-btn" aria-label="Increase lyrics size" title="Larger">A<span>+</span></button>' +
+        '<button id="mm-font-reset" class="mm-settings-btn" aria-label="Reset lyrics size" title="Reset size"><i class="fas fa-undo"></i></button>' +
+      '</div>';
+  }
+
+  function wireLyricsSettingsSheet() {
+    var back = $('mm-sync-back');
+    var forward = $('mm-sync-forward');
+    var syncReset = $('mm-sync-reset');
+    var fontDecrease = $('mm-font-decrease');
+    var fontIncrease = $('mm-font-increase');
+    var fontReset = $('mm-font-reset');
+
+    if (back) back.addEventListener('click', function () { setLyricsSyncOffset(lyrics.syncOffset - 0.25); });
+    if (forward) forward.addEventListener('click', function () { setLyricsSyncOffset(lyrics.syncOffset + 0.25); });
+    if (syncReset) syncReset.addEventListener('click', function () { setLyricsSyncOffset(0); });
+    if (fontDecrease) fontDecrease.addEventListener('click', function () { setLyricsFontScale(lyrics.fontScale - 0.1); });
+    if (fontIncrease) fontIncrease.addEventListener('click', function () { setLyricsFontScale(lyrics.fontScale + 0.1); });
+    if (fontReset) fontReset.addEventListener('click', function () { setLyricsFontScale(1); });
+
     updateLyricsSyncUi();
     updateLyricsFontUi();
   }
 
-  function closeLyricsSettings() {
-    if (!lyricsSettings) return;
-    lyricsSettings.hidden = true;
-    if (lyricsSettingsToggle) {
-      lyricsSettingsToggle.classList.remove('is-active');
-      lyricsSettingsToggle.setAttribute('aria-expanded', 'false');
-    }
-  }
-
   function updateLyricsSyncUi() {
-    if (!syncValueEl) return;
+    var valueEl = $('mm-sync-value');
+    if (!valueEl) return;
     var sign = lyrics.syncOffset >= 0 ? '+' : '';
-    syncValueEl.textContent = sign + lyrics.syncOffset.toFixed(2) + 's';
-    if (syncResetEl) syncResetEl.classList.toggle('is-muted', lyrics.syncOffset === 0);
+    valueEl.textContent = sign + lyrics.syncOffset.toFixed(2) + 's';
+    var resetEl = $('mm-sync-reset');
+    if (resetEl) resetEl.classList.toggle('is-muted', lyrics.syncOffset === 0);
   }
 
   function setLyricsSyncOffset(value) {
@@ -792,9 +830,11 @@
   }
 
   function updateLyricsFontUi() {
-    if (!fontValueEl) return;
-    fontValueEl.textContent = Math.round(lyrics.fontScale * 100) + '%';
-    if (fontResetEl) fontResetEl.classList.toggle('is-muted', Math.abs(lyrics.fontScale - 1) < 0.001);
+    var valueEl = $('mm-font-value');
+    if (!valueEl) return;
+    valueEl.textContent = Math.round(lyrics.fontScale * 100) + '%';
+    var resetEl = $('mm-font-reset');
+    if (resetEl) resetEl.classList.toggle('is-muted', Math.abs(lyrics.fontScale - 1) < 0.001);
   }
 
   function setLyricsFontScale(value) {
@@ -1274,12 +1314,6 @@
   if (lyricsSettingsToggle) {
     lyricsSettingsToggle.addEventListener('click', function () { toggleLyricsSettings(); });
   }
-  $('mm-sync-back').addEventListener('click', function () { setLyricsSyncOffset(lyrics.syncOffset - 0.25); });
-  $('mm-sync-forward').addEventListener('click', function () { setLyricsSyncOffset(lyrics.syncOffset + 0.25); });
-  $('mm-sync-reset').addEventListener('click', function () { setLyricsSyncOffset(0); });
-  $('mm-font-decrease').addEventListener('click', function () { setLyricsFontScale(lyrics.fontScale - 0.1); });
-  $('mm-font-increase').addEventListener('click', function () { setLyricsFontScale(lyrics.fontScale + 0.1); });
-  $('mm-font-reset').addEventListener('click', function () { setLyricsFontScale(1); });
   updateLyricsSyncUi();
   updateLyricsFontUi();
 
@@ -1341,7 +1375,13 @@
   var sheetBody = $('mm-sheet-body');
   var pendingConfirm = null;
 
-  function openSheet(html) {
+  function openSheet(html, kind) {
+    // Opening any other sheet leaves lyrics mode's settings menu.
+    if (kind !== 'lyrics') {
+      lyricsSheetOpen = false;
+      setLyricsSettingsChipActive(false);
+    }
+    sheetBody.dataset.sheet = kind || '';
     sheetBody.innerHTML = html;
     sheetScrim.hidden = false;
     sheet.hidden = false;
@@ -1366,6 +1406,11 @@
   }
 
   function closeSheet() {
+    if (lyricsSheetOpen || sheetBody.dataset.sheet === 'lyrics') {
+      lyricsSheetOpen = false;
+      setLyricsSettingsChipActive(false);
+    }
+    sheetBody.dataset.sheet = '';
     sheet.classList.remove('is-open');
     sheetScrim.classList.remove('is-open');
     setTimeout(function () {

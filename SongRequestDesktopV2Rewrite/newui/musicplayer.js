@@ -2442,6 +2442,17 @@
     return map[status] || status;
   }
 
+  // Received share artwork is base64 without a MIME type. Shared songs can carry
+  // embedded PNG covers even though the protocol calls the payload JPEG.
+  function shareThumbnailSrc(data) {
+    if (!data) return null;
+    var mime = data.indexOf('iVBOR') === 0 ? 'image/png'
+      : data.indexOf('R0lGOD') === 0 ? 'image/gif'
+      : data.indexOf('UklGR') === 0 ? 'image/webp'
+      : 'image/jpeg';
+    return 'data:' + mime + ';base64,' + data;
+  }
+
   // Handle musicShare events from C#
   var origOnEvent2 = onEvent;
   onEvent = function(eventName, data) {
@@ -2526,7 +2537,7 @@
       var pct = data.totalSeconds > 0 ? (data.elapsedSeconds / data.totalSeconds * 100) : 0;
       receiveProgressFill.style.width = pct + '%';
       if (data.thumbnailData) {
-        receiveThumb.innerHTML = '<img src="data:image/jpeg;base64,' + data.thumbnailData + '" alt="">';
+        receiveThumb.innerHTML = '<img src="' + shareThumbnailSrc(data.thumbnailData) + '" alt="">';
       } else {
         receiveThumb.innerHTML = '<i class="fas fa-music"></i>';
       }
