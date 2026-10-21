@@ -399,7 +399,7 @@ internal sealed class StageServer : IDisposable
     }
 
     private static string Format(TimeSpan time)
-        => $"{(int)time.TotalMinutes}:{time.Seconds:D2}";
+        => TimeDisplay.Clock(time);
 
     /// <summary>Data URL for artwork, using the same store the desktop uses.</summary>
     private string? Thumbnail(string? inline, string? songPath)

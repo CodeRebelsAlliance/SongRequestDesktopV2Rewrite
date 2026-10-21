@@ -205,14 +205,23 @@ body { background: #121212; color: #e0e0e0; }
 #btn-device .device-caret, #btn-exp-device .device-caret { font-size: 8px; margin-left: 2px; opacity: 0.75; }
 .device-menu {
   position: fixed; z-index: 4000; min-width: 240px; max-width: 360px;
+  display: flex; flex-direction: column;
   background: #1c1c1c; border: 1px solid #333; border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0,0,0,0.55); padding: 6px;
+  overflow: hidden;
   animation: deviceMenuIn 0.14s ease both;
 }
 @keyframes deviceMenuIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .device-menu-head {
+  flex: 0 0 auto;
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #777;
   padding: 6px 10px 8px; display: flex; align-items: center; gap: 7px;
+}
+#device-menu-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .device-menu-item {
   display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;

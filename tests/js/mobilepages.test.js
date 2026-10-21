@@ -260,3 +260,42 @@ test('mobile stylesheets define the active repeat state and playlist rows', () =
   assert.match(css, /\.mm-playlist-song/);
   assert.match(css, /\.mm-entry-controls/);
 });
+
+test('add-to-playlist menus exclude generated playlists and keep real icons', () => {
+  const desktop = read('musicplayer.js');
+  const mobile = read('mobilemusic.js');
+
+  assert.match(desktop, /if \(pl\.isDynamic\) continue;/);
+  assert.match(mobile, /filter\(function \(list\) \{ return !list\.isDynamic; \}\)/);
+  assert.match(mobile, /plIconHtml\(list\.icon\)/);
+});
+
+test('mobile output device selection keeps device index zero', () => {
+  const js = read('mobilemusic.js');
+
+  assert.doesNotMatch(js, /parseInt\(this\.value, 10\) \|\| -1/);
+  assert.match(js, /isNaN\(number\) \? -1 : number/);
+});
+
+test('player time displays keep hours for long tracks', () => {
+  const player = read('musicplayer.js');
+  const presentation = read('presentation.js');
+
+  assert.match(player, /const h = Math\.floor\(total \/ 3600\)/);
+  assert.match(player, /if \(h > 0\) return `\$\{h\}/);
+  assert.match(presentation, /var h = Math\.floor\(total \/ 3600\)/);
+  assert.match(presentation, /if \(h > 0\) return h \+/);
+});
+
+test('desktop output device menu stays inside the window and scrolls', () => {
+  const js = read('musicplayer.js');
+  const css = read('musicplayer.css');
+
+  // The menu is repositioned after the real device list replaces the loading
+  // placeholder, and its list is capped to the available height.
+  assert.match(js, /function positionDeviceMenu/);
+  assert.match(js, /renderDeviceMenu\(\(result && result\.devices\) \|\| \[\], deviceSelected\);[\s\S]*?positionDeviceMenu\(\);/);
+  assert.match(js, /deviceMenuListEl\.style\.maxHeight/);
+  assert.match(css, /#device-menu-list\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /#device-menu-list\s*\{[^}]*min-height:\s*0/s);
+});

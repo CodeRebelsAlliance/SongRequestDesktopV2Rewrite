@@ -1477,7 +1477,9 @@
 
     var device = $('mm-menu-device');
     if (device) device.addEventListener('change', function () {
-      send('setMusicOutputDevice', { deviceNumber: parseInt(this.value, 10) || -1 });
+      // Device 0 is a real output; `|| -1` used to turn it into the default.
+      var number = parseInt(this.value, 10);
+      send('setMusicOutputDevice', { deviceNumber: isNaN(number) ? -1 : number });
     });
   }
 
@@ -1723,14 +1725,15 @@
 
   function openPlaylistPicker(songId) {
     request('getPlaylists').then(function (data) {
-      var lists = (data && data.playlists) || [];
+      // Auto/dynamic playlists are generated and cannot receive songs.
+      var lists = ((data && data.playlists) || []).filter(function (list) { return !list.isDynamic; });
       var html = '<h3>Add to playlist</h3>';
 
       if (!lists.length) html += '<div class="mm-sheet-empty">No playlists yet — create one below.</div>';
 
       lists.forEach(function (list) {
         html += '<button class="mm-sheet-action" data-add-playlist="' + esc(list.id) + '">' +
-          '<i class="fas fa-list"></i> ' + esc(list.name) +
+          plIconHtml(list.icon) + ' ' + esc(list.name) +
           ' <span style="font-weight:400;color:var(--mm-muted)">(' + (list.songCount || 0) + ')</span></button>';
       });
 

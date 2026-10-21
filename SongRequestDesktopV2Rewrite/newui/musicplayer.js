@@ -530,9 +530,11 @@
   var deviceTriggers = [document.getElementById('btn-device'), document.getElementById('btn-exp-device')].filter(Boolean);
   var deviceSelected = -1;
   var deviceMenuOpen = false;
+  var deviceMenuAnchor = null;
 
   function hideDeviceMenu() {
     deviceMenuOpen = false;
+    deviceMenuAnchor = null;
     if (deviceMenuEl) deviceMenuEl.style.display = 'none';
   }
 
@@ -554,28 +556,71 @@
     deviceMenuListEl.innerHTML = html;
   }
 
+  // Places the menu next to its trigger and caps the device list to the room
+  // that is actually available. Without this the menu was measured while it
+  // still said "Looking for devices..." and a longer list ran off the window.
+  function positionDeviceMenu() {
+    if (!deviceMenuEl || !deviceMenuAnchor) return;
+
+    var rect = deviceMenuAnchor.getBoundingClientRect();
+    var margin = 8;
+
+    // Measure the natural content first; a previous cap must not affect the
+    // side choice after the list changed.
+    deviceMenuEl.style.maxHeight = '';
+    if (deviceMenuListEl) deviceMenuListEl.style.maxHeight = '';
+    var desiredHeight = deviceMenuEl.offsetHeight;
+    var width = deviceMenuEl.offsetWidth;
+
+    var spaceBelow = window.innerHeight - rect.bottom - margin;
+    var spaceAbove = rect.top - margin;
+
+    // Prefer the side where the whole menu fits. If neither does, use the
+    // roomier side and let the list scroll inside it.
+    var placeBelow;
+    if (spaceBelow >= desiredHeight) placeBelow = true;
+    else if (spaceAbove >= desiredHeight) placeBelow = false;
+    else placeBelow = spaceBelow >= spaceAbove;
+
+    var available = Math.max(0, placeBelow ? spaceBelow : spaceAbove);
+    deviceMenuEl.style.maxHeight = available + 'px';
+
+    if (deviceMenuListEl) {
+      var head = deviceMenuEl.querySelector('.device-menu-head');
+      var headHeight = head ? head.offsetHeight : 0;
+      // The menu has 6px vertical padding, and the list may not collapse to
+      // nothing even in an extremely short window.
+      var listMax = Math.max(48, available - headHeight - 12);
+      deviceMenuListEl.style.maxHeight = listMax + 'px';
+    }
+
+    var height = deviceMenuEl.offsetHeight;
+    var left = Math.min(Math.max(margin, rect.right - width), window.innerWidth - width - margin);
+    var top = placeBelow ? rect.bottom + margin : rect.top - height - margin;
+    top = Math.max(margin, Math.min(top, window.innerHeight - height - margin));
+
+    deviceMenuEl.style.left = Math.max(margin, left) + 'px';
+    deviceMenuEl.style.top = top + 'px';
+  }
+
   function openDeviceMenu(anchor) {
     if (!deviceMenuEl) return;
     deviceMenuOpen = true;
+    deviceMenuAnchor = anchor;
     deviceMenuEl.style.display = 'block';
     renderDeviceMenu([], deviceSelected);
     deviceMenuListEl.innerHTML = '<div class="device-menu-empty"><i class="fas fa-circle-notch fa-spin"></i> Looking for devices...</div>';
-
-    var rect = anchor.getBoundingClientRect();
-    var w = deviceMenuEl.offsetWidth, h = deviceMenuEl.offsetHeight;
-    var left = Math.min(Math.max(8, rect.right - w), window.innerWidth - w - 8);
-    var top = rect.top - h - 8;
-    if (top < 8) top = Math.min(rect.bottom + 8, window.innerHeight - h - 8);
-    deviceMenuEl.style.left = Math.max(8, left) + 'px';
-    deviceMenuEl.style.top = Math.max(8, top) + 'px';
+    positionDeviceMenu();
 
     hostRequest('getMusicAudioDevices', {}).then(function(result) {
       if (!deviceMenuOpen) return;
       deviceSelected = (result && typeof result.selected === 'number') ? result.selected : -1;
       renderDeviceMenu((result && result.devices) || [], deviceSelected);
+      positionDeviceMenu();
     }).catch(function() {
       if (deviceMenuOpen && deviceMenuListEl) {
         deviceMenuListEl.innerHTML = '<div class="device-menu-empty">Could not list devices</div>';
+        positionDeviceMenu();
       }
     });
   }
@@ -849,9 +894,12 @@
 
   // --- Time formatting ---
   function formatTime(seconds) {
-    if (!seconds || seconds < 0) return '0:00';
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
+    if (!isFinite(seconds) || seconds < 0) return '0:00';
+    const total = Math.floor(seconds);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     return `${m}:${s.toString().padStart(2, '0')}`;
   }
 
@@ -2941,6 +2989,8 @@
     listEl.innerHTML = '';
     for (var i = 0; i < allPlaylists.length; i++) {
       var pl = allPlaylists[i];
+      // Auto/dynamic playlists are generated and cannot receive songs.
+      if (pl.isDynamic) continue;
       var btn = document.createElement('button');
       btn.className = 'context-submenu-item';
       btn.dataset.playlistId = pl.id;

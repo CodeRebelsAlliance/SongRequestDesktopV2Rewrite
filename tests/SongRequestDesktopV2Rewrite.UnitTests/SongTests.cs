@@ -18,6 +18,14 @@ public class SongTests
     }
 
     [Fact]
+    public void Constructor_WithLongDuration_KeepsTheHours()
+    {
+        var song = new Song("Title", "Artist", null, new TimeSpan(1, 5, 3), "/x.mp3");
+
+        Assert.Equal("1:05:03", song.length);
+    }
+
+    [Fact]
     public void Constructor_WithLengthString_LeavesDurationZero()
     {
         var song = new Song("Title", "Artist", null, "03:00", "/x.mp3");

@@ -149,7 +149,7 @@ namespace SongRequestDesktopV2Rewrite
 
         [JsonIgnore] public bool HasMetadataDuplicates => MetadataDuplicateIds.Count > 0;
 
-        [JsonIgnore] public string DurationDisplay => Duration.ToString(@"mm\:ss");
+        [JsonIgnore] public string DurationDisplay => TimeDisplay.Clock(Duration);
 
         /// <summary>
         /// Returns <c>true</c> if the file can be read right now.

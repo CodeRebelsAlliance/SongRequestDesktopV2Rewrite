@@ -24,8 +24,10 @@
 
   function formatTime(seconds) {
     seconds = Math.max(0, Math.floor(seconds || 0));
-    var m = Math.floor(seconds / 60);
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
     var s = seconds % 60;
+    if (h > 0) return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     return m + ':' + (s < 10 ? '0' : '') + s;
   }
 

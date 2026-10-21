@@ -261,6 +261,21 @@ public class MusicEngineTests
         Assert.Equal("Wait Time: 02:00", engine.Queue[2].EstimatedStartDisplay);
     }
 
+    [Fact]
+    public void ComputeQueueTimings_WaitTimeOverAnHour_KeepsHours()
+    {
+        var engine = new MusicEngine { ConfigAccessor = () => NoNormalization() };
+        engine.AddSong(Track("a", 1800));
+        engine.AddSong(Track("b", 3903));
+        engine.AddSong(Track("c", 60));
+
+        engine.ComputeQueueTimings();
+
+        // The third item waits for the second, which is 1h05m03s long.
+        Assert.Equal("Wait Time: 1:05:03", engine.Queue[2].EstimatedStartDisplay);
+        Assert.Equal("1:05:03", engine.Queue[1].length);
+    }
+
     /// <summary>
     /// The queue notification is what the music player window renders, so the wait
     /// times must be recomputed *before* it is raised. They used to be computed after

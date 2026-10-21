@@ -52,9 +52,12 @@
   }
 
   function formatTime(seconds) {
-    if (!seconds || seconds < 0) return '0:00';
-    var m = Math.floor(seconds / 60);
-    var s = Math.floor(seconds % 60);
+    if (!isFinite(seconds) || seconds < 0) return '0:00';
+    var total = Math.floor(seconds);
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = total % 60;
+    if (h > 0) return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     return m + ':' + (s < 10 ? '0' : '') + s;
   }
 

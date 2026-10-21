@@ -636,7 +636,7 @@ public sealed partial class AppIntegrationServer
         ["album"] = "",
         ["genre"] = "",
         ["duration"] = item.DurationSeconds,
-        ["durationDisplay"] = TimeSpan.FromSeconds(item.DurationSeconds).ToString(@"mm\:ss"),
+        ["durationDisplay"] = TimeDisplay.Clock(TimeSpan.FromSeconds(item.DurationSeconds)),
         ["message"] = item.Message,
         ["isApproved"] = item.IsApproved,
         ["sentInTimestamp"] = item.SentInTimestamp,

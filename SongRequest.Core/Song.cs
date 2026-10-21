@@ -45,7 +45,7 @@ namespace SongRequestDesktopV2Rewrite
             Artist = artist;
             this.thumbnail = thumbnail;
             Duration = duration;
-            this.length = duration.ToString(@"mm\:ss");
+            this.length = TimeDisplay.Clock(duration);
             this.songPath = songPath;
             EstimatedStart = TimeSpan.Zero;
             EstimatedStartDisplay = "00:00";

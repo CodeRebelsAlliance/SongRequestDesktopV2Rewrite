@@ -102,7 +102,7 @@ public sealed class MusicEngine
         {
             using var afr = AudioSourceFactory.Open(s.songPath);
             s.Duration = afr.TotalTime;
-            s.length = string.Format("{0:mm}:{0:ss}", s.Duration);
+            s.length = TimeDisplay.Clock(s.Duration);
         }
         catch { }
         AddSong(s);
@@ -115,7 +115,7 @@ public sealed class MusicEngine
         {
             using var afr = AudioSourceFactory.Open(s.songPath);
             s.Duration = afr.TotalTime;
-            s.length = string.Format("{0:mm}:{0:ss}", s.Duration);
+            s.length = TimeDisplay.Clock(s.Duration);
         }
         catch { }
 
@@ -955,14 +955,14 @@ public sealed class MusicEngine
                 {
                     using var afr = AudioSourceFactory.Open(song.songPath);
                     song.Duration = afr.TotalTime;
-                    song.length = string.Format("{0:mm}:{0:ss}", song.Duration);
+                    song.length = TimeDisplay.Clock(song.Duration);
                 }
                 catch { }
             }
 
             TimeSpan timeUntil = initialOffset + cumulative;
             song.EstimatedStart = timeUntil;
-            song.EstimatedStartDisplay = "Wait Time: " + (timeUntil <= TimeSpan.FromSeconds(1) ? "Now" : timeUntil.ToString(@"mm\:ss"));
+            song.EstimatedStartDisplay = "Wait Time: " + (timeUntil <= TimeSpan.FromSeconds(1) ? "Now" : TimeDisplay.Clock(timeUntil));
             cumulative += song.Duration;
         }
     }
