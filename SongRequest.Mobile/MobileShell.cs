@@ -49,6 +49,10 @@ public sealed class MobileShell : IUiShell
     // ── Presentation ─────────────────────────────────────────────────────────
     public void ShowPresentationWindow()
     {
+        // The stage tab is shared with the visualization; stop its audio tap when
+        // another stage page replaces it.
+        StopVisualizationStreaming();
+
         // The stage tab is the mobile console: link/QR, zoom, source and a live
         // preview. Starting it publishes the presentation to TV/HDMI.
         _page.ShowFileInTab(MainPage.MobileStageFile, "stage");
@@ -72,16 +76,34 @@ public sealed class MobileShell : IUiShell
     public Action<string>? SoundboardSendMessage { get; set; }
 
     // ── Visualization ────────────────────────────────────────────────────────
-    public void ShowVisualizationWindow() => _page.ShowFileInTab("visualization.html", "stage");
+    public void ShowVisualizationWindow()
+    {
+        // Desktop starts the streamer in its native WindowCreated hook. The mobile
+        // stage has no such window, so opening it must start the audio tap itself —
+        // otherwise the page renders but only ever shows "No audio playing".
+        AppHost.Current?.Interop.StartVisualizationStreaming();
+        _page.ShowFileInTab("visualization.html", "stage");
+    }
 
-    public void CloseVisualizationWindow() => _page.SetImmersive(false);
+    public void CloseVisualizationWindow()
+    {
+        StopVisualizationStreaming();
+        _page.SetImmersive(false);
+    }
+
+    private static void StopVisualizationStreaming()
+        => AppHost.Current?.Interop.OnVisualizationClosed();
 
     public Action<string>? VisualizationSendMessage { get; set; }
 
     // ── Announcement ─────────────────────────────────────────────────────────
     // The announcement page is a control panel (press/release), so it shares the
     // stage tab with the presentation/visualization pages.
-    public void ShowAnnouncementWindow() => _page.ShowFileInTab("announcement.html", "stage");
+    public void ShowAnnouncementWindow()
+    {
+        StopVisualizationStreaming();
+        _page.ShowFileInTab("announcement.html", "stage");
+    }
 
     public void CloseAnnouncementWindow() => _page.SetImmersive(false);
 

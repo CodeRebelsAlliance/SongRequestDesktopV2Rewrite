@@ -181,6 +181,16 @@ test('queue artwork that arrives after the first update patches rows', () => {
   }
 });
 
+test('mobile visualization starts and stops the audio streamer', () => {
+  const root = path.join(__dirname, '..', '..');
+  const shell = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'MobileShell.cs'), 'utf8');
+
+  // Desktop starts the tap from its native WindowCreated hook; mobile has no
+  // window, so opening the stage page must start it explicitly.
+  assert.match(shell, /StartVisualizationStreaming\(\)/);
+  assert.match(shell, /OnVisualizationClosed\(\)/);
+});
+
 test('playlists support queueing and dynamic mixes', () => {
   const interop = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
   assert.match(interop, /queuePlaylist/);
