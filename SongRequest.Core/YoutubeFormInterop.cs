@@ -250,7 +250,20 @@ public class YoutubeFormInterop
                         stage = progress.Stage
                     });
                 _analysis.Analyzed += analysis =>
+                {
                     MusicPlayerSendEvent("songAnalysisUpdate", CamelCase(analysis));
+                    try
+                    {
+                        var current = _ytForm.Music.Queue.FirstOrDefault();
+                        if (current != null &&
+                            string.Equals(AppPaths.ResolvePortablePath(current.songPath),
+                                          analysis.SongPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            PresentationSendEvent("songChaptersUpdate", new { parts = CamelCase(analysis.Parts) });
+                        }
+                    }
+                    catch { }
+                };
             }
         }
         catch { }
@@ -2875,6 +2888,45 @@ public class YoutubeFormInterop
         return _analysis.GetFresh(target.Value.Path) ?? _analysis.GetCached(target.Value.Path);
     }
 
+    /// <summary>Chapters for a song when a cached analysis exists, for lyric pages.</summary>
+    private IReadOnlyList<SongPart>? ChaptersForSong(Song? song)
+    {
+        try
+        {
+            if (song == null || string.IsNullOrWhiteSpace(song.songPath)) return null;
+            var path = AppPaths.ResolvePortablePath(song.songPath);
+            var analysis = _analysis.GetFresh(path) ?? _analysis.GetCached(path);
+            return analysis?.Parts is { Count: > 0 } parts ? parts : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Feeds non-caption timed lyrics into chapter detection. YouTube captions are
+    /// deliberately excluded: they are often auto-generated and their line breaks
+    /// do not reflect the song structure.
+    /// </summary>
+    private void RegisterTimedLyrics(Song song, LyricsResult result)
+    {
+        try
+        {
+            if (!result.Found || !result.HasSynced || result.Provider == LyricsProvider.YouTubeCaptions)
+                return;
+            if (string.IsNullOrWhiteSpace(song.songPath)) return;
+
+            var lines = result.ParseSyncedLines()
+                .Where(l => !string.IsNullOrWhiteSpace(l.Text))
+                .Select(l => new TimedLyricLine(l.Time.TotalSeconds, l.Text))
+                .ToList();
+            if (lines.Count < 4) return;
+
+            var path = AppPaths.ResolvePortablePath(song.songPath);
+            _analysis.SetTimedLyrics(path, lines);
+            _ = Task.Run(() => _analysis.RefineWithLyrics(path, lines));
+        }
+        catch { }
+    }
+
     /// <summary>
     /// Pushes a cached analysis for the just-started track, or starts one in the
     /// background when the auto-analysis setting is on. Failures stay silent: a
@@ -3937,9 +3989,10 @@ public class YoutubeFormInterop
         {
             if (_musicPlayerLyricsCache.TryGetValue(songKey, out var cached))
             {
-                SendLyricsResult(mpSend, cached);
+                RegisterTimedLyrics(song, cached);
+                SendLyricsResult(mpSend, cached, song);
                 var src = ConfigService.Instance.Current?.PresentationSource ?? "player";
-                if (src == "player") PresentationSendLyricsResult(cached);
+                if (src == "player") PresentationSendLyricsResult(cached, song);
                 return;
             }
         }
@@ -3952,10 +4005,11 @@ public class YoutubeFormInterop
             _musicPlayerLyricsCache[songKey] = result;
         }
 
-        SendLyricsResult(mpSend, result);
+        RegisterTimedLyrics(song, result);
+        SendLyricsResult(mpSend, result, song);
 
         var source = ConfigService.Instance.Current?.PresentationSource ?? "player";
-        if (source == "player") PresentationSendLyricsResult(result);
+        if (source == "player") PresentationSendLyricsResult(result, song);
 
         _ = PrefetchNextLyricsAsync();
     }
@@ -4085,6 +4139,7 @@ public class YoutubeFormInterop
 
             var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
             var result = await ResolveLyricsAsync(next, lyricsService).ConfigureAwait(false);
+            RegisterTimedLyrics(next, result);
 
             lock (_musicPlayerLyricsCacheLock)
             {
@@ -4094,7 +4149,7 @@ public class YoutubeFormInterop
         catch { }
     }
 
-    private void SendLyricsResult(Action<string> mpSend, LyricsResult result)
+    private void SendLyricsResult(Action<string> mpSend, LyricsResult result, Song? song = null)
     {
         var provider = result.Provider switch
         {
@@ -4128,6 +4183,9 @@ public class YoutubeFormInterop
         }
 
         data["provider"] = provider;
+        var chapters = ChaptersForSong(song);
+        var chaptersJson = chapters == null ? null : CamelCase(chapters);
+        if (chaptersJson != null) data["chapters"] = chaptersJson;
 
         CurrentLyricsProvider = result.Found ? provider : string.Empty;
         CurrentLyricsAvailable = result.Found;
@@ -5781,10 +5839,10 @@ public class YoutubeFormInterop
 
         var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
         var result = await ResolveLyricsAsync(song, lyricsService).ConfigureAwait(false);
-        PresentationSendLyricsResult(result);
+        PresentationSendLyricsResult(result, song);
     }
 
-    private void PresentationSendLyricsResult(LyricsResult result)
+    private void PresentationSendLyricsResult(LyricsResult result, Song? song = null)
     {
         var provider = result.Provider switch
         {
@@ -5818,6 +5876,9 @@ public class YoutubeFormInterop
         }
 
         data["provider"] = provider;
+        var presentationChapters = ChaptersForSong(song);
+        var presentationChaptersJson = presentationChapters == null ? null : CamelCase(presentationChapters);
+        if (presentationChaptersJson != null) data["chapters"] = presentationChaptersJson;
 
         PresentationSendEvent("presentationLyricsUpdate", data);
     }

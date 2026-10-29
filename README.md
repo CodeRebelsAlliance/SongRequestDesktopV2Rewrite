@@ -206,8 +206,11 @@ The player (desktop and mobile) shares the same three audio tools:
   loudness, peak, dynamic range, quality score/codec/bitrate/clipping, an audio
   path/energy timeline, a quality radar and smart drop/build-up detection. It
   also detects **verse, chorus, bridge, intro, outro and pre-chorus chapters**.
-  It is available from the player toolbar/options and per song in the context
-  menu; every result is also served by the local API.
+  Timed lyrics from embedded/LRC/LRCLIB sources (not YouTube captions) refine the
+  chapter boundaries and identify repeated choruses. Lyrics views on desktop,
+  mobile and the presentation/stage show colour-coded chapter dividers and tint
+  their lines by section. It is available from the player toolbar/options and per
+  song in the context menu; every result is also served by the local API.
 - **Automatic analysis** (on by default, toggle in Settings on desktop or the
   player Options/settings sheet on mobile) analyses each track as it starts.
   Cached results appear as interactive chapter/drop markers on the expanded

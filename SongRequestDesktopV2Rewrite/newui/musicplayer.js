@@ -1540,6 +1540,7 @@
         var div = document.createElement('div');
         div.className = 'lyrics-line';
         div.textContent = line.text;
+        div.dataset.time = line.time;
         lyricsContainer.appendChild(div);
       }
     } else if (data.plainLyrics && data.plainLyrics.length > 0) {
@@ -1564,6 +1565,7 @@
     lastHighlightIndex = -1;
     updateLyricFontSizes();
     resetLyricsScroll();                       // a new song starts at line one
+    if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.decorateLyrics();
     if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
   }
 

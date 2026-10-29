@@ -219,6 +219,41 @@ test('auto analysis is driven by the engine, not the player page', () => {
   assert.match(interop, /SendOrStartSongAnalysis\(song\)/);
 });
 
+test('chapter markers are added to every lyrics view', () => {
+  const advanced = read('advancedaudio.js');
+  const desktop = read('musicplayer.js');
+  const mobile = read('mobilemusic.js');
+  const presentation = read('presentation.js');
+  const css = read('advancedaudio.css');
+
+  assert.match(advanced, /function decorateLyrics/);
+  assert.match(advanced, /lyrics-chapter-marker/);
+  assert.match(advanced, /data-part/);
+  assert.match(desktop, /div\.dataset\.time = line\.time/);
+  assert.match(desktop, /decorateLyrics\(\)/);
+  assert.match(mobile, /data-time=/);
+  assert.match(mobile, /decorateLyrics\(\)/);
+  assert.match(presentation, /presChapters/);
+  assert.match(presentation, /decoratePresentationChapters/);
+  assert.match(presentation, /songChaptersUpdate/);
+  assert.match(css, /\.lyrics-chapter-marker/);
+  assert.match(css, /\[data-part="chorus"\]/);
+});
+
+test('timed lyrics refine chapters but YouTube captions are excluded', () => {
+  const analyzer = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'SongAnalyzer.cs'), 'utf8');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  const models = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'SongAnalysisModels.cs'), 'utf8');
+
+  assert.match(analyzer, /RefinePartsWithLyrics/);
+  assert.match(analyzer, /RepeatedCoverage/);
+  assert.match(analyzer, /NormalizeLyric/);
+  assert.match(models, /TimedLyricLine/);
+  assert.match(models, /LyricsUsedForParts/);
+  assert.match(interop, /RegisterTimedLyrics/);
+  assert.match(interop, /Provider == LyricsProvider\.YouTubeCaptions/);
+});
+
 test('advanced audio is exposed through the local API and command catalogue', () => {
   const api = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'AppIntegrationServer.Api.cs'), 'utf8');
   const catalog = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'CommandCatalog.cs'), 'utf8');

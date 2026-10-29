@@ -576,3 +576,40 @@ body {
   color: #666;
   text-align: center;
 }
+
+/* Chapter labels in the presentation lyrics. */
+.lyrics-chapter-marker {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 18px 0 5px;
+  color: #9a9aa4;
+  line-height: 1.2;
+  user-select: none;
+}
+.lyrics-chapter-marker span {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+}
+.lyrics-chapter-marker small {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: .65;
+  font-variant-numeric: tabular-nums;
+}
+.lyrics-chapter-marker::before {
+  content: '';
+  width: 18px; height: 2px; border-radius: 2px;
+  background: currentColor; align-self: center; opacity: .8;
+}
+.lyrics-chapter-marker.part-chorus { color: #c084fc; }
+.lyrics-chapter-marker.part-verse { color: #5b8def; }
+.lyrics-chapter-marker.part-pre-chorus { color: #ffc107; }
+.lyrics-chapter-marker.part-bridge { color: #2dd4bf; }
+.lyrics-line[data-part] { border-left: 2px solid transparent; padding-left: 12px; margin-left: -14px; }
+.lyrics-line[data-part="chorus"] { border-left-color: rgba(192, 132, 252, .42); }
+.lyrics-line[data-part="verse"] { border-left-color: rgba(91, 141, 239, .34); }
+.lyrics-line[data-part="pre-chorus"] { border-left-color: rgba(255, 193, 7, .38); }
+.lyrics-line[data-part="bridge"] { border-left-color: rgba(45, 212, 191, .38); }

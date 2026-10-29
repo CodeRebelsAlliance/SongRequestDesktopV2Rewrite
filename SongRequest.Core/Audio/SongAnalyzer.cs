@@ -31,7 +31,11 @@ public sealed class SongAnalyzer
         _progress = progress;
     }
 
-    public SongAnalysis Analyze(string path, string title = "", string artist = "")
+    public SongAnalysis Analyze(
+        string path,
+        string title = "",
+        string artist = "",
+        IReadOnlyList<TimedLyricLine>? timedLyrics = null)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A song path is required.", nameof(path));
         if (!File.Exists(path)) throw new FileNotFoundException("The audio file was not found.", path);
@@ -150,6 +154,8 @@ public sealed class SongAnalyzer
         result.Parts = DetectParts(frames, HopSize / (double)sampleRate, effectiveDuration,
             result.Bpm, result.BeatOffsetSeconds, result.BpmConfidence);
         result.Timeline = Downsample(frames, HopSize / (double)sampleRate);
+        if (timedLyrics is { Count: >= 4 })
+            RefinePartsWithLyrics(result, timedLyrics);
         result.Quality = BuildQuality(path, format, effectiveDuration, info.Length, result, clipped, totalSamples);
         result.AnalysisPath =
             $"{result.Quality.Codec} {sampleRate} Hz/{channels}ch → mono downmix → " +
@@ -608,6 +614,21 @@ public sealed class SongAnalyzer
                 0.07 * Math.Abs(b.Flux - a.Flux);
         }
 
+        // Change-point pass at two window sizes. This catches a verse→chorus
+        // level lift even when the harmony stays the same (very common in pop).
+        for (int i = 1; i < blocks.Count - 1; i++)
+        {
+            foreach (int scale in new[] { 2, 4 })
+            {
+                if (i - scale < 0 || i + scale > blocks.Count) continue;
+                double before = blocks.Skip(i - scale).Take(scale).Average(b => b.RmsDb);
+                double after = blocks.Skip(i).Take(scale).Average(b => b.RmsDb);
+                double change = Math.Abs(after - before);
+                if (change >= 1.5)
+                    novelty[i] = Math.Max(novelty[i], Math.Min(0.55, change / 8.0));
+            }
+        }
+
         double mean = novelty.Skip(1).DefaultIfEmpty(0).Average();
         double variance = novelty.Skip(1).Select(v => (v - mean) * (v - mean)).DefaultIfEmpty(0).Average();
         double threshold = Math.Max(0.12, mean + Math.Sqrt(variance) * 0.85);
@@ -631,6 +652,29 @@ public sealed class SongAnalyzer
         if (lastActive >= 0 && lastActive < blocks.Count - 1 &&
             blocks[lastActive].End > duration * 0.70)
             boundaries.Add(blocks[lastActive].End);
+
+        // Independent change-point candidates for clear level shifts. Keeping
+        // these separate from the novelty threshold prevents a noisy novelty
+        // distribution from hiding a strong verse→chorus lift.
+        var levelChanges = new List<(double At, double Magnitude)>();
+        for (int i = 1; i < blocks.Count - 1; i++)
+        {
+            foreach (int scale in new[] { 2, 4 })
+            {
+                if (i - scale < 0 || i + scale > blocks.Count) continue;
+                double before = blocks.Skip(i - scale).Take(scale).Average(b => b.RmsDb);
+                double after = blocks.Skip(i).Take(scale).Average(b => b.RmsDb);
+                double change = Math.Abs(after - before);
+                if (change >= 2.5)
+                    levelChanges.Add((blocks[i].Start, change));
+            }
+        }
+        foreach (var change in levelChanges.OrderByDescending(c => c.Magnitude))
+        {
+            if (boundaries.Any(b => Math.Abs(b - change.At) < minPartSeconds)) continue;
+            boundaries.Add(change.At);
+            if (boundaries.Count >= 20) break;
+        }
 
         foreach (int index in candidates)
         {
@@ -970,6 +1014,253 @@ public sealed class SongAnalyzer
             Confidence = 0.25,
             EnergyDb = Round(db, 2)
         };
+    }
+
+    /// <summary>
+    /// Uses timed lyrics (<b>not</b> YouTube captions) to refine/split chapters.
+    /// Repeated lyric phrases identify choruses; large gaps and unique phrases
+    /// identify verse/bridge boundaries. This fixes the common failure where the
+    /// whole middle of a song was merged into one very long "chorus".
+    /// </summary>
+    public static void RefinePartsWithLyrics(SongAnalysis analysis, IReadOnlyList<TimedLyricLine> lyrics)
+    {
+        if (analysis == null || analysis.Parts.Count == 0 || lyrics == null) return;
+
+        var lines = lyrics
+            .Where(l => !string.IsNullOrWhiteSpace(l.Text) && l.TimeSeconds >= 0 &&
+                        l.TimeSeconds < analysis.DurationSeconds + 1)
+            .OrderBy(l => l.TimeSeconds)
+            .ToList();
+        if (lines.Count < 4) return;
+
+        int n = lines.Count;
+        var times = lines.Select(l => l.TimeSeconds).ToArray();
+        var norm = lines.Select(l => NormalizeLyric(l.Text)).ToArray();
+        var endTimes = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            double next = i + 1 < n ? times[i + 1] : analysis.DurationSeconds;
+            endTimes[i] = Math.Min(next, times[i] + 8.0);
+            if (endTimes[i] <= times[i]) endTimes[i] = times[i] + 1.0;
+        }
+
+        // Mark lines that occur in a repeated sequence of at least two lines.
+        var repeated = new bool[n];
+        var rawSpans = new List<(double Start, double End)>();
+        for (int i = 0; i < n; i++)
+        {
+            if (norm[i].Length < 2) continue;
+            for (int j = i + 1; j < n; j++)
+            {
+                if (!LyricsSimilar(norm[i], norm[j])) continue;
+                int length = 0;
+                while (i + length < n && j + length < n &&
+                       LyricsSimilar(norm[i + length], norm[j + length]))
+                    length++;
+
+                if (length < 2) continue;
+
+                for (int k = 0; k < length; k++)
+                {
+                    repeated[i + k] = true;
+                    repeated[j + k] = true;
+                }
+                rawSpans.Add((times[i], endTimes[i + length - 1]));
+                rawSpans.Add((times[j], endTimes[j + length - 1]));
+            }
+        }
+
+        var repeatedSpans = MergeIntervals(rawSpans);
+        var lyricBoundaries = new SortedSet<double>();
+
+        // Instrumental gaps are reliable section boundaries.
+        for (int i = 1; i < n; i++)
+        {
+            if (times[i] - endTimes[i - 1] > 4.0)
+                lyricBoundaries.Add(times[i]);
+        }
+
+        // Repeated phrase starts/ends delimit choruses (and repeated verses).
+        foreach (var span in repeatedSpans)
+        {
+            if (span.Start > 1) lyricBoundaries.Add(span.Start);
+            if (span.End < analysis.DurationSeconds - 1) lyricBoundaries.Add(span.End);
+        }
+
+        var refined = new List<PartSegment>();
+        foreach (var part in analysis.Parts)
+        {
+            double partDuration = part.EndSeconds - part.StartSeconds;
+            if (partDuration <= 0.1) continue;
+
+            double minEdge = Math.Max(3.0, partDuration * 0.14);
+            var inside = lyricBoundaries
+                .Where(b => b > part.StartSeconds + minEdge && b < part.EndSeconds - minEdge)
+                .ToList();
+
+            var points = new List<double> { part.StartSeconds };
+            points.AddRange(inside);
+            points.Add(part.EndSeconds);
+
+            if (points.Count == 2)
+            {
+                var segment = PartToSegment(part);
+                double coverage = RepeatedCoverage(part.StartSeconds, part.EndSeconds, repeatedSpans);
+                if (IsFlexiblePart(part.Type))
+                {
+                    if (coverage >= 0.45)
+                    {
+                        segment.Type = "chorus";
+                        segment.Confidence = Math.Max(segment.Confidence, 0.72);
+                    }
+                    else if (part.Type == "chorus" && coverage < 0.10 && partDuration > 30)
+                    {
+                        // A huge audio-only "chorus" with no repeated lyric content
+                        // is much more likely the whole verse section.
+                        segment.Type = "verse";
+                        segment.Confidence = Math.Max(segment.Confidence, 0.55);
+                    }
+                }
+                refined.Add(segment);
+                continue;
+            }
+
+            for (int i = 0; i < points.Count - 1; i++)
+            {
+                double start = points[i];
+                double end = points[i + 1];
+                if (end - start < 1.0) continue;
+
+                var segment = new PartSegment
+                {
+                    Start = start,
+                    End = end,
+                    RmsDb = part.EnergyDb,
+                    Type = part.Type,
+                    Confidence = part.Confidence
+                };
+
+                double coverage = RepeatedCoverage(start, end, repeatedSpans);
+                if (IsFlexiblePart(part.Type))
+                {
+                    segment.Type = coverage >= 0.30 ? "chorus" : "verse";
+                    segment.Confidence = coverage >= 0.30 ? 0.75 : 0.55;
+                }
+
+                refined.Add(segment);
+            }
+        }
+
+        if (refined.Count == 0) return;
+
+        MergeAdjacent(refined);
+        NumberParts(refined);
+        analysis.Parts = refined.Select(s => new SongPart
+        {
+            StartSeconds = Round(s.Start, 2),
+            EndSeconds = Round(s.End, 2),
+            DurationSeconds = Round(s.End - s.Start, 2),
+            Type = s.Type,
+            Label = s.Label,
+            Confidence = Round(s.Confidence, 3),
+            EnergyDb = Round(s.RmsDb, 2)
+        }).ToList();
+        analysis.LyricsUsedForParts = true;
+    }
+
+    private static bool IsFlexiblePart(string type)
+        => type is "verse" or "chorus" or "full" or "pre-chorus";
+
+    private static PartSegment PartToSegment(SongPart part) => new()
+    {
+        Start = part.StartSeconds,
+        End = part.EndSeconds,
+        RmsDb = part.EnergyDb,
+        Type = part.Type,
+        Confidence = part.Confidence
+    };
+
+    private static string NormalizeLyric(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var builder = new System.Text.StringBuilder(text.Length);
+        bool space = false;
+        foreach (char ch in text.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                if (space && builder.Length > 0) builder.Append(' ');
+                builder.Append(ch);
+                space = false;
+            }
+            else
+            {
+                space = true;
+            }
+        }
+        return builder.ToString().Trim();
+    }
+
+    private static bool LyricsSimilar(string a, string b)
+    {
+        if (string.Equals(a, b, StringComparison.Ordinal)) return true;
+        if (a.Length < 4 || b.Length < 4) return false;
+        if (Math.Abs(a.Length - b.Length) > Math.Max(a.Length, b.Length) * 0.35) return false;
+
+        // Levenshtein ratio: repeated chorus lines often differ in one word
+        // ("again", a backing vocal, punctuation), so exact equality is brittle.
+        int n = a.Length, m = b.Length;
+        if (n == 0 || m == 0) return false;
+        if (n * m > 40000) return false;
+
+        var previous = new int[m + 1];
+        var current = new int[m + 1];
+        for (int j = 0; j <= m; j++) previous[j] = j;
+
+        for (int i = 1; i <= n; i++)
+        {
+            current[0] = i;
+            for (int j = 1; j <= m; j++)
+            {
+                int cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1), previous[j - 1] + cost);
+            }
+            (previous, current) = (current, previous);
+        }
+
+        double similarity = 1.0 - (double)previous[m] / Math.Max(n, m);
+        return similarity >= 0.86;
+    }
+
+    private static List<(double Start, double End)> MergeIntervals(List<(double Start, double End)> intervals)
+    {
+        var merged = new List<(double Start, double End)>();
+        foreach (var interval in intervals.OrderBy(i => i.Start))
+        {
+            if (merged.Count > 0 && interval.Start <= merged[^1].End + 0.2)
+            {
+                var last = merged[^1];
+                merged[^1] = (last.Start, Math.Max(last.End, interval.End));
+            }
+            else
+            {
+                merged.Add(interval);
+            }
+        }
+        return merged;
+    }
+
+    private static double RepeatedCoverage(
+        double start, double end, List<(double Start, double End)> repeatedSpans)
+    {
+        if (end <= start) return 0;
+        double covered = 0;
+        foreach (var span in repeatedSpans)
+        {
+            double overlap = Math.Min(end, span.End) - Math.Max(start, span.Start);
+            if (overlap > 0) covered += overlap;
+        }
+        return Math.Clamp(covered / (end - start), 0, 1);
     }
 
     private sealed class PartBlock

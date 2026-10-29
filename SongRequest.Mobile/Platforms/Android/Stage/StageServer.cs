@@ -565,11 +565,52 @@ internal sealed class StageServer : IDisposable
             _ => string.Empty,
         };
 
+        // Feed non-caption timed lyrics into the chapter detector, then expose the
+        // resulting chapters to the TV page alongside the lyrics.
+        try
+        {
+            if (result.Provider != LyricsProvider.YouTubeCaptions && result.HasSynced)
+            {
+                var timed = result.ParseSyncedLines()
+                    .Where(l => !string.IsNullOrWhiteSpace(l.Text))
+                    .Select(l => new TimedLyricLine(l.Time.TotalSeconds, l.Text))
+                    .ToList();
+                if (timed.Count >= 4)
+                {
+                    var path = AppPaths.ResolvePortablePath(song.songPath);
+                    SongAnalysisService.Instance.SetTimedLyrics(path, timed);
+                    SongAnalysisService.Instance.RefineWithLyrics(path, timed);
+                }
+            }
+        }
+        catch { }
+
+        var chapters = new List<object>();
+        try
+        {
+            var path = AppPaths.ResolvePortablePath(song.songPath);
+            var analysis = SongAnalysisService.Instance.GetFresh(path) ??
+                           SongAnalysisService.Instance.GetCached(path);
+            if (analysis?.Parts != null)
+            {
+                chapters = analysis.Parts.Select(part => (object)new
+                {
+                    startSeconds = part.StartSeconds,
+                    endSeconds = part.EndSeconds,
+                    type = part.Type,
+                    label = part.Label,
+                    confidence = part.Confidence
+                }).ToList();
+            }
+        }
+        catch { }
+
         return new
         {
             syncedLyrics = synced,
             plainLyrics = plain,
             provider,
+            chapters
         };
     }
 

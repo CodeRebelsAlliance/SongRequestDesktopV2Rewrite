@@ -22,6 +22,7 @@
   // State
   var syncedLyrics = [];
   var plainLyricLines = [];
+  var presChapters = [];
   var hasSyncedLyrics = false;
   var totalTimeSecs = 0;
   var lastHighlightIndex = -1;
@@ -299,6 +300,7 @@
   function renderLyrics(data) {
     presLyrics.innerHTML = '';
     if (lyricsProvider) lyricsProvider.textContent = '';
+    presChapters = data.chapters || [];
 
     var fragment = document.createDocumentFragment();
     fragment.appendChild(createSpacer());
@@ -320,6 +322,7 @@
         div.className = 'lyrics-line';
         div.textContent = item.text || '';
         div.dataset.index = i;
+        div.dataset.time = item.time;
         fragment.appendChild(div);
         lines.push(div);
       });
@@ -345,6 +348,51 @@
 
     updateLyricFontSizes();
     resetLyricsScroll();                       // a new song starts at line one
+    decoratePresentationChapters();
+  }
+
+  function formatPresTime(seconds) {
+    seconds = Math.max(0, Number(seconds) || 0);
+    var m = Math.floor(seconds / 60);
+    var s = Math.floor(seconds % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function decoratePresentationChapters() {
+    var old = presLyrics.querySelectorAll('.lyrics-chapter-marker');
+    for (var m = 0; m < old.length; m++) old[m].remove();
+
+    var lines = presLyrics.querySelectorAll('.lyrics-line[data-time]');
+    for (var i = 0; i < lines.length; i++) lines[i].removeAttribute('data-part');
+    if (!presChapters.length || !lines.length) return;
+
+    var sorted = presChapters.slice().sort(function (a, b) { return a.startSeconds - b.startSeconds; });
+    for (var p = 0; p < sorted.length; p++) {
+      var part = sorted[p];
+      var target = null;
+      for (var l = 0; l < lines.length; l++) {
+        var time = Number(lines[l].dataset.time);
+        if (isFinite(time) && time >= part.startSeconds - 0.35) { target = lines[l]; break; }
+      }
+      if (!target) continue;
+
+      var marker = document.createElement('div');
+      marker.className = 'lyrics-chapter-marker part-' + (part.type || 'full');
+      marker.innerHTML = '<span>' + (part.label || part.type || '') + '</span><small>' +
+        formatPresTime(part.startSeconds) + '</small>';
+      target.parentNode.insertBefore(marker, target);
+    }
+
+    for (var n = 0; n < lines.length; n++) {
+      var t = Number(lines[n].dataset.time);
+      if (!isFinite(t)) continue;
+      var current = null;
+      for (var c = 0; c < sorted.length; c++) {
+        if (sorted[c].startSeconds <= t + 0.01) current = sorted[c];
+        else break;
+      }
+      if (current) lines[n].dataset.part = current.type;
+    }
   }
 
   function createSpacer() {
@@ -597,6 +645,9 @@
           onNowPlayingUpdate(data);
         } else if (name === 'lyricsUpdate' || name === 'presentationLyricsUpdate') {
           onLyricsUpdate(data);
+        } else if (name === 'songChaptersUpdate') {
+          presChapters = data.parts || [];
+          decoratePresentationChapters();
         } else if (name === 'presentationSettings') {
           applyLyricsSettings(data);
         } else if (name === 'presentationQueueUpdate') {

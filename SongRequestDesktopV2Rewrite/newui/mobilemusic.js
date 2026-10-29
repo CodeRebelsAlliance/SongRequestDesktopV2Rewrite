@@ -868,7 +868,7 @@
     var html = '';
     if (lyrics.synced.length) {
       for (var i = 0; i < lyrics.synced.length; i++) {
-        html += '<div class="mm-line" data-index="' + i + '">' + esc(lyrics.synced[i].text || '') + '</div>';
+        html += '<div class="mm-line" data-index="' + i + '" data-time="' + (lyrics.synced[i].time || 0) + '">' + esc(lyrics.synced[i].text || '') + '</div>';
       }
     } else {
       for (var j = 0; j < lyrics.plain.length; j++) {
@@ -880,6 +880,7 @@
 
     lyricsEl.innerHTML = html;
     applyLyricsFontScale();
+    if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.decorateLyrics();
     if (lyricsOpen) highlightLyrics(now.time);
   }
 

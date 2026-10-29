@@ -217,8 +217,9 @@ The analysis result contains `bpm`, `bpmConfidence`, `beatOffsetSeconds`,
 `drops` (time, confidence, type/label), detected `parts` (intro, verse,
 pre-chorus, chorus, bridge, outro with `startSeconds`/`endSeconds`, label and
 confidence), a per-window `timeline` (RMS/peak/low/mid/high energy and novelty)
-and the decoder `analysisPath`. Analysis runs in the background; progress arrives
-as the `songAnalysisProgress` WebSocket event, and a finished run emits
+and the decoder `analysisPath`. `lyricsUsedForParts` indicates that timed
+non-caption lyrics refined the chapters. Analysis runs in the background; progress
+arrives as the `songAnalysisProgress` WebSocket event, and a finished run emits
 `songAnalysisUpdate`. With `AutoAnalyzeSongs` enabled the app analyses each track
 as it starts and pushes the cached result automatically.
 

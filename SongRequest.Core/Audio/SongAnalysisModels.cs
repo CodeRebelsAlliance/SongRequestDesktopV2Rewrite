@@ -27,6 +27,9 @@ public sealed class SongDrop
     public string Label { get; set; } = "Drop";
 }
 
+/// <summary>One timed lyric line, used by the chapter detector (captions excluded).</summary>
+public sealed record TimedLyricLine(double TimeSeconds, string Text);
+
 /// <summary>A detected structural section (intro, verse, chorus, bridge, outro…).</summary>
 public sealed class SongPart
 {
@@ -93,6 +96,9 @@ public sealed class SongAnalysis
 
     public bool IsLowConfidence { get; set; }
     public string AnalysisPath { get; set; } = "";
+
+    /// <summary>True when timed lyrics (not YouTube captions) influenced the chapters.</summary>
+    public bool LyricsUsedForParts { get; set; }
 
     public SongQualityReport Quality { get; set; } = new();
     public List<SongDrop> Drops { get; set; } = new();

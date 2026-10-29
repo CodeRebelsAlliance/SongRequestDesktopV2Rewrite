@@ -24,6 +24,7 @@ public sealed class SongAnalysisService
     private readonly object _sync = new();
     private readonly Dictionary<string, SongAnalysis> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Task<SongAnalysis>> _inFlight = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IReadOnlyList<TimedLyricLine>> _pendingLyrics = new(StringComparer.OrdinalIgnoreCase);
     private readonly Func<string, IAudioSource> _open;
     private readonly string? _cachePath;
     private bool _loaded;
@@ -110,6 +111,50 @@ public sealed class SongAnalysisService
         return await task.ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Remembers timed lyrics (non-caption) for a track. If an analysis already
+    /// exists it is refined immediately; otherwise the next analysis uses them.
+    /// </summary>
+    public void SetTimedLyrics(string path, IReadOnlyList<TimedLyricLine> lyrics)
+    {
+        if (string.IsNullOrWhiteSpace(path) || lyrics == null || lyrics.Count < 4) return;
+        lock (_sync)
+        {
+            _pendingLyrics[Normalize(path)] = lyrics;
+        }
+    }
+
+    /// <summary>Re-runs only the chapter refinement step with timed lyrics.</summary>
+    public bool RefineWithLyrics(string path, IReadOnlyList<TimedLyricLine> lyrics)
+    {
+        if (string.IsNullOrWhiteSpace(path) || lyrics == null || lyrics.Count < 4) return false;
+        var key = Normalize(path);
+
+        lock (_sync)
+        {
+            _pendingLyrics[key] = lyrics;
+        }
+
+        EnsureLoaded();
+        SongAnalysis? analysis;
+        lock (_sync)
+        {
+            if (!_cache.TryGetValue(key, out analysis) && !_cache.TryGetValue(path, out analysis))
+                return false;
+        }
+
+        if (analysis == null) return false;
+        SongAnalyzer.RefinePartsWithLyrics(analysis, lyrics);
+        lock (_sync)
+        {
+            _cache[key] = analysis;
+            SaveLocked();
+        }
+
+        try { Analyzed?.Invoke(analysis); } catch { }
+        return true;
+    }
+
     private SongAnalysis AnalyzeCore(string path, string title, string artist, bool force)
     {
         try
@@ -119,7 +164,11 @@ public sealed class SongAnalysisService
                 try { Progress?.Invoke(progress); } catch { }
             });
 
-            var analysis = analyzer.Analyze(path, title, artist);
+            IReadOnlyList<TimedLyricLine>? timedLyrics;
+            lock (_sync)
+                _pendingLyrics.TryGetValue(Normalize(path), out timedLyrics);
+
+            var analysis = analyzer.Analyze(path, title, artist, timedLyrics);
             EnsureLoaded();
             lock (_sync)
             {

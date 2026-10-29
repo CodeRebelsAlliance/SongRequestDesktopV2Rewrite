@@ -150,6 +150,54 @@ public class SongAnalysisTests
         Assert.True(analysis.BpmConfidence > 0.1, $"confidence {analysis.BpmConfidence}");
     }
 
+    [Fact]
+    public void Lyrics_RefineASingleLargeChorusIntoSections()
+    {
+        var analysis = new SongAnalysis
+        {
+            SongPath = "/music/lyrics.mp3",
+            DurationSeconds = 56,
+            Parts = new List<SongPart>
+            {
+                new() { StartSeconds = 0, EndSeconds = 4, DurationSeconds = 4, Type = "intro", Label = "Intro", EnergyDb = -28 },
+                new() { StartSeconds = 4, EndSeconds = 52, DurationSeconds = 48, Type = "chorus", Label = "Chorus 1", EnergyDb = -14 },
+                new() { StartSeconds = 52, EndSeconds = 56, DurationSeconds = 4, Type = "outro", Label = "Outro", EnergyDb = -28 }
+            }
+        };
+
+        var lyrics = new List<TimedLyricLine>
+        {
+            new(5, "walking down the road"),
+            new(7, "city lights are calling me"),
+            new(9, "every step is getting colder"),
+            new(13, "we are rising up"),
+            new(15, "hold on to the night"),
+            new(17, "we are rising up again"),
+            new(21, "another door is open"),
+            new(23, "letters on the table"),
+            new(25, "nothing here is broken"),
+            new(29, "we are rising up"),
+            new(31, "hold on to the night"),
+            new(33, "we are rising up again"),
+            new(37, "underneath the water"),
+            new(39, "silent as a stone"),
+            new(41, "waiting for the morning"),
+            new(45, "we are rising up"),
+            new(47, "hold on to the night"),
+            new(49, "we are rising up again")
+        };
+
+        SongAnalyzer.RefinePartsWithLyrics(analysis, lyrics);
+
+        Assert.True(analysis.LyricsUsedForParts);
+        var types = analysis.Parts.Select(p => p.Type).ToList();
+        Assert.Contains("chorus", types);
+        Assert.Contains("verse", types);
+        Assert.True(analysis.Parts.Max(p => p.DurationSeconds) < 46,
+            string.Join(" | ", analysis.Parts.Select(p => $"{p.Type}@{p.StartSeconds}-{p.EndSeconds}")));
+        Assert.Contains(analysis.Parts, p => p.Type == "chorus" && p.StartSeconds >= 12 && p.StartSeconds <= 14);
+    }
+
     private static float[] BuildStructuredSong()
     {
         int sampleRate = 44100;

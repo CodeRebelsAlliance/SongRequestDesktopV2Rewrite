@@ -419,6 +419,60 @@
 }
 .ad-part-row .ad-drop-label { font-weight: 600; }
 
+/* ── Chapter markers in the lyrics views ─────────────────────── */
+.lyrics-chapter-marker {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 14px 0 4px;
+  padding: 0 2px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  line-height: 1.2;
+  color: var(--ad-part, #8d8d99);
+  user-select: none;
+}
+.lyrics-chapter-marker .lyrics-chapter-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+}
+.lyrics-chapter-marker small {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: .68;
+  font-variant-numeric: tabular-nums;
+}
+.lyrics-chapter-marker::before {
+  content: '';
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  align-self: center;
+  opacity: .8;
+}
+.lyrics-chapter-marker.is-chorus { color: #c084fc; }
+.lyrics-chapter-marker.is-verse { color: #5b8def; }
+.lyrics-chapter-marker.is-prechorus { color: #ffc107; }
+.lyrics-chapter-marker.is-bridge { color: #2dd4bf; }
+.lyrics-chapter-marker.is-intro,
+.lyrics-chapter-marker.is-outro,
+.lyrics-chapter-marker.is-full { color: #9a9aa4; }
+
+.lyrics-line[data-part],
+.mm-line[data-part] {
+  border-left: 2px solid transparent;
+  padding-left: 10px;
+  margin-left: -12px;
+}
+.lyrics-line[data-part="chorus"], .mm-line[data-part="chorus"] { border-left-color: rgba(192, 132, 252, .48); }
+.lyrics-line[data-part="verse"], .mm-line[data-part="verse"] { border-left-color: rgba(91, 141, 239, .38); }
+.lyrics-line[data-part="pre-chorus"], .mm-line[data-part="pre-chorus"] { border-left-color: rgba(255, 193, 7, .42); }
+.lyrics-line[data-part="bridge"], .mm-line[data-part="bridge"] { border-left-color: rgba(45, 212, 191, .42); }
+.lyrics-line[data-part="intro"], .lyrics-line[data-part="outro"],
+.mm-line[data-part="intro"], .mm-line[data-part="outro"] { border-left-color: rgba(154, 154, 164, .30); }
+
 .ad-toast {
   position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
   z-index: 13000; background: #2f2f36; color: #fff; border: 1px solid #50505a;

@@ -177,6 +177,7 @@
       renderTrackMarkers();
       updateBpmBadge();
       updateAnalysisPendingUi();
+      decorateLyrics();
     }
   }
 
@@ -205,6 +206,7 @@
     }
     updateBpmBadge();
     updateAnalysisPendingUi();
+    decorateLyrics();
   }
 
   function startAnalysisPending() {
@@ -1485,6 +1487,64 @@
     if (badge.innerHTML !== text) badge.innerHTML = text;
   }
 
+  // ── Chapter markers in the lyrics views ────────────────────────────────
+  function decorateLyrics() {
+    var doc = global.document;
+    if (!doc) return;
+    var parts = state.progressAnalysis && state.progressAnalysis.parts
+      ? state.progressAnalysis.parts
+      : [];
+
+    decorateLyricsContainer(doc.getElementById('expanded-lyrics'), '.lyrics-line', parts);
+    decorateLyricsContainer(doc.getElementById('mm-lyrics'), '.mm-line', parts);
+  }
+
+  function decorateLyricsContainer(container, lineSelector, parts) {
+    if (!container) return;
+
+    var oldMarkers = container.querySelectorAll('.lyrics-chapter-marker');
+    for (var m = 0; m < oldMarkers.length; m++) oldMarkers[m].remove();
+
+    var lines = container.querySelectorAll(lineSelector + '[data-time]');
+    for (var i = 0; i < lines.length; i++) lines[i].removeAttribute('data-part');
+
+    if (!parts.length || lines.length === 0) return;
+
+    var sorted = parts.slice().sort(function (a, b) { return a.startSeconds - b.startSeconds; });
+    var lastLine = null;
+
+    for (var p = 0; p < sorted.length; p++) {
+      var part = sorted[p];
+      var target = null;
+      for (var l = 0; l < lines.length; l++) {
+        var time = Number(lines[l].dataset.time);
+        if (isFinite(time) && time >= part.startSeconds - 0.35) { target = lines[l]; break; }
+      }
+      if (!target) continue;
+      if (target === lastLine) continue;
+      lastLine = target;
+
+      var marker = global.document.createElement('div');
+      marker.className = 'lyrics-chapter-marker ' + partClass(part.type);
+      marker.innerHTML = '<span class="lyrics-chapter-label">' + esc(part.label || part.type) + '</span>' +
+        '<small>' + formatTimestamp(part.startSeconds) + '</small>';
+      target.parentNode.insertBefore(marker, target);
+    }
+
+    // Tint every synced line by its chapter (persistent data attribute survives
+    // the players rewriting className for the active-line highlight).
+    for (var n = 0; n < lines.length; n++) {
+      var lineTime = Number(lines[n].dataset.time);
+      if (!isFinite(lineTime)) continue;
+      var current = null;
+      for (var c = 0; c < sorted.length; c++) {
+        if (sorted[c].startSeconds <= lineTime + 0.01) current = sorted[c];
+        else break;
+      }
+      if (current) lines[n].dataset.part = current.type;
+    }
+  }
+
   function setAnalysisTarget(target) {    state.analysisTarget = target || null;
     state.analysis = null;
     state.analysisLoading = false;
@@ -1500,6 +1560,12 @@
     close: close,
     formatRemaining: formatRemaining,
     refresh: refreshStates,
+    getChapters: function () {
+      return state.progressAnalysis && state.progressAnalysis.parts
+        ? state.progressAnalysis.parts
+        : [];
+    },
+    decorateLyrics: decorateLyrics,
     _state: state
   };
   global.SongRequestAdvancedAudio = api;
