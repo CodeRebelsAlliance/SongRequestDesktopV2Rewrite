@@ -113,11 +113,12 @@ public class SongAnalysisTests
 
         Assert.NotEmpty(analysis.Parts);
         var types = analysis.Parts.Select(p => p.Type).ToList();
-        Assert.Contains("verse", types);
-        Assert.Contains("chorus", types);
-        Assert.Contains("bridge", types);
-        Assert.Contains("intro", types);
-        Assert.Contains("outro", types);
+        string dump = string.Join(" | ", analysis.Parts.Select(p => p.Type + ":" + p.Label + "@" + p.StartSeconds + "-" + p.EndSeconds));
+        Assert.True(types.Contains("verse"), dump);
+        Assert.True(types.Contains("chorus"), dump);
+        Assert.True(types.Contains("bridge"), dump);
+        Assert.True(types.Contains("intro"), dump);
+        Assert.True(types.Contains("outro"), dump);
 
         Assert.Equal(0, analysis.Parts[0].StartSeconds, 1);
         Assert.True(analysis.Parts[^1].EndSeconds >= analysis.DurationSeconds - 1);
@@ -130,6 +131,23 @@ public class SongAnalysisTests
                     "song parts must not overlap");
         }
         Assert.Contains(analysis.Parts, p => p.Label.StartsWith("Chorus", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(88)]
+    [InlineData(128)]
+    [InlineData(174)]
+    public void Analyzer_DetectsTempoAcrossTheCommonRange(int expectedBpm)
+    {
+        var samples = BuildClickTrack(seconds: 20, bpm: expectedBpm, dropAt: 999);
+        var path = Path.Combine(TestSupport.NewTempDir("analysis-tempo"), "tempo.wav");
+        File.WriteAllBytes(path, new byte[128]);
+
+        var analysis = new SongAnalyzer(_ => new BufferSource(samples, 44100, 1))
+            .Analyze(path, "Tempo", "Artist");
+
+        Assert.InRange(analysis.Bpm, expectedBpm * 0.97, expectedBpm * 1.03);
+        Assert.True(analysis.BpmConfidence > 0.1, $"confidence {analysis.BpmConfidence}");
     }
 
     private static float[] BuildStructuredSong()

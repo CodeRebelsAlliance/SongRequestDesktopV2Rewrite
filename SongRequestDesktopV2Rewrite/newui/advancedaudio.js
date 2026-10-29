@@ -1251,7 +1251,9 @@
       chapter.style.left = start + '%';
       chapter.dataset.time = part.startSeconds;
       chapter.title = band.title;
-      chapter.innerHTML = '<span class="ad-marker-label">' + esc(part.label || part.type) + ' · ' + formatTimestamp(part.startSeconds) + '</span>';
+      chapter.innerHTML = '<span class="ad-marker-label' + labelEdgeClass(start) + '">' +
+        esc(part.label || part.type) + ' · ' + formatTimestamp(part.startSeconds) + '</span>';
+      bindMarkerHover(chapter, layer);
       chapter.addEventListener('mousedown', function (event) { event.stopPropagation(); });
       chapter.addEventListener('touchstart', function (event) { event.stopPropagation(); }, { passive: true });
       chapter.addEventListener('click', function (event) {
@@ -1271,7 +1273,9 @@
       pin.style.left = at + '%';
       pin.dataset.time = drop.time;
       pin.title = (drop.label || 'Drop') + ' · ' + formatTimestamp(drop.time);
-      pin.innerHTML = '<span class="ad-marker-label">' + esc(drop.label || 'Drop') + ' · ' + formatTimestamp(drop.time) + '</span>';
+      pin.innerHTML = '<span class="ad-marker-label' + labelEdgeClass(at) + '">' +
+        esc(drop.label || 'Drop') + ' · ' + formatTimestamp(drop.time) + '</span>';
+      bindMarkerHover(pin, layer);
       pin.addEventListener('mousedown', function (event) { event.stopPropagation(); });
       pin.addEventListener('touchstart', function (event) { event.stopPropagation(); }, { passive: true });
       pin.addEventListener('click', function (event) {
@@ -1280,6 +1284,24 @@
       });
       layer.appendChild(pin);
     }
+  }
+
+  // Keep tooltips inside the bar at the edges (otherwise the first chapter's
+  // label sat over the current-time text on the left).
+  function labelEdgeClass(percent) {
+    if (percent < 12) return ' is-start';
+    if (percent > 88) return ' is-end';
+    return '';
+  }
+
+  function bindMarkerHover(marker, layer) {
+    var track = layer.parentElement;
+    function enter() { if (track) track.classList.add('ad-marker-hover'); }
+    function leave() { if (track) track.classList.remove('ad-marker-hover'); }
+    marker.addEventListener('mouseenter', enter);
+    marker.addEventListener('mouseleave', leave);
+    marker.addEventListener('focus', enter);
+    marker.addEventListener('blur', leave);
   }
 
   function updateBpmBadge() {

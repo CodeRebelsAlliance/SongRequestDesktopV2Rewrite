@@ -335,6 +335,14 @@
 .ad-drop-pin:hover .ad-marker-label,
 .ad-drop-pin:focus-visible .ad-marker-label { opacity: 1; }
 
+/* While a chapter tooltip is visible, hide the seek bar's own position tooltip so
+   the two labels never stack on top of each other. */
+#progress-track.ad-marker-hover .seek-tooltip,
+#exp-progress-track.ad-marker-hover .seek-tooltip { opacity: 0 !important; }
+
+.ad-marker-label.is-start { left: 7px; transform: none; }
+.ad-marker-label.is-end { left: auto; right: 7px; transform: none; }
+
 /* Mobile seek wrapper: markers need a positioned parent, but #mm-seek itself
    must stay the real range input so dragging/seek keeps working. */
 .ad-mm-seek-wrap {

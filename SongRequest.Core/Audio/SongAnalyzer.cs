@@ -147,7 +147,8 @@ public sealed class SongAnalyzer
         result.IsLowConfidence = bpm <= 0 || confidence < 0.18;
 
         result.Drops = DetectDrops(frames, HopSize / (double)sampleRate);
-        result.Parts = DetectParts(frames, HopSize / (double)sampleRate, effectiveDuration);
+        result.Parts = DetectParts(frames, HopSize / (double)sampleRate, effectiveDuration,
+            result.Bpm, result.BeatOffsetSeconds, result.BpmConfidence);
         result.Timeline = Downsample(frames, HopSize / (double)sampleRate);
         result.Quality = BuildQuality(path, format, effectiveDuration, info.Length, result, clipped, totalSamples);
         result.AnalysisPath =
@@ -183,26 +184,53 @@ public sealed class SongAnalyzer
         AnalysisFft.Forward(re, im);
 
         int bins = FftSize / 2;
-        var magnitudes = new double[bins];
+        var chroma = new double[12];
         double low = 0, mid = 0, high = 0, flux = 0;
+        double sub = 0, bass = 0, lowMid = 0, presence = 0, brilliance = 0, air = 0;
+        double centroidWeighted = 0, centroidPower = 0;
         for (int k = 1; k < bins; k++)
         {
             double mag = Math.Sqrt(re[k] * re[k] + im[k] * im[k]) / FftSize;
-            magnitudes[k] = mag;
+            double logMag = Math.Log(1.0 + mag * 120.0);
             double power = mag * mag;
             double hz = k * sampleRate / (double)FftSize;
+
             if (hz < 250) low += power;
             else if (hz < 4000) mid += power;
             else high += power;
 
-            double diff = mag - previousMagnitudes[k];
-            if (diff > 0) flux += diff;
-        }
+            if (hz < 120) sub += power;
+            else if (hz < 250) bass += power;
 
-        Array.Copy(magnitudes, previousMagnitudes, bins);
+            if (hz >= 250 && hz < 2000) lowMid += power;
+            else if (hz >= 2000 && hz < 5000) presence += power;
+            else if (hz >= 5000 && hz < 12000) brilliance += power;
+            else if (hz >= 12000) air += power;
+
+            if (hz >= 30 && hz <= 8000)
+            {
+                double midi = 69 + 12 * Math.Log(hz / 440.0, 2);
+                int pitchClass = ((int)Math.Round(midi) % 12 + 12) % 12;
+                chroma[pitchClass] += power;
+            }
+
+            centroidWeighted += hz * power;
+            centroidPower += power;
+
+            double diff = logMag - previousMagnitudes[k];
+            if (diff > 0) flux += diff;
+            previousMagnitudes[k] = logMag;
+        }
 
         double totalBand = low + mid + high;
         if (totalBand <= 1e-12) totalBand = 1;
+        double totalC = sub + bass + lowMid + presence + brilliance + air;
+        if (totalC <= 1e-12) totalC = 1;
+        double totalChroma = chroma.Sum();
+        if (totalChroma > 1e-12)
+        {
+            for (int i = 0; i < chroma.Length; i++) chroma[i] /= totalChroma;
+        }
 
         double rms = Math.Sqrt(sumSquares / window.Length);
         return new RawFrame
@@ -214,7 +242,15 @@ public sealed class SongAnalyzer
             Flux = flux,
             Low = low / totalBand,
             Mid = mid / totalBand,
-            High = high / totalBand
+            High = high / totalBand,
+            Sub = sub / totalC,
+            Bass = bass / totalC,
+            LowMid = lowMid / totalC,
+            Presence = presence / totalC,
+            Brilliance = brilliance / totalC,
+            Air = air / totalC,
+            Chroma = chroma,
+            Centroid = centroidPower > 0 ? centroidWeighted / centroidPower : 0
         };
     }
 
@@ -225,17 +261,19 @@ public sealed class SongAnalyzer
         int n = frames.Count;
         if (n < 16) return (0, 0, 0, 0);
 
-        // Onset strength: spectral flux + positive energy change. A moving average
-        // is subtracted so sustained loud sections do not dominate the tempo.
+        // ── 1. Onset strength ────────────────────────────────────────────────
+        // Log-magnitude spectral flux (already computed per frame) plus a
+        // positive log-energy derivative. Adaptive whitening removes the local
+        // mean so a loud sustained section cannot dominate the tempo.
         var onset = new double[n];
         for (int i = 0; i < n; i++)
         {
-            double previousRms = i > 0 ? frames[i - 1].Rms : 0;
-            double energyRise = Math.Max(0, frames[i].Rms - previousRms);
-            onset[i] = frames[i].Flux + energyRise * 8.0;
+            double previousDb = i > 0 ? frames[i - 1].RmsDb : -96;
+            double rise = Math.Max(0, frames[i].RmsDb - previousDb);
+            onset[i] = frames[i].Flux + rise * 0.18;
         }
 
-        const int smoothWindow = 32;
+        int smoothWindow = Math.Max(16, (int)Math.Round(0.75 / hopSeconds));
         var baseline = new double[n];
         double running = 0;
         for (int i = 0; i < n; i++)
@@ -244,61 +282,141 @@ public sealed class SongAnalyzer
             if (i >= smoothWindow) running -= onset[i - smoothWindow];
             baseline[i] = running / Math.Min(i + 1, smoothWindow);
         }
-        for (int i = 0; i < n; i++) onset[i] = Math.Max(0, onset[i] - baseline[i]);
+        double globalMean = 0;
+        for (int i = 0; i < n; i++)
+        {
+            onset[i] = Math.Max(0, onset[i] - baseline[i]);
+            globalMean += onset[i];
+        }
+        globalMean = globalMean / n + 1e-9;
 
-        double minBpm = 55, maxBpm = 205;
+        // ── 2. Autocorrelation over the useful tempo range ───────────────────
+        double minBpm = 52, maxBpm = 210;
         int minLag = Math.Max(2, (int)Math.Floor(60.0 / maxBpm / hopSeconds));
         int maxLag = Math.Min(n / 2 - 1, (int)Math.Ceiling(60.0 / minBpm / hopSeconds));
         if (maxLag <= minLag) return (0, 0, 0, 0);
 
-        double bestScore = 0;
-        int bestLag = 0;
+        double meanOnset = onset.Average();
+        double variance = onset.Sum(v => (v - meanOnset) * (v - meanOnset)) / n;
+        if (variance <= 1e-12) return (0, 0, 0, 0);
+
         var scores = new double[maxLag + 1];
+        var acfValues = new double[maxLag + 1];
+        var phaseValues = new double[maxLag + 1];
+
         for (int lag = minLag; lag <= maxLag; lag++)
         {
-            double score = 0;
-            for (int i = lag; i < n; i++) score += onset[i] * onset[i - lag];
-            score /= n - lag;
-            scores[lag] = score;
-            if (score > bestScore) { bestScore = score; bestLag = lag; }
+            double acf = 0;
+            for (int i = lag; i < n; i++)
+                acf += (onset[i] - meanOnset) * (onset[i - lag] - meanOnset);
+            acf /= (n - lag) * variance;
+
+            // Harmonic summation makes the beat period win over a slightly
+            // stronger bar-length lag.
+            double harmonic = acf;
+            if (lag * 2 <= maxLag) harmonic += 0.35 * Math.Max(0, acfAt(lag * 2));
+            if (lag * 3 <= maxLag) harmonic += 0.18 * Math.Max(0, acfAt(lag * 3));
+            acfValues[lag] = Math.Max(0, harmonic);
+
+            // Phase coherence: how much stronger the onsets are on a grid with
+            // this period than on average. This rejects lags that only fit noise.
+            double bestPhaseAverage = 0;
+            for (int phase = 0; phase < lag; phase++)
+            {
+                double sum = 0;
+                int count = 0;
+                for (int i = phase; i < n; i += lag) { sum += onset[i]; count++; }
+                if (count > 0) bestPhaseAverage = Math.Max(bestPhaseAverage, sum / count);
+            }
+            phaseValues[lag] = bestPhaseAverage / globalMean;
+
+            double bpm = 60.0 / (lag * hopSeconds);
+            double phaseScore = Math.Clamp((phaseValues[lag] - 1.0) / 3.0, 0, 1);
+
+            scores[lag] = (0.58 * acfValues[lag] + 0.42 * phaseScore) * TempoPrior(bpm);
+
+            double acfAt(int otherLag)
+            {
+                double other = 0;
+                for (int i = otherLag; i < n; i++)
+                    other += (onset[i] - meanOnset) * (onset[i - otherLag] - meanOnset);
+                other /= (n - otherLag) * variance;
+                return other;
+            }
         }
 
-        if (bestLag == 0 || bestScore <= 0) return (0, 0, 0, 0);
-
-        // Octave correction: harmonic peaks at half/double the beat period can win
-        // on heavily compressed music. Pick the candidate that stays in the
-        // musically common 70-180 BPM window.
-        double bpm = 60.0 / (bestLag * hopSeconds);
-        for (int pass = 0; pass < 2; pass++)
+        // ── 3. Pick the strongest local peak, then check its octave family ───
+        var peaks = new List<int>();
+        for (int lag = minLag + 1; lag < maxLag; lag++)
         {
-            if (bpm < 70)
-            {
-                int doubled = bestLag / 2;
-                if (doubled >= minLag && scores[doubled] >= bestScore * 0.75) { bestLag = doubled; bpm *= 2; continue; }
-            }
-            if (bpm > 180)
-            {
-                int halved = bestLag * 2;
-                if (halved <= maxLag && scores[halved] >= bestScore * 0.75) { bestLag = halved; bpm /= 2; continue; }
-            }
-            break;
+            if (scores[lag] >= scores[lag - 1] && scores[lag] >= scores[lag + 1] && scores[lag] > 0)
+                peaks.Add(lag);
+        }
+        if (peaks.Count == 0) return (0, 0, 0, 0);
+
+        peaks.Sort((a, b) => scores[b].CompareTo(scores[a]));
+        int bestLag = peaks[0];
+        double bestBpm = 60.0 / (bestLag * hopSeconds);
+        double bestScore = scores[bestLag] * TempoPrior(bestBpm);
+
+        var alternatives = new List<int>();
+        foreach (int baseLag in new[] { bestLag / 3, bestLag / 2, bestLag, bestLag * 3 / 2, bestLag * 2, bestLag * 3 })
+        {
+            for (int delta = -2; delta <= 2; delta++)
+                alternatives.Add(baseLag + delta);
         }
 
-        double mean = scores.Skip(minLag).Take(maxLag - minLag + 1).Where(s => s > 0).DefaultIfEmpty(0).Average();
-        double confidence = mean > 0 ? Math.Clamp((bestScore / mean - 1.0) / 6.0, 0, 1) : 0;
+        foreach (int candidate in alternatives.Distinct())
+        {
+            if (candidate < minLag || candidate > maxLag) continue;
+            double bpm = 60.0 / (candidate * hopSeconds);
+            if (bpm < 65 || bpm > 190) continue;
+            double adjusted = scores[candidate] * TempoPrior(bpm);
+            if (adjusted > bestScore * 1.02)
+            {
+                bestLag = candidate;
+                bestScore = adjusted;
+                bestBpm = bpm;
+            }
+        }
 
-        // Beat phase: the lag offset with the strongest accumulated onset.
+        // ── 4. Confidence from peak contrast ────────────────────────────────
+        bestScore = scores[bestLag];
+        double second = peaks
+            .Where(l => Math.Abs(l - bestLag) > Math.Max(2, bestLag * 0.06))
+            .Select(l => scores[l])
+            .DefaultIfEmpty(0)
+            .Max();
+        double meanScore = scores.Skip(minLag).Take(maxLag - minLag + 1).DefaultIfEmpty(0).Average();
+        double stdScore = Math.Sqrt(scores.Skip(minLag).Take(maxLag - minLag + 1)
+            .Select(s => (s - meanScore) * (s - meanScore)).DefaultIfEmpty(0).Average());
+        double contrast = bestScore > 0 ? Math.Clamp((bestScore - second) / bestScore, 0, 1) : 0;
+        double prominence = stdScore > 0 ? Math.Clamp((bestScore - meanScore) / stdScore / 2.5, 0, 1) : 0;
+        double confidence = Math.Clamp(contrast * 0.45 + prominence * 0.55, 0, 1);
+
+        // ── 5. Beat phase ───────────────────────────────────────────────────
         double bestPhase = 0;
         double bestPhaseScore = -1;
         for (int phase = 0; phase < bestLag; phase++)
         {
             double sum = 0;
-            for (int i = phase; i < n; i += bestLag) sum += onset[i];
-            if (sum > bestPhaseScore) { bestPhaseScore = sum; bestPhase = phase; }
+            int count = 0;
+            for (int i = phase; i < n; i += bestLag) { sum += onset[i]; count++; }
+            double average = count > 0 ? sum / count : 0;
+            if (average > bestPhaseScore) { bestPhaseScore = average; bestPhase = phase; }
         }
 
-        int beats = (int)Math.Floor(n * hopSeconds / (60.0 / Math.Max(1, bpm)));
-        return (bpm, confidence, bestPhase * hopSeconds, beats);
+        double beatSeconds = 60.0 / Math.Max(1, bestBpm);
+        int beats = (int)Math.Floor(n * hopSeconds / beatSeconds);
+        return (bestBpm, confidence, bestPhase * hopSeconds, beats);
+    }
+
+    private static double TempoPrior(double bpm)
+    {
+        if (bpm <= 0) return 0.55;
+        double octaves = Math.Log(bpm / 120.0, 2);
+        double prior = Math.Exp(-0.5 * (octaves / 0.80) * (octaves / 0.80));
+        return 0.55 + 0.45 * prior;
     }
 
     private static List<SongDrop> DetectDrops(List<RawFrame> frames, double hopSeconds)
@@ -308,49 +426,72 @@ public sealed class SongAnalyzer
 
         int beforeWindow = Math.Max(2, (int)(1.5 / hopSeconds));
         int afterWindow = Math.Max(2, (int)(2.0 / hopSeconds));
-        double noveltyMax = frames.Select(f => f.Flux).DefaultIfEmpty(0).Max();
-        if (noveltyMax <= 0) noveltyMax = 1;
+        int slopeWindow = Math.Max(2, (int)(3.0 / hopSeconds));
+
+        double meanFlux = frames.Average(f => f.Flux);
+        double fluxStd = Math.Sqrt(frames.Select(f => (f.Flux - meanFlux) * (f.Flux - meanFlux)).DefaultIfEmpty(0).Average());
+        if (fluxStd <= 1e-9) fluxStd = 1;
 
         var candidates = new List<SongDrop>();
         for (int i = beforeWindow; i < n - afterWindow; i++)
         {
-            double before = TopAverage(frames, i - beforeWindow, beforeWindow);
-            double after = TopAverage(frames, i, afterWindow);
+            double before = TopAverage(frames, i - beforeWindow, beforeWindow, f => f.RmsDb);
+            double after = TopAverage(frames, i, afterWindow, f => f.RmsDb);
             double increase = after - before;
+            if (after < -55 || increase < 2.0) continue;
 
-            double localNovelty = frames[i].Flux / noveltyMax;
-            bool loudEnough = after > -45;
-            if (increase < 4.0 || !loudEnough) continue;
+            double subBefore = TopAverage(frames, i - beforeWindow, beforeWindow, f => f.Sub);
+            double subAfter = TopAverage(frames, i, afterWindow, f => f.Sub);
+            double presenceBefore = TopAverage(frames, i - beforeWindow, beforeWindow, f => f.Presence + f.Brilliance);
+            double presenceAfter = TopAverage(frames, i, afterWindow, f => f.Presence + f.Brilliance);
 
-            // Local maximum: a gradual crescendo should not produce dozens of drops.
-            bool isPeak = true;
-            for (int j = Math.Max(0, i - 2); j <= Math.Min(n - 1, i + 2); j++)
+            double older = TopAverage(frames, i - slopeWindow - beforeWindow, beforeWindow, f => f.RmsDb);
+            double crescendo = before - older;
+            double noveltyZ = (frames[i].Flux - meanFlux) / fluxStd;
+
+            bool audibleJump = increase >= 3.0;
+            bool timbralJump = noveltyZ >= 2.6 &&
+                               (subAfter - subBefore > 0.035 || presenceAfter - presenceBefore > 0.035);
+            if (!audibleJump && !timbralJump) continue;
+
+            // Refine the exact transition to the largest positive frame-to-frame
+            // energy jump nearby instead of the first frame that saw the window.
+            int transition = i;
+            double bestJump = double.MinValue;
+            int search = Math.Max(1, (int)Math.Round(0.8 / hopSeconds));
+            for (int j = Math.Max(1, i - search); j <= Math.Min(n - 1, i + search); j++)
             {
-                if (frames[j].RmsDb > frames[i].RmsDb + 0.75 &&
-                    Math.Abs(frames[j].RmsDb - frames[i].RmsDb) > 0.1)
-                {
-                    isPeak = false;
-                    break;
-                }
+                double jump = frames[j].RmsDb - frames[j - 1].RmsDb;
+                if (jump > bestJump) { bestJump = jump; transition = j; }
             }
-            if (!isPeak && increase < 8) continue;
 
-            double confidence = Math.Clamp(increase / 16.0 * 0.65 + localNovelty * 0.35, 0.05, 1);
-            string type = increase >= 8 ? "drop" : "build-up";
+            double energyScore = Math.Clamp((increase - 1.5) / 14.0, 0, 1);
+            double noveltyScore = Math.Clamp((noveltyZ + 0.5) / 3.5, 0, 1);
+            double subScore = Math.Clamp((subAfter - subBefore) / 0.15, 0, 1);
+            double highScore = Math.Clamp((presenceAfter - presenceBefore) / 0.12, 0, 1);
+            double silenceScore = before < -40 ? 1 : 0.35;
+            double confidence = Math.Clamp(
+                energyScore * 0.42 + noveltyScore * 0.26 + subScore * 0.14 +
+                highScore * 0.10 + silenceScore * 0.08, 0.05, 1);
+
+            if (confidence < 0.33) continue;
+
+            bool buildUp = increase < 6 && crescendo > 2.5;
+            string type = buildUp ? "build-up" : "drop";
             candidates.Add(new SongDrop
             {
-                Time = Math.Round(i * hopSeconds, 2),
+                Time = Math.Round(transition * hopSeconds, 2),
                 Confidence = Math.Round(confidence, 3),
                 Type = type,
-                Label = type == "drop" ? "Drop" : "Build-up"
+                Label = buildUp ? "Build-up" : "Drop"
             });
         }
 
-        // Keep the strongest candidate in each 10-second cluster.
+        // Non-maximum suppression: one meaningful event per ~12-second region.
         var merged = new List<SongDrop>();
         foreach (var candidate in candidates.OrderByDescending(c => c.Confidence))
         {
-            if (merged.Any(m => Math.Abs(m.Time - candidate.Time) < 10)) continue;
+            if (merged.Any(m => Math.Abs(m.Time - candidate.Time) < 12)) continue;
             merged.Add(candidate);
         }
 
@@ -362,14 +503,14 @@ public sealed class SongAnalyzer
     /// sparse material (clicks, stabs, a cappella) look silent between hits and
     /// hide the energy jump a drop detector is looking for.
     /// </summary>
-    private static double TopAverage(List<RawFrame> frames, int start, int count)
+    private static double TopAverage(List<RawFrame> frames, int start, int count, Func<RawFrame, double> selector)
     {
         int from = Math.Max(0, start);
         int to = Math.Min(frames.Count, start + count);
         if (to <= from) return -96;
 
         var values = new List<double>(to - from);
-        for (int i = from; i < to; i++) values.Add(frames[i].RmsDb);
+        for (int i = from; i < to; i++) values.Add(selector(frames[i]));
         values.Sort();
         int take = Math.Max(1, (int)Math.Ceiling(values.Count * 0.10));
         double sum = 0;
@@ -377,18 +518,33 @@ public sealed class SongAnalyzer
         return sum / take;
     }
 
+    private static double TopAverage(List<RawFrame> frames, int start, int count)
+        => TopAverage(frames, start, count, f => f.RmsDb);
+
     /// <summary>
     /// Groups the decoded track into structural chapters. Boundaries come from
     /// energy/spectrum novelty, then repeated sections are clustered: the loud
     /// recurring cluster is a chorus, quieter recurring sections are verses, and
     /// a unique contrasting middle section becomes the bridge.
     /// </summary>
-    private static List<SongPart> DetectParts(List<RawFrame> frames, double hopSeconds, double duration)
+    private static List<SongPart> DetectParts(
+        List<RawFrame> frames,
+        double hopSeconds,
+        double duration,
+        double bpm,
+        double beatOffset,
+        double bpmConfidence)
     {
         if (frames.Count < 8 || duration <= 0)
             return new List<SongPart>();
 
-        double blockSeconds = 2.0;
+        // Work at a musical block size when the tempo is trustworthy. Two bars
+        // gives stable chroma/energy statistics, while a 2 s fallback keeps
+        // speech-like or rubato material analysable.
+        double barSeconds = bpm >= 55 && bpm <= 210 ? 4.0 * 60.0 / bpm : 0;
+        double blockSeconds = barSeconds > 0 && bpmConfidence >= 0.15
+            ? Math.Clamp(barSeconds, 1.5, 2.5)
+            : 2.0;
         int blockFrames = Math.Max(1, (int)Math.Round(blockSeconds / hopSeconds));
         var blocks = new List<PartBlock>();
 
@@ -397,6 +553,15 @@ public sealed class SongAnalyzer
             var slice = frames.Skip(i).Take(blockFrames).ToList();
             if (slice.Count == 0) continue;
 
+            var chroma = new double[12];
+            foreach (var frame in slice)
+                for (int pc = 0; pc < 12; pc++) chroma[pc] += frame.Chroma[pc];
+            double chromaSum = chroma.Sum();
+            if (chromaSum > 1e-9)
+                for (int pc = 0; pc < 12; pc++) chroma[pc] /= chromaSum;
+            else
+                chroma = new double[12];
+
             var block = new PartBlock
             {
                 Start = i * hopSeconds,
@@ -404,7 +569,15 @@ public sealed class SongAnalyzer
                 Low = slice.Average(f => f.Low),
                 Mid = slice.Average(f => f.Mid),
                 High = slice.Average(f => f.High),
-                Flux = slice.Average(f => f.Flux)
+                Sub = slice.Average(f => f.Sub),
+                Bass = slice.Average(f => f.Bass),
+                LowMid = slice.Average(f => f.LowMid),
+                Presence = slice.Average(f => f.Presence),
+                Brilliance = slice.Average(f => f.Brilliance),
+                Air = slice.Average(f => f.Air),
+                Centroid = slice.Average(f => f.Centroid),
+                Flux = slice.Average(f => f.Flux),
+                Chroma = chroma
             };
 
             double linear = slice.Average(f => Math.Pow(10, f.RmsDb / 20.0));
@@ -415,22 +588,29 @@ public sealed class SongAnalyzer
         if (blocks.Count < 3)
             return new List<SongPart> { FullSong(duration, blocks) };
 
-        // Novelty between adjacent blocks: a jump in level, a change of the
-        // low/mid/high balance, or a burst of spectral flux.
+        // Novelty between adjacent blocks: a change of harmony (chroma), timbre
+        // (band balance), level or attack density. This is much more selective
+        // than energy alone.
         var novelty = new double[blocks.Count];
         for (int i = 1; i < blocks.Count; i++)
         {
             var a = blocks[i - 1];
             var b = blocks[i];
+            double chromaDistance = 1.0 - Cosine(a.Chroma, b.Chroma);
+            double bandDistance =
+                Math.Abs(b.Sub - a.Sub) + Math.Abs(b.Bass - a.Bass) +
+                Math.Abs(b.LowMid - a.LowMid) + Math.Abs(b.Presence - a.Presence) +
+                Math.Abs(b.Brilliance - a.Brilliance) + Math.Abs(b.Air - a.Air);
             novelty[i] =
-                Math.Abs(b.RmsDb - a.RmsDb) / 10.0 +
-                0.55 * (Math.Abs(b.Low - a.Low) + Math.Abs(b.Mid - a.Mid) + Math.Abs(b.High - a.High)) +
-                0.15 * Math.Abs(b.Flux - a.Flux);
+                0.56 * chromaDistance +
+                0.24 * bandDistance +
+                0.13 * Math.Abs(b.RmsDb - a.RmsDb) / 8.0 +
+                0.07 * Math.Abs(b.Flux - a.Flux);
         }
 
         double mean = novelty.Skip(1).DefaultIfEmpty(0).Average();
         double variance = novelty.Skip(1).Select(v => (v - mean) * (v - mean)).DefaultIfEmpty(0).Average();
-        double threshold = Math.Max(0.22, mean + Math.Sqrt(variance) * 0.75);
+        double threshold = Math.Max(0.12, mean + Math.Sqrt(variance) * 0.85);
         double minPartSeconds = Math.Max(6.0, duration / 20.0);
 
         // Pick the strongest boundaries first, keeping every part at least
@@ -440,10 +620,33 @@ public sealed class SongAnalyzer
             .OrderByDescending(i => novelty[i])
             .ToList();
 
+        // Explicit edge pass: quiet intros/outros are often too gradual for a
+        // peak-based novelty threshold, but their first/last active block is a
+        // reliable chapter boundary.
+        double medianBlockDb = Percentile(blocks.Select(b => b.RmsDb).ToList(), 0.5);
+        int firstActive = blocks.FindIndex(b => b.RmsDb >= medianBlockDb - 4.0);
+        if (firstActive > 0 && blocks[firstActive].Start < duration * 0.25)
+            boundaries.Add(blocks[firstActive].Start);
+        int lastActive = blocks.FindLastIndex(b => b.RmsDb >= medianBlockDb - 4.0);
+        if (lastActive >= 0 && lastActive < blocks.Count - 1 &&
+            blocks[lastActive].End > duration * 0.70)
+            boundaries.Add(blocks[lastActive].End);
+
         foreach (int index in candidates)
         {
             if (novelty[index] < threshold) continue;
             double at = blocks[index].Start;
+
+            // Snap confident boundaries to the nearest bar line so chapters
+            // start where a listener hears the new section, not a fraction later.
+            if (barSeconds >= 0.8 && bpmConfidence >= 0.2)
+            {
+                double snapped = beatOffset + Math.Round((at - beatOffset) / barSeconds) * barSeconds;
+                if (snapped > 0.5 && snapped < duration - 0.5 &&
+                    Math.Abs(snapped - at) <= barSeconds * 0.45)
+                    at = snapped;
+            }
+
             if (boundaries.Any(b => Math.Abs(b - at) < minPartSeconds)) continue;
             boundaries.Add(at);
             if (boundaries.Count >= 14) break;
@@ -460,6 +663,13 @@ public sealed class SongAnalyzer
             var inside = blocks.Where(b => b.Start >= start - 0.01 && b.Start < end - 0.01).ToList();
             if (inside.Count == 0) continue;
 
+            var chroma = new double[12];
+            foreach (var block in inside)
+                for (int pc = 0; pc < 12; pc++) chroma[pc] += block.Chroma[pc];
+            double chromaSum = chroma.Sum();
+            if (chromaSum > 1e-9)
+                for (int pc = 0; pc < 12; pc++) chroma[pc] /= chromaSum;
+
             var segment = new PartSegment
             {
                 Start = start,
@@ -468,7 +678,15 @@ public sealed class SongAnalyzer
                 Low = inside.Average(b => b.Low),
                 Mid = inside.Average(b => b.Mid),
                 High = inside.Average(b => b.High),
-                Flux = inside.Average(b => b.Flux)
+                Sub = inside.Average(b => b.Sub),
+                Bass = inside.Average(b => b.Bass),
+                LowMid = inside.Average(b => b.LowMid),
+                Presence = inside.Average(b => b.Presence),
+                Brilliance = inside.Average(b => b.Brilliance),
+                Air = inside.Average(b => b.Air),
+                Centroid = inside.Average(b => b.Centroid),
+                Flux = inside.Average(b => b.Flux),
+                Chroma = chroma
             };
 
             // Rising energy in the second half is the classic pre-chorus shape.
@@ -524,15 +742,31 @@ public sealed class SongAnalyzer
         {
             for (int j = i + 1; j < count; j++)
             {
-                if (Similarity(segments[i], segments[j]) >= 0.955)
+                if (Similarity(segments[i], segments[j]) >= 0.90)
                     Union(i, j);
             }
         }
 
         var clusters = Enumerable.Range(0, count).GroupBy(Find).Select(g => g.ToList()).ToList();
         var repeated = clusters.Where(c => c.Count >= 2).ToList();
+
+        double EnergyRank(double db)
+        {
+            int below = segments.Count(s => s.RmsDb <= db);
+            return segments.Count > 1 ? (double)below / (segments.Count - 1) : 0.5;
+        }
+        double BrightnessRank(double value)
+        {
+            int below = segments.Count(s => s.Presence + s.Brilliance <= value);
+            return segments.Count > 1 ? (double)below / (segments.Count - 1) : 0.5;
+        }
+        double ChorusScore(List<int> cluster) =>
+            cluster.Average(i => EnergyRank(segments[i].RmsDb)) * 0.60 +
+            cluster.Average(i => BrightnessRank(segments[i].Presence + segments[i].Brilliance)) * 0.20 +
+            Math.Min(1.0, cluster.Count / 3.0) * 0.20;
+
         var chorusCluster = repeated
-            .OrderByDescending(c => c.Average(i => segments[i].RmsDb))
+            .OrderByDescending(ChorusScore)
             .FirstOrDefault();
 
         // A repeated loud cluster is the chorus. If there is no repeated high
@@ -563,34 +797,44 @@ public sealed class SongAnalyzer
             segments[^1].End - segments[^1].Start <= Math.Max(20, segments[^1].End * 0.2))
             segments[^1].Type = "outro";
 
-        // Bridge: a unique section in the middle that contrasts with both the
-        // verse and chorus clusters (different energy and/or spectral balance).
+        // Bridge: the unique middle section that contrasts most strongly with the
+        // repeated verse/chorus material (different harmony, arrangement or energy).
         int bridge = -1;
+        double bestContrast = 0;
+        var repeatedCentres = repeated.SelectMany(c => c).ToList();
         for (int i = 1; i < count - 1; i++)
         {
             if (!string.IsNullOrEmpty(segments[i].Type)) continue;
-            bool lateEnough = segments[i].Start >= segments[^1].End * 0.35;
-            if (!lateEnough) continue;
+            if (segments[i].Start < segments[^1].End * 0.28) continue;
 
-            double distance = chorusIndexes.Count > 0
-                ? chorusIndexes.Min(c => 1 - Similarity(segments[i], segments[c]))
-                : 1;
-            if (distance > 0.06 || segments[i].RmsDb < medianDb - 0.5)
+            double maxSimilarity = repeatedCentres.Count > 0
+                ? repeatedCentres.Max(c => Similarity(segments[i], segments[c]))
+                : 0;
+            double contrast = 1 - maxSimilarity;
+            bool energyContrast = Math.Abs(segments[i].RmsDb - medianDb) >= 1.5;
+            if ((contrast > 0.08 || energyContrast) && contrast > bestContrast)
             {
+                bestContrast = contrast;
                 bridge = i;
-                break;
             }
         }
         if (bridge >= 0) segments[bridge].Type = "bridge";
 
-        // Pre-chorus: a short rising section immediately before a chorus.
+        // Pre-chorus: a short rising section immediately before a chorus. A
+        // recurring verse stays a verse unless its rise is very pronounced.
+        var repeatedIndexes = new HashSet<int>(repeated.SelectMany(c => c));
         for (int i = 1; i < count; i++)
         {
             if (segments[i].Type != "chorus") continue;
             var before = segments[i - 1];
-            if (string.IsNullOrEmpty(before.Type) && before.TrendDb > 1.5 &&
+            bool repeatedBefore = repeatedIndexes.Contains(i - 1);
+            if ((string.IsNullOrEmpty(before.Type) || before.Type == "verse") &&
+                before.TrendDb > (repeatedBefore ? 4.0 : 1.5) &&
                 before.End - before.Start <= 16)
+            {
                 before.Type = "pre-chorus";
+                before.Confidence = Math.Max(before.Confidence, 0.6);
+            }
         }
 
         // Anything still unclassified becomes a verse, unless it is as loud as
@@ -663,20 +907,32 @@ public sealed class SongAnalyzer
 
     private static double Similarity(PartSegment a, PartSegment b)
     {
-        // Amplitude + spectral balance. Repeated verses/choruses land close even
-        // when their melodies differ; a bridge with a different arrangement does not.
-        double ar = Math.Pow(10, a.RmsDb / 20.0);
-        double br = Math.Pow(10, b.RmsDb / 20.0);
-        var av = new[] { ar * 4, a.Low * 2, a.Mid * 2, a.High * 2 };
-        var bv = new[] { br * 4, b.Low * 2, b.Mid * 2, b.High * 2 };
+        // Harmony is the strongest structural cue, followed by timbre and level.
+        // A repeated chorus keeps its chord progression even when the lyrics
+        // change; a bridge normally changes both harmony and arrangement.
+        double chroma = Cosine(a.Chroma, b.Chroma);
+        var av = new[] { a.Sub, a.Bass, a.LowMid, a.Presence, a.Brilliance, a.Air };
+        var bv = new[] { b.Sub, b.Bass, b.LowMid, b.Presence, b.Brilliance, b.Air };
+        double bands = Cosine(av, bv);
+        double energy = Math.Clamp(1.0 - Math.Abs(a.RmsDb - b.RmsDb) / 18.0, 0, 1);
+
+        double similarity = 0.52 * chroma + 0.28 * bands + 0.20 * energy;
+        if (Math.Abs(a.RmsDb - b.RmsDb) > 5.0)
+            similarity *= 0.72; // verse vs. a much louder chorus
+        return similarity;
+    }
+
+    private static double Cosine(double[] a, double[] b)
+    {
+        if (a == null || b == null || a.Length != b.Length || a.Length == 0) return 0;
         double dot = 0, am = 0, bm = 0;
-        for (int i = 0; i < av.Length; i++)
+        for (int i = 0; i < a.Length; i++)
         {
-            dot += av[i] * bv[i];
-            am += av[i] * av[i];
-            bm += bv[i] * bv[i];
+            dot += a[i] * b[i];
+            am += a[i] * a[i];
+            bm += b[i] * b[i];
         }
-        if (am <= 0 || bm <= 0) return 0;
+        if (am <= 1e-12 || bm <= 1e-12) return 0;
         return dot / (Math.Sqrt(am) * Math.Sqrt(bm));
     }
 
@@ -688,7 +944,15 @@ public sealed class SongAnalyzer
         Low = source.Low,
         Mid = source.Mid,
         High = source.High,
+        Sub = source.Sub,
+        Bass = source.Bass,
+        LowMid = source.LowMid,
+        Presence = source.Presence,
+        Brilliance = source.Brilliance,
+        Air = source.Air,
+        Centroid = source.Centroid,
         Flux = source.Flux,
+        Chroma = source.Chroma.ToArray(),
         TrendDb = source.TrendDb,
         Confidence = 0.4
     };
@@ -716,7 +980,15 @@ public sealed class SongAnalyzer
         public double Low;
         public double Mid;
         public double High;
+        public double Sub;
+        public double Bass;
+        public double LowMid;
+        public double Presence;
+        public double Brilliance;
+        public double Air;
+        public double Centroid;
         public double Flux;
+        public double[] Chroma = new double[12];
     }
 
     private sealed class PartSegment
@@ -727,7 +999,15 @@ public sealed class SongAnalyzer
         public double Low;
         public double Mid;
         public double High;
+        public double Sub;
+        public double Bass;
+        public double LowMid;
+        public double Presence;
+        public double Brilliance;
+        public double Air;
+        public double Centroid;
         public double Flux;
+        public double[] Chroma = new double[12];
         public double TrendDb;
         public string Type = "";
         public string Label = "";
@@ -861,5 +1141,13 @@ public sealed class SongAnalyzer
         public double Low;
         public double Mid;
         public double High;
+        public double Sub;
+        public double Bass;
+        public double LowMid;
+        public double Presence;
+        public double Brilliance;
+        public double Air;
+        public double Centroid;
+        public double[] Chroma = new double[12];
     }
 }

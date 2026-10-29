@@ -293,6 +293,7 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Equalizer DSP | U | bypass is sample-accurate; +12 dB at 1 kHz raises that band > 1.7×; pre-amp attenuates; output stays in range |
 | Sleep timer state | U | start/remaining/extend/cancel; fade stop; “play last song to the end” holds the queue until the track ends; fade composes with announcement ducking |
 | Song analysis | U | synthetic 120 BPM clicks → 112–128 BPM + confidence; loudness/peak/quality/timeline; no false drops in constant audio; drop after a real energy jump |
+| Tempo accuracy | U | click tracks at 88, 128 and 174 BPM detected within ±3 %, including octave correction |
 | Song parts | U | structured intro/verse/chorus/verse/chorus/bridge/chorus/outro fixture detects all parts, labels them and keeps non-overlapping chapter ranges |
 | Auto-analysis setting | U | persisted through `saveSettings`/`getSettings`; cached/auto results are pushed for the current track |
 | Analysis cache | U | fresh results are reused, persisted and re-loaded; `force` re-analyses |

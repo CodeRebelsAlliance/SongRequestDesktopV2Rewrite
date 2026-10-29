@@ -148,6 +148,11 @@ test('song parts and drops are interactive chapters on player progress bars', ()
   assert.match(js, /data-part-time/);
   assert.match(js, /parts = analysis\.parts/);
   assert.match(js, /samePath\(state\.currentSongPath, data\.songPath\)/);
+  assert.match(js, /function labelEdgeClass/);
+  assert.match(js, /bindMarkerHover/);
+  assert.match(css, /\.ad-marker-label\.is-start/);
+  assert.match(css, /#progress-track\.ad-marker-hover \.seek-tooltip/);
+  assert.match(css, /#exp-progress-track\.ad-marker-hover \.seek-tooltip/);
   assert.match(css, /\.ad-chapter-band/);
   assert.match(css, /\.ad-drop-pin/);
   assert.match(css, /\.is-chorus/);
