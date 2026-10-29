@@ -214,10 +214,13 @@ the badges in the music player UI.
 The analysis result contains `bpm`, `bpmConfidence`, `beatOffsetSeconds`,
 `loudnessLufs`, `loudnessRangeLu`, `peakDb`, `dynamicRangeDb`, a `quality` object
 (`score`, `tier`, codec, bitrate, sample rate, clipping, dynamic range), detected
-`drops` (time, confidence, type/label), a per-window `timeline` (RMS/peak/low/mid/
-high energy and novelty) and the decoder `analysisPath`. Analysis runs in the
-background; progress arrives as the `songAnalysisProgress` WebSocket event, and
-a finished run emits `songAnalysisUpdate`.
+`drops` (time, confidence, type/label), detected `parts` (intro, verse,
+pre-chorus, chorus, bridge, outro with `startSeconds`/`endSeconds`, label and
+confidence), a per-window `timeline` (RMS/peak/low/mid/high energy and novelty)
+and the decoder `analysisPath`. Analysis runs in the background; progress arrives
+as the `songAnalysisProgress` WebSocket event, and a finished run emits
+`songAnalysisUpdate`. With `AutoAnalyzeSongs` enabled the app analyses each track
+as it starts and pushes the cached result automatically.
 
 ### Playlists and history
 

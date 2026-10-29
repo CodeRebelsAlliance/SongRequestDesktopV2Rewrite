@@ -2003,6 +2003,11 @@ public class YoutubeFormInterop
                 // Log playback to server if enabled
                 var platform = currentLibSong != null && currentLibSong.Source == SongSource.Downloaded ? "youtube" : "spotify";
                 LogPlaybackAsync(current.Title ?? "", current.Artist ?? "", platform);
+
+                // Show cached BPM/parts immediately, or start a background analysis
+                // when the user enabled auto-analysis. The result is pushed as
+                // songAnalysisUpdate and drives the player progress chapters.
+                SendOrStartSongAnalysis(current);
             }
 
             if (current == null)
@@ -2863,6 +2868,36 @@ public class YoutubeFormInterop
         return _analysis.GetFresh(target.Value.Path) ?? _analysis.GetCached(target.Value.Path);
     }
 
+    /// <summary>
+    /// Pushes a cached analysis for the just-started track, or starts one in the
+    /// background when the auto-analysis setting is on. Failures stay silent: a
+    /// track that cannot be decoded simply has no chapters.
+    /// </summary>
+    private void SendOrStartSongAnalysis(Song current)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(current.songPath)) return;
+            var path = AppPaths.ResolvePortablePath(current.songPath);
+            if (!File.Exists(path)) return;
+
+            var cached = _analysis.GetFresh(path);
+            if (cached != null)
+            {
+                MusicPlayerSendEvent("songAnalysisUpdate", CamelCase(cached));
+                return;
+            }
+
+            if (ConfigService.Instance.Current?.AutoAnalyzeSongs != true) return;
+            _ = Task.Run(async () =>
+            {
+                try { await _analysis.AnalyzeAsync(path, current.Title, current.Artist).ConfigureAwait(false); }
+                catch { }
+            });
+        }
+        catch { }
+    }
+
     private async Task<object> AnalyzeSongAsync(JObject msg)
     {
         var target = ResolveAnalysisTarget(msg);
@@ -2893,6 +2928,7 @@ public class YoutubeFormInterop
                 isLowConfidence = analysis.IsLowConfidence,
                 quality = analysis.Quality,
                 drops = analysis.Drops,
+                parts = analysis.Parts,
                 timeline = analysis.Timeline,
                 analysisPath = analysis.AnalysisPath,
                 analyzedUtc = analysis.AnalyzedUtc
@@ -2961,6 +2997,7 @@ public class YoutubeFormInterop
             cookieBrowser = cfg.CookieBrowser ?? string.Empty,
             autoGrabCookies = cfg.AutoGrabCookies,
             systemMediaIntegration = cfg.SystemMediaIntegration,
+            autoAnalyzeSongs = cfg.AutoAnalyzeSongs,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
             systemMediaActive = SystemMediaActive,
@@ -3306,6 +3343,7 @@ public class YoutubeFormInterop
                 }
                 if (settings.TryGetValue("globalKeyboardShortcuts", out var gks)) cfg.GlobalKeyboardShortcuts = gks.ToObject<bool>();
                 if (settings.TryGetValue("systemMediaIntegration", out var smi)) cfg.SystemMediaIntegration = smi.ToObject<bool>();
+                if (settings.TryGetValue("autoAnalyzeSongs", out var aas)) cfg.AutoAnalyzeSongs = aas.ToObject<bool>();
                 if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
 
                 // Local API / MCP servers. ApplyConfig is called after the update;
@@ -3327,6 +3365,15 @@ public class YoutubeFormInterop
 
             // Apply the OS-level autostart registration (best-effort).
             ApplyAutoStart();
+
+            // Turning auto-analysis on should also analyze the track that is
+            // already playing, not only future tracks.
+            if (settings.TryGetValue("autoAnalyzeSongs", out var autoAnalyze) &&
+                autoAnalyze.ToObject<bool>() &&
+                _ytForm.Music.Queue.FirstOrDefault() is { } playing)
+            {
+                SendOrStartSongAnalysis(playing);
+            }
 
             // Re-register global hotkeys if the toggle changed.
             if (settings.ContainsKey("globalKeyboardShortcuts"))

@@ -18,7 +18,10 @@
     analysisProgress: null,
     analysisLoading: false,
     view: null,
-    sleepTimerHandle: null
+    sleepTimerHandle: null,
+    currentSongPath: '',
+    progressAnalysis: null,
+    analyses: {}
   };
   var dom = null;
 
@@ -99,16 +102,79 @@
           if (state.view === 'analysis') renderProgress();
           break;
         case 'songAnalysisUpdate':
-          state.analysis = data;
-          state.analysisLoading = false;
-          state.analysisProgress = null;
-          if (state.view === 'analysis') render();
+          cacheAnalysis(data);
+          if (state.view === 'analysis' && panelAnalysisMatches(data)) {
+            state.analysis = data;
+            state.analysisLoading = false;
+            state.analysisProgress = null;
+            render();
+          }
+          break;
+        case 'nowPlayingUpdate':
+          handleNowPlaying(data);
           break;
         case 'refresh':
           refreshStates();
           break;
       }
     });
+  }
+
+  function pathKey(value) {
+    return String(value || '').replace(/\\/g, '/').toLowerCase();
+  }
+
+  function samePath(a, b) {
+    var ka = pathKey(a);
+    var kb = pathKey(b);
+    if (!ka || !kb) return false;
+    if (ka === kb) return true;
+
+    // Mobile stores library paths with the "~/" data-root prefix, while the
+    // analysis resolves them to an absolute sandbox path. Compare the relative
+    // suffix so chapters still attach to the playing track.
+    if (ka.indexOf('~/') === 0 || kb.indexOf('~/') === 0) {
+      var a2 = ka.replace(/^~\//, '');
+      var b2 = kb.replace(/^~\//, '');
+      return a2 === b2 || a2.endsWith('/' + b2) || b2.endsWith('/' + a2);
+    }
+    return false;
+  }
+
+  function panelAnalysisMatches(data) {
+    if (!data) return false;
+    var target = state.analysisTarget;
+    if (!target) return true;
+    if (target.songId) return true; // the panel requested this song explicitly
+    return !target.songPath || samePath(target.songPath, data.songPath);
+  }
+
+  function cacheAnalysis(data) {
+    if (!data || !data.songPath) return;
+    state.analyses[pathKey(data.songPath)] = data;
+    if (samePath(state.currentSongPath, data.songPath)) {
+      state.progressAnalysis = data;
+      renderTrackMarkers();
+      updateBpmBadge();
+    }
+  }
+
+  function handleNowPlaying(data) {
+    var path = data.currentSongPath || data.songPath || '';
+    var changed = pathKey(path) !== pathKey(state.currentSongPath);
+    if (changed) {
+      state.currentSongPath = path;
+      state.progressAnalysis = path ? (state.analyses[pathKey(path)] || null) : null;
+      renderTrackMarkers();
+      if (path) {
+        // Fetch a cached analysis (or the one auto-analysis just produced) for
+        // this track so the chapters appear without opening the panel.
+        request('getSongAnalysis', { songPath: path }).then(function (result) {
+          if (result && result.songPath) cacheAnalysis(result);
+        }).catch(function () { });
+      }
+    }
+    updateBpmBadge();
   }
 
   function refreshStates() {
@@ -128,7 +194,24 @@
         if (result && result.songPath) {
           state.analysis = result;
           state.analysisLoading = false;
+          cacheAnalysis(result);
           render();
+        }
+      }).catch(function () { });
+    }
+
+    if (state.currentSongPath) {
+      request('getSongAnalysis', { songPath: state.currentSongPath }).then(function (result) {
+        if (result && result.songPath) cacheAnalysis(result);
+      }).catch(function () { });
+    } else {
+      request('getSongAnalysis', {}).then(function (result) {
+        if (result && result.songPath) {
+          state.currentSongPath = result.songPath;
+          state.progressAnalysis = result;
+          state.analyses[pathKey(result.songPath)] = result;
+          renderTrackMarkers();
+          updateBpmBadge();
         }
       }).catch(function () { });
     }
@@ -728,6 +811,7 @@
 
     var quality = analysis.quality || {};
     var drops = analysis.drops || [];
+    var parts = analysis.parts || [];
     var bpmConfidence = Math.round((Number(analysis.bpmConfidence) || 0) * 100);
     var dropList = drops.length
       ? drops.map(function (drop) {
@@ -740,11 +824,25 @@
         }).join('')
       : '<div class="ad-empty-inline">No confident drops detected.</div>';
 
+    var partList = parts.length
+      ? parts.map(function (part) {
+          return '<button class="ad-drop-row ad-part-row" data-part-time="' + part.startSeconds + '">' +
+            '<span class="ad-part-dot ' + partClass(part.type) + '"></span>' +
+            '<span class="ad-drop-label">' + esc(part.label || part.type) + '</span>' +
+            '<span class="ad-drop-time-label">' + formatTimestamp(part.startSeconds) + ' – ' + formatTimestamp(part.endSeconds) + '</span>' +
+            '<span class="ad-drop-confidence">' + Math.round((part.confidence || 0) * 100) + '%</span>' +
+          '</button>';
+        }).join('')
+      : '<div class="ad-empty-inline">No song parts detected.</div>';
+
     dom.body.innerHTML =
       '<div class="ad-analysis-head">' +
         '<div><div class="ad-analysis-title">' + esc(analysis.title || 'Current track') + '</div>' +
         '<div class="ad-analysis-artist">' + esc(analysis.artist || '') + '</div></div>' +
-        '<button id="ad-analysis-refresh" class="ad-btn ad-quiet" title="Analyse again"><i class="fas fa-rotate"></i></button>' +
+        '<div class="ad-analysis-actions">' +
+          '<button id="ad-analysis-current" class="ad-btn ad-quiet" title="Analyse the song that is playing now"><i class="fas fa-music"></i> Current track</button>' +
+          '<button id="ad-analysis-refresh" class="ad-btn ad-quiet" title="Analyse this song again"><i class="fas fa-rotate"></i></button>' +
+        '</div>' +
       '</div>' +
       '<div class="ad-stats">' +
         statCard('BPM', analysis.bpm > 0 ? Math.round(analysis.bpm) : '—', bpmConfidence + '% confidence') +
@@ -770,11 +868,22 @@
           '<div><span>Analysis path</span><strong class="ad-path">' + esc(analysis.analysisPath || '') + '</strong></div>' +
         '</div>' +
       '</div>' +
+      '<div class="ad-section-title">Song parts / chapters</div>' +
+      '<div class="ad-drop-list">' + partList + '</div>' +
       '<div class="ad-section-title">Detected drops</div>' +
       '<div class="ad-drop-list">' + dropList + '</div>';
 
     var refresh = global.document.getElementById('ad-analysis-refresh');
     if (refresh) refresh.addEventListener('click', function () { analyzeCurrent(true); });
+
+    var currentTrack = global.document.getElementById('ad-analysis-current');
+    if (currentTrack) currentTrack.addEventListener('click', function () {
+      // Start a fresh analysis of whatever is playing now, even when this
+      // result belongs to an older track or a library song chosen earlier.
+      state.analysisTarget = null;
+      state.analysis = null;
+      analyzeCurrent(false);
+    });
 
     var dropRows = dom.body.querySelectorAll('[data-drop-time]');
     for (var d = 0; d < dropRows.length; d++) {
@@ -788,6 +897,20 @@
             .catch(function (error) { toast(error.message, true); });
         });
       })(dropRows[d]);
+    }
+
+    var partRows = dom.body.querySelectorAll('[data-part-time]');
+    for (var p = 0; p < partRows.length; p++) {
+      (function (row) {
+        row.addEventListener('click', function () {
+          var time = parseFloat(row.dataset.partTime);
+          var duration = Number(analysis.durationSeconds) || 0;
+          if (!isFinite(time) || duration <= 0) return;
+          request('seek', { position: Math.max(0, Math.min(1, time / duration)) })
+            .then(function () { toast('Jumped to ' + row.querySelector('.ad-drop-label').textContent); })
+            .catch(function (error) { toast(error.message, true); });
+        });
+      })(partRows[p]);
     }
 
     drawAnalysisTimeline(analysis);
@@ -845,6 +968,7 @@
         if (!state.analysisTarget) state.analysisTarget = {};
         state.analysisTarget.songPath = result.songPath;
         if (result.title) state.analysisTarget.title = result.title;
+        cacheAnalysis(result);
       }
       render();
     }).catch(function (error) {
@@ -1026,8 +1150,193 @@
     }
   }
 
-  function setAnalysisTarget(target) {
-    state.analysisTarget = target || null;
+  // ── Progress-bar chapters, drops and BPM badge ──────────────────────────
+  function partClass(type) {
+    switch (String(type || '').toLowerCase()) {
+      case 'intro': return 'is-intro';
+      case 'verse': return 'is-verse';
+      case 'pre-chorus': return 'is-prechorus';
+      case 'chorus': return 'is-chorus';
+      case 'bridge': return 'is-bridge';
+      case 'outro': return 'is-outro';
+      default: return 'is-full';
+    }
+  }
+
+  function clampPercent(value) {
+    return Math.max(0, Math.min(100, Number(value) || 0));
+  }
+
+  function seekTo(seconds, duration) {
+    if (!isFinite(seconds) || !isFinite(duration) || duration <= 0) return;
+    request('seek', { position: clampPercent(seconds / duration * 100) / 100 })
+      .catch(function () { });
+  }
+
+  function renderTrackMarkers() {
+    var analysis = state.progressAnalysis;
+    if (analysis && state.currentSongPath && !samePath(analysis.songPath, state.currentSongPath))
+      analysis = null;
+
+    renderMarkerLayer('progress-track', 'ad-progress-markers', analysis);
+    renderMarkerLayer('exp-progress-track', 'ad-exp-progress-markers', analysis);
+    renderMobileMarkers(analysis);
+  }
+
+  function renderMarkerLayer(trackId, layerId, analysis) {
+    var doc = global.document;
+    if (!doc) return;
+    var track = doc.getElementById(trackId);
+    if (!track) return;
+
+    var layer = doc.getElementById(layerId);
+    if (!layer) {
+      layer = doc.createElement('div');
+      layer.id = layerId;
+      layer.className = 'ad-progress-markers';
+      track.appendChild(layer);
+    }
+    populateMarkerLayer(layer, analysis);
+  }
+
+  function renderMobileMarkers(analysis) {
+    var doc = global.document;
+    if (!doc) return;
+    var seek = doc.getElementById('mm-seek');
+    if (!seek) return;
+
+    var wrap = doc.getElementById('ad-mm-seek-wrap');
+    if (!wrap) {
+      wrap = doc.createElement('div');
+      wrap.id = 'ad-mm-seek-wrap';
+      wrap.className = 'ad-mm-seek-wrap';
+      seek.parentNode.insertBefore(wrap, seek);
+      wrap.appendChild(seek);
+      var layer = doc.createElement('div');
+      layer.id = 'ad-mm-markers';
+      layer.className = 'ad-progress-markers ad-mobile-markers';
+      wrap.appendChild(layer);
+    }
+    populateMarkerLayer(doc.getElementById('ad-mm-markers'), analysis);
+  }
+
+  function populateMarkerLayer(layer, analysis) {
+    if (!layer) return;
+    layer.innerHTML = '';
+
+    var duration = analysis ? Number(analysis.durationSeconds) || 0 : 0;
+    if (!analysis || duration <= 0) {
+      layer.hidden = true;
+      return;
+    }
+    layer.hidden = false;
+
+    var parts = analysis.parts || [];
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      var start = clampPercent((Number(part.startSeconds) || 0) / duration * 100);
+      var end = clampPercent((Number(part.endSeconds) || 0) / duration * 100);
+      var cls = partClass(part.type);
+
+      var band = global.document.createElement('div');
+      band.className = 'ad-chapter-band ' + cls;
+      band.style.left = start + '%';
+      band.style.width = Math.max(0.3, end - start) + '%';
+      band.title = (part.label || part.type) + ' · ' + formatTimestamp(part.startSeconds) + '–' + formatTimestamp(part.endSeconds);
+      layer.appendChild(band);
+
+      var chapter = global.document.createElement('button');
+      chapter.type = 'button';
+      chapter.className = 'ad-chapter ' + cls;
+      chapter.style.left = start + '%';
+      chapter.dataset.time = part.startSeconds;
+      chapter.title = band.title;
+      chapter.innerHTML = '<span class="ad-marker-label">' + esc(part.label || part.type) + ' · ' + formatTimestamp(part.startSeconds) + '</span>';
+      chapter.addEventListener('mousedown', function (event) { event.stopPropagation(); });
+      chapter.addEventListener('touchstart', function (event) { event.stopPropagation(); }, { passive: true });
+      chapter.addEventListener('click', function (event) {
+        event.stopPropagation();
+        seekTo(parseFloat(this.dataset.time), duration);
+      });
+      layer.appendChild(chapter);
+    }
+
+    var drops = analysis.drops || [];
+    for (var d = 0; d < drops.length; d++) {
+      var drop = drops[d];
+      var at = clampPercent((Number(drop.time) || 0) / duration * 100);
+      var pin = global.document.createElement('button');
+      pin.type = 'button';
+      pin.className = 'ad-drop-pin';
+      pin.style.left = at + '%';
+      pin.dataset.time = drop.time;
+      pin.title = (drop.label || 'Drop') + ' · ' + formatTimestamp(drop.time);
+      pin.innerHTML = '<span class="ad-marker-label">' + esc(drop.label || 'Drop') + ' · ' + formatTimestamp(drop.time) + '</span>';
+      pin.addEventListener('mousedown', function (event) { event.stopPropagation(); });
+      pin.addEventListener('touchstart', function (event) { event.stopPropagation(); }, { passive: true });
+      pin.addEventListener('click', function (event) {
+        event.stopPropagation();
+        seekTo(parseFloat(this.dataset.time), duration);
+      });
+      layer.appendChild(pin);
+    }
+  }
+
+  function updateBpmBadge() {
+    var bpm = state.progressAnalysis ? Math.round(Number(state.progressAnalysis.bpm) || 0) : 0;
+    if (bpm <= 0) bpm = 0;
+
+    upsertBpmPill('player-bar-quality', 'ad-bpm-player', bpm);
+    upsertBpmPill('expanded-quality', 'ad-bpm-expanded', bpm);
+    updateMobileBpmBadge(bpm);
+  }
+
+  function upsertBpmPill(anchorId, id, bpm) {
+    var doc = global.document;
+    if (!doc) return;
+    var anchor = doc.getElementById(anchorId);
+    if (!anchor) return;
+    var pill = doc.getElementById(id);
+
+    if (bpm <= 0) {
+      if (pill) pill.remove();
+      return;
+    }
+
+    if (!pill) {
+      pill = doc.createElement('span');
+      pill.id = id;
+      pill.className = 'pill ad-bpm-pill';
+      if (anchor.parentNode) anchor.parentNode.insertBefore(pill, anchor.nextSibling);
+    }
+    var text = '<i class="fas fa-wave-square"></i> ' + bpm + ' BPM';
+    if (pill.innerHTML !== text) pill.innerHTML = text;
+    pill.title = bpm + ' BPM (detected from the audio)';
+  }
+
+  function updateMobileBpmBadge(bpm) {
+    var doc = global.document;
+    if (!doc) return;
+    var hostEl = doc.getElementById('mm-options-meta');
+    if (!hostEl) return;
+    var badge = doc.getElementById('ad-bpm-mobile');
+
+    if (bpm <= 0) {
+      if (badge) badge.remove();
+      return;
+    }
+
+    if (!badge) {
+      badge = doc.createElement('span');
+      badge.id = 'ad-bpm-mobile';
+      badge.className = 'mm-badge ad-bpm-badge';
+      hostEl.appendChild(badge);
+    }
+    var text = '<i class="fas fa-wave-square"></i><span>' + bpm + ' BPM</span>';
+    if (badge.innerHTML !== text) badge.innerHTML = text;
+  }
+
+  function setAnalysisTarget(target) {    state.analysisTarget = target || null;
     state.analysis = null;
     state.analysisLoading = false;
   }
@@ -1052,7 +1361,7 @@
     var bindings = [
       ['btn-equalizer', function () { open('equalizer'); }],
       ['btn-sleep-timer', function () { open('sleep'); }],
-      ['btn-analysis', function () { open('analysis'); }]
+      ['btn-analysis', function () { api.openAnalysis(); }]
     ];
     bindings.forEach(function (entry) {
       var button = doc.getElementById(entry[0]);

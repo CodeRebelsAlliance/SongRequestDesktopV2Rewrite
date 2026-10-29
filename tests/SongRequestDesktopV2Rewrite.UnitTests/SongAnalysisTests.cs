@@ -101,6 +101,69 @@ public class SongAnalysisTests
         Assert.Equal(2, opens);
     }
 
+    [Fact]
+    public void Analyzer_DetectsVersesChorusBridgeAndOutro()
+    {
+        var samples = BuildStructuredSong();
+        var path = Path.Combine(TestSupport.NewTempDir("analysis-parts"), "parts.wav");
+        File.WriteAllBytes(path, new byte[128]);
+
+        var analysis = new SongAnalyzer(_ => new BufferSource(samples, 44100, 1))
+            .Analyze(path, "Parts", "Artist");
+
+        Assert.NotEmpty(analysis.Parts);
+        var types = analysis.Parts.Select(p => p.Type).ToList();
+        Assert.Contains("verse", types);
+        Assert.Contains("chorus", types);
+        Assert.Contains("bridge", types);
+        Assert.Contains("intro", types);
+        Assert.Contains("outro", types);
+
+        Assert.Equal(0, analysis.Parts[0].StartSeconds, 1);
+        Assert.True(analysis.Parts[^1].EndSeconds >= analysis.DurationSeconds - 1);
+        for (int i = 0; i < analysis.Parts.Count; i++)
+        {
+            Assert.True(analysis.Parts[i].EndSeconds > analysis.Parts[i].StartSeconds);
+            Assert.Contains(analysis.Parts[i].Type, new[] { "intro", "verse", "pre-chorus", "chorus", "bridge", "outro", "full" });
+            if (i > 0)
+                Assert.True(analysis.Parts[i].StartSeconds >= analysis.Parts[i - 1].EndSeconds - 0.2,
+                    "song parts must not overlap");
+        }
+        Assert.Contains(analysis.Parts, p => p.Label.StartsWith("Chorus", StringComparison.Ordinal));
+    }
+
+    private static float[] BuildStructuredSong()
+    {
+        int sampleRate = 44100;
+        var sections = new (double Seconds, double Amplitude, double Frequency)[]
+        {
+            (6, 0.05, 180),   // intro
+            (14, 0.22, 220),  // verse
+            (14, 0.62, 440),  // chorus
+            (14, 0.22, 220),  // verse
+            (14, 0.62, 440),  // chorus
+            (12, 0.34, 6000), // bridge (different spectral balance)
+            (14, 0.62, 440),  // chorus
+            (8, 0.05, 180)    // outro
+        };
+
+        int total = (int)(sections.Sum(s => s.Seconds) * sampleRate);
+        var samples = new float[total];
+        int offset = 0;
+        foreach (var section in sections)
+        {
+            int count = (int)(section.Seconds * sampleRate);
+            for (int i = 0; i < count && offset + i < samples.Length; i++)
+            {
+                double fade = Math.Min(1, Math.Min(i, count - i) / (sampleRate * 0.03));
+                samples[offset + i] = (float)(Math.Sin(2 * Math.PI * section.Frequency * i / sampleRate) *
+                    section.Amplitude * fade);
+            }
+            offset += count;
+        }
+        return samples;
+    }
+
     private static float[] BuildClickTrack(int seconds, double bpm, double dropAt)
     {
         int sampleRate = 44100;

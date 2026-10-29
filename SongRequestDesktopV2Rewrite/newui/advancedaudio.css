@@ -170,6 +170,7 @@
 .ad-check small { display: block; color: var(--ad-muted); font-size: 11.5px; margin-top: 3px; line-height: 1.4; }
 
 .ad-analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ad-analysis-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .ad-analysis-title { font-size: 17px; font-weight: 700; }
 .ad-analysis-artist { color: var(--ad-muted); font-size: 12.5px; margin-top: 2px; }
 .ad-analysis-loading {
@@ -225,6 +226,162 @@
 .ad-drop-time-label { color: var(--ad-muted); font-variant-numeric: tabular-nums; }
 .ad-drop-confidence { color: var(--ad-accent); font-weight: 700; }
 .ad-empty-inline { color: var(--ad-muted); font-size: 12.5px; padding: 8px 2px; }
+
+/* ── Progress-bar chapters and drops ─────────────────────────── */
+.ad-progress-markers {
+  position: absolute;
+  inset: 0;
+  z-index: 16;
+  pointer-events: none;
+  overflow: visible;
+}
+.ad-progress-markers[hidden] { display: none !important; }
+
+.ad-chapter-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  opacity: .42;
+  pointer-events: none;
+}
+
+.is-intro { --ad-part: #8d8d99; }
+.is-verse { --ad-part: #5b8def; }
+.is-prechorus { --ad-part: #ffc107; }
+.is-chorus { --ad-part: #c084fc; }
+.is-bridge { --ad-part: #2dd4bf; }
+.is-outro { --ad-part: #8d8d99; }
+.is-full { --ad-part: #8d8d99; }
+
+.is-intro.ad-chapter-band, .is-full.ad-chapter-band { background: #8d8d99; }
+.is-verse.ad-chapter-band { background: #5b8def; }
+.is-prechorus.ad-chapter-band { background: #ffc107; }
+.is-chorus.ad-chapter-band { background: #c084fc; }
+.is-bridge.ad-chapter-band { background: #2dd4bf; }
+.is-outro.ad-chapter-band { background: #8d8d99; }
+
+.ad-chapter,
+.ad-drop-pin {
+  position: absolute;
+  top: -7px;
+  bottom: -7px;
+  width: 14px;
+  margin-left: -7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ad-part, #fff);
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 3;
+}
+.ad-chapter::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: currentColor;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+}
+.ad-drop-pin { color: #ff6b6b; width: 12px; margin-left: -6px; }
+.ad-drop-pin::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .35);
+}
+.ad-drop-pin::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  bottom: 3px;
+  width: 1.5px;
+  margin-left: -0.75px;
+  background: currentColor;
+  opacity: .8;
+}
+
+.ad-marker-label {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%);
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: rgba(12, 12, 16, .96);
+  border: 1px solid rgba(255, 255, 255, .16);
+  color: #fff;
+  font: 600 10.5px/1.2 'Segoe UI', system-ui, sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+  z-index: 40;
+}
+.ad-chapter:hover .ad-marker-label,
+.ad-chapter:focus-visible .ad-marker-label,
+.ad-drop-pin:hover .ad-marker-label,
+.ad-drop-pin:focus-visible .ad-marker-label { opacity: 1; }
+
+/* Mobile seek wrapper: markers need a positioned parent, but #mm-seek itself
+   must stay the real range input so dragging/seek keeps working. */
+.ad-mm-seek-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ad-mm-seek-wrap #mm-seek { width: 100%; flex: 1; min-width: 0; }
+.ad-mobile-markers { top: 50%; height: 0; }
+.ad-mobile-markers .ad-chapter-band { top: -3px; height: 6px; border-radius: 3px; }
+.ad-mobile-markers .ad-chapter,
+.ad-mobile-markers .ad-drop-pin { top: -13px; bottom: -13px; }
+.ad-mobile-markers .ad-chapter::after { top: 10px; bottom: 10px; }
+.ad-mobile-markers .ad-marker-label { bottom: calc(100% + 4px); }
+
+/* BPM badge next to the quality pill. */
+.ad-bpm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(208, 188, 255, .38);
+  background: rgba(208, 188, 255, .12);
+  color: #e4d8ff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ad-bpm-pill i { color: #c084fc; }
+.ad-bpm-badge {
+  border: 1px solid rgba(208, 188, 255, .35);
+  background: rgba(208, 188, 255, .12);
+  color: #e4d8ff;
+}
+
+.ad-part-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--ad-part, #8d8d99);
+}
+.ad-part-row .ad-drop-label { font-weight: 600; }
 
 .ad-toast {
   position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
@@ -319,6 +476,8 @@
 :root[data-shell="mobile"] .ad-quality-graph { height: 190px; }
 :root[data-shell="mobile"] .ad-quality-facts { grid-template-columns: 1fr 1fr; }
 :root[data-shell="mobile"] .ad-analysis-graph { height: 170px; }
+:root[data-shell="mobile"] .ad-analysis-head { flex-wrap: wrap; }
+:root[data-shell="mobile"] .ad-analysis-actions { width: 100%; justify-content: flex-end; }
 :root[data-shell="mobile"] .ad-sleep-time { font-size: 46px; }
 :root[data-shell="mobile"] .ad-sleep-pill { flex-shrink: 0; }
 :root[data-shell="mobile"] .ad-sleep-pill i { color: var(--ad-accent); }

@@ -110,6 +110,18 @@ test('analysis is reachable per song on both platforms', () => {
   assert.match(mobile, /openAnalysis\(\{ songId: songId \}\)/);
 });
 
+test('opening song analysis always offers the current song, not only re-analysis', () => {
+  const js = read('advancedaudio.js');
+
+  // The desktop toolbar used to call open('analysis') directly, so the previous
+  // track's result (with only a re-analyse button) stayed on screen even after
+  // the song changed.
+  assert.match(js, /\['btn-analysis', function \(\) \{ api\.openAnalysis\(\); \}\]/);
+  assert.match(js, /function setAnalysisTarget\(target\) \{[\s\S]*?state\.analysis = null/);
+  assert.match(js, /id="ad-analysis-current"/);
+  assert.match(js, /state\.analysisTarget = null;\s*\n\s*state\.analysis = null;\s*\n\s*analyzeCurrent\(false\)/);
+});
+
 test('closing an advanced-audio modal cannot leave an invisible click blocker', () => {
   const css = read('advancedaudio.css');
   const js = read('advancedaudio.js');
@@ -122,6 +134,61 @@ test('closing an advanced-audio modal cannot leave an invisible click blocker', 
   assert.match(css, /#ad-overlay\[hidden\]\s*\{[^}]*pointer-events:\s*none/s);
   assert.match(js, /overlay\.hidden = true/);
   assert.match(js, /overlay\.hidden = false/);
+});
+
+test('song parts and drops are interactive chapters on player progress bars', () => {
+  const js = read('advancedaudio.js');
+  const css = read('advancedaudio.css');
+
+  assert.match(js, /renderTrackMarkers/);
+  assert.match(js, /renderMarkerLayer\('exp-progress-track'/);
+  assert.match(js, /renderMobileMarkers/);
+  assert.match(js, /ad-chapter/);
+  assert.match(js, /ad-drop-pin/);
+  assert.match(js, /data-part-time/);
+  assert.match(js, /parts = analysis\.parts/);
+  assert.match(js, /samePath\(state\.currentSongPath, data\.songPath\)/);
+  assert.match(css, /\.ad-chapter-band/);
+  assert.match(css, /\.ad-drop-pin/);
+  assert.match(css, /\.is-chorus/);
+  assert.match(css, /\.ad-mm-seek-wrap/);
+});
+
+test('BPM appears next to the quality badge on desktop and in mobile Options', () => {
+  const js = read('advancedaudio.js');
+  const css = read('advancedaudio.css');
+
+  assert.match(js, /function updateBpmBadge/);
+  assert.match(js, /upsertBpmPill\('player-bar-quality'/);
+  assert.match(js, /upsertBpmPill\('expanded-quality'/);
+  assert.match(js, /mm-options-meta/);
+  assert.match(js, /ad-bpm-mobile/);
+  assert.match(css, /\.ad-bpm-pill/);
+  assert.match(css, /\.ad-bpm-badge/);
+});
+
+test('auto-analysis has a setting on desktop and mobile', () => {
+  const desktop = read('index.html');
+  const desktopJs = read('app.js');
+  const mobile = read('mobilemusic.js');
+  const config = fs.readFileSync(path.join(root, 'SongRequest.Core', 'ConfigService.cs'), 'utf8');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+
+  assert.match(config, /AutoAnalyzeSongs/);
+  assert.match(interop, /SendOrStartSongAnalysis/);
+  assert.match(interop, /AutoAnalyzeSongs/);
+  assert.match(desktop, /id="s-auto-analyze"/);
+  assert.match(desktopJs, /autoAnalyzeSongs/);
+  assert.match(mobile, /mm-menu-auto-analyze/);
+  assert.match(mobile, /mm-set-auto-analyze/);
+  assert.match(mobile, /autoAnalyzeSongs/);
+});
+
+test('analysis result exposes song parts in the panel', () => {
+  const js = read('advancedaudio.js');
+  assert.match(js, /Song parts \/ chapters/);
+  assert.match(js, /partClass\(part\.type\)/);
+  assert.match(js, /analysis\.parts/);
 });
 
 test('advanced audio is exposed through the local API and command catalogue', () => {

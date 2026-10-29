@@ -118,6 +118,21 @@ public class IntegrationServerTests
         var missingAnalysis = await interop.ExecuteCommandAsync("analyzeSong",
             new JObject { ["songPath"] = Path.Combine(Path.GetTempPath(), "does-not-exist.mp3") });
         Assert.False(missingAnalysis?["success"]?.ToObject<bool>() ?? true);
+
+        var originalAutoAnalyze = ConfigService.Instance.Current.AutoAnalyzeSongs;
+        try
+        {
+            await interop.ExecuteCommandAsync("saveSettings", new JObject
+            {
+                ["settings"] = new JObject { ["autoAnalyzeSongs"] = false }
+            });
+            var settingsAfter = await interop.ExecuteCommandAsync("getSettings");
+            Assert.False(settingsAfter?["autoAnalyzeSongs"]?.ToObject<bool>());
+        }
+        finally
+        {
+            ConfigService.Instance.Update(c => c.AutoAnalyzeSongs = originalAutoAnalyze);
+        }
     }
 
     [Fact]

@@ -41,6 +41,7 @@ public class AdvancedAudioCommandTests
             Assert.NotNull(result?["quality"]?["score"]);
             Assert.NotNull(result?["quality"]?["sampleRate"]);
             Assert.True((result?["timeline"] as JArray)?.Count > 0);
+            Assert.True((result?["parts"] as JArray)?.Count > 0);
             Assert.NotNull(result?["analysisPath"]?.ToString());
 
             var cached = await interop.ExecuteCommandAsync("getSongAnalysis", new JObject

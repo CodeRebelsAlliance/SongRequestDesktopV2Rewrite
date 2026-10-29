@@ -27,6 +27,25 @@ public sealed class SongDrop
     public string Label { get; set; } = "Drop";
 }
 
+/// <summary>A detected structural section (intro, verse, chorus, bridge, outro…).</summary>
+public sealed class SongPart
+{
+    public double StartSeconds { get; set; }
+    public double EndSeconds { get; set; }
+    public double DurationSeconds { get; set; }
+
+    /// <summary>Machine-readable kind: intro, verse, pre-chorus, chorus, bridge, outro.</summary>
+    public string Type { get; set; } = "verse";
+
+    /// <summary>Display label, e.g. "Chorus 1" or "Verse 2".</summary>
+    public string Label { get; set; } = "Verse";
+
+    /// <summary>How strongly the section was recognised (0..1).</summary>
+    public double Confidence { get; set; }
+
+    public double EnergyDb { get; set; }
+}
+
 /// <summary>Signal/quality facts gathered while decoding the track.</summary>
 public sealed class SongQualityReport
 {
@@ -77,6 +96,7 @@ public sealed class SongAnalysis
 
     public SongQualityReport Quality { get; set; } = new();
     public List<SongDrop> Drops { get; set; } = new();
+    public List<SongPart> Parts { get; set; } = new();
     public List<SongAnalysisFrame> Timeline { get; set; } = new();
 
     public string DisplayBpm => Bpm > 0 ? Math.Round(Bpm).ToString("0") : "—";

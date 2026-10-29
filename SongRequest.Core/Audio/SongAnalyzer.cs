@@ -147,6 +147,7 @@ public sealed class SongAnalyzer
         result.IsLowConfidence = bpm <= 0 || confidence < 0.18;
 
         result.Drops = DetectDrops(frames, HopSize / (double)sampleRate);
+        result.Parts = DetectParts(frames, HopSize / (double)sampleRate, effectiveDuration);
         result.Timeline = Downsample(frames, HopSize / (double)sampleRate);
         result.Quality = BuildQuality(path, format, effectiveDuration, info.Length, result, clipped, totalSamples);
         result.AnalysisPath =
@@ -376,8 +377,364 @@ public sealed class SongAnalyzer
         return sum / take;
     }
 
-    private static SongQualityReport BuildQuality(
-        string path,
+    /// <summary>
+    /// Groups the decoded track into structural chapters. Boundaries come from
+    /// energy/spectrum novelty, then repeated sections are clustered: the loud
+    /// recurring cluster is a chorus, quieter recurring sections are verses, and
+    /// a unique contrasting middle section becomes the bridge.
+    /// </summary>
+    private static List<SongPart> DetectParts(List<RawFrame> frames, double hopSeconds, double duration)
+    {
+        if (frames.Count < 8 || duration <= 0)
+            return new List<SongPart>();
+
+        double blockSeconds = 2.0;
+        int blockFrames = Math.Max(1, (int)Math.Round(blockSeconds / hopSeconds));
+        var blocks = new List<PartBlock>();
+
+        for (int i = 0; i < frames.Count; i += blockFrames)
+        {
+            var slice = frames.Skip(i).Take(blockFrames).ToList();
+            if (slice.Count == 0) continue;
+
+            var block = new PartBlock
+            {
+                Start = i * hopSeconds,
+                End = Math.Min(duration, (i + slice.Count) * hopSeconds),
+                Low = slice.Average(f => f.Low),
+                Mid = slice.Average(f => f.Mid),
+                High = slice.Average(f => f.High),
+                Flux = slice.Average(f => f.Flux)
+            };
+
+            double linear = slice.Average(f => Math.Pow(10, f.RmsDb / 20.0));
+            block.RmsDb = linear > 0 ? 20 * Math.Log10(linear) : -96;
+            blocks.Add(block);
+        }
+
+        if (blocks.Count < 3)
+            return new List<SongPart> { FullSong(duration, blocks) };
+
+        // Novelty between adjacent blocks: a jump in level, a change of the
+        // low/mid/high balance, or a burst of spectral flux.
+        var novelty = new double[blocks.Count];
+        for (int i = 1; i < blocks.Count; i++)
+        {
+            var a = blocks[i - 1];
+            var b = blocks[i];
+            novelty[i] =
+                Math.Abs(b.RmsDb - a.RmsDb) / 10.0 +
+                0.55 * (Math.Abs(b.Low - a.Low) + Math.Abs(b.Mid - a.Mid) + Math.Abs(b.High - a.High)) +
+                0.15 * Math.Abs(b.Flux - a.Flux);
+        }
+
+        double mean = novelty.Skip(1).DefaultIfEmpty(0).Average();
+        double variance = novelty.Skip(1).Select(v => (v - mean) * (v - mean)).DefaultIfEmpty(0).Average();
+        double threshold = Math.Max(0.22, mean + Math.Sqrt(variance) * 0.75);
+        double minPartSeconds = Math.Max(6.0, duration / 20.0);
+
+        // Pick the strongest boundaries first, keeping every part at least
+        // minPartSeconds long and capped so the progress bar stays readable.
+        var boundaries = new List<double> { 0, duration };
+        var candidates = Enumerable.Range(1, blocks.Count - 1)
+            .OrderByDescending(i => novelty[i])
+            .ToList();
+
+        foreach (int index in candidates)
+        {
+            if (novelty[index] < threshold) continue;
+            double at = blocks[index].Start;
+            if (boundaries.Any(b => Math.Abs(b - at) < minPartSeconds)) continue;
+            boundaries.Add(at);
+            if (boundaries.Count >= 14) break;
+        }
+
+        boundaries.Sort();
+        var segments = new List<PartSegment>();
+        for (int i = 0; i < boundaries.Count - 1; i++)
+        {
+            double start = boundaries[i];
+            double end = boundaries[i + 1];
+            if (end - start < 0.5) continue;
+
+            var inside = blocks.Where(b => b.Start >= start - 0.01 && b.Start < end - 0.01).ToList();
+            if (inside.Count == 0) continue;
+
+            var segment = new PartSegment
+            {
+                Start = start,
+                End = end,
+                RmsDb = inside.Average(b => b.RmsDb),
+                Low = inside.Average(b => b.Low),
+                Mid = inside.Average(b => b.Mid),
+                High = inside.Average(b => b.High),
+                Flux = inside.Average(b => b.Flux)
+            };
+
+            // Rising energy in the second half is the classic pre-chorus shape.
+            int half = Math.Max(1, inside.Count / 2);
+            segment.TrendDb = inside.Skip(half).DefaultIfEmpty(inside[^1]).Average(b => b.RmsDb) -
+                              inside.Take(half).DefaultIfEmpty(inside[0]).Average(b => b.RmsDb);
+            segments.Add(segment);
+        }
+
+        if (segments.Count == 0)
+            return new List<SongPart> { FullSong(duration, blocks) };
+
+        if (segments.Count == 1 && duration > 30)
+        {
+            // No usable boundary was found. Split long, uniform analyses into
+            // equal chapters rather than pretending a whole song is one verse.
+            var only = segments[0];
+            double third = (only.End - only.Start) / 3.0;
+            segments = new List<PartSegment>
+            {
+                Slice(only, only.Start, only.Start + third),
+                Slice(only, only.Start + third, only.Start + third * 2),
+                Slice(only, only.Start + third * 2, only.End)
+            };
+        }
+
+        AssignPartTypes(segments);
+        MergeAdjacent(segments);
+        NumberParts(segments);
+        return segments.Select(s => new SongPart
+        {
+            StartSeconds = Round(s.Start, 2),
+            EndSeconds = Round(s.End, 2),
+            DurationSeconds = Round(s.End - s.Start, 2),
+            Type = s.Type,
+            Label = s.Label,
+            Confidence = Round(s.Confidence, 3),
+            EnergyDb = Round(s.RmsDb, 2)
+        }).ToList();
+    }
+
+    private static void AssignPartTypes(List<PartSegment> segments)
+    {
+        int count = segments.Count;
+        var medianDb = Percentile(segments.Select(s => s.RmsDb).ToList(), 0.5);
+
+        // Union repeated segments by feature similarity.
+        var parent = Enumerable.Range(0, count).ToArray();
+        int Find(int x) => parent[x] == x ? x : parent[x] = Find(parent[x]);
+        void Union(int a, int b) { a = Find(a); b = Find(b); if (a != b) parent[b] = a; }
+
+        for (int i = 0; i < count; i++)
+        {
+            for (int j = i + 1; j < count; j++)
+            {
+                if (Similarity(segments[i], segments[j]) >= 0.955)
+                    Union(i, j);
+            }
+        }
+
+        var clusters = Enumerable.Range(0, count).GroupBy(Find).Select(g => g.ToList()).ToList();
+        var repeated = clusters.Where(c => c.Count >= 2).ToList();
+        var chorusCluster = repeated
+            .OrderByDescending(c => c.Average(i => segments[i].RmsDb))
+            .FirstOrDefault();
+
+        // A repeated loud cluster is the chorus. If there is no repeated high
+        // energy cluster, the loudest section is still the most chorus-like.
+        var chorusIndexes = new HashSet<int>(chorusCluster ?? new List<int>());
+        if (chorusIndexes.Count == 0)
+        {
+            int loudest = Enumerable.Range(0, count)
+                .OrderByDescending(i => segments[i].RmsDb)
+                .First();
+            if (segments[loudest].RmsDb > medianDb + 1.0) chorusIndexes.Add(loudest);
+        }
+
+        foreach (var cluster in repeated)
+        {
+            if (cluster == chorusCluster) continue;
+            cluster.ForEach(i => segments[i].Type = "verse");
+        }
+        foreach (int i in chorusIndexes) segments[i].Type = "chorus";
+
+        // Intro/outro are low-energy edges. Do not overwrite a repeated chorus
+        // that happens to start the song.
+        if (count > 2 && segments[0].RmsDb < medianDb - 1.0 &&
+            segments[0].Start < Math.Min(15, segments[^1].End * 0.2))
+            segments[0].Type = "intro";
+
+        if (count > 2 && segments[^1].RmsDb < medianDb - 1.0 &&
+            segments[^1].End - segments[^1].Start <= Math.Max(20, segments[^1].End * 0.2))
+            segments[^1].Type = "outro";
+
+        // Bridge: a unique section in the middle that contrasts with both the
+        // verse and chorus clusters (different energy and/or spectral balance).
+        int bridge = -1;
+        for (int i = 1; i < count - 1; i++)
+        {
+            if (!string.IsNullOrEmpty(segments[i].Type)) continue;
+            bool lateEnough = segments[i].Start >= segments[^1].End * 0.35;
+            if (!lateEnough) continue;
+
+            double distance = chorusIndexes.Count > 0
+                ? chorusIndexes.Min(c => 1 - Similarity(segments[i], segments[c]))
+                : 1;
+            if (distance > 0.06 || segments[i].RmsDb < medianDb - 0.5)
+            {
+                bridge = i;
+                break;
+            }
+        }
+        if (bridge >= 0) segments[bridge].Type = "bridge";
+
+        // Pre-chorus: a short rising section immediately before a chorus.
+        for (int i = 1; i < count; i++)
+        {
+            if (segments[i].Type != "chorus") continue;
+            var before = segments[i - 1];
+            if (string.IsNullOrEmpty(before.Type) && before.TrendDb > 1.5 &&
+                before.End - before.Start <= 16)
+                before.Type = "pre-chorus";
+        }
+
+        // Anything still unclassified becomes a verse, unless it is as loud as
+        // the chorus (then it is another chorus-like section).
+        double chorusDb = chorusIndexes.Count > 0
+            ? chorusIndexes.Average(i => segments[i].RmsDb)
+            : medianDb + 3;
+        foreach (var segment in segments)
+        {
+            if (!string.IsNullOrEmpty(segment.Type)) continue;
+            segment.Type = segment.RmsDb >= chorusDb - 1.2 ? "chorus" : "verse";
+            segment.Confidence = 0.45;
+        }
+
+        foreach (int i in chorusIndexes) segments[i].Confidence = 0.8;
+        foreach (var cluster in repeated)
+        {
+            if (cluster == chorusCluster) continue;
+            foreach (int i in cluster) segments[i].Confidence = 0.7;
+        }
+        for (int i = 0; i < count; i++)
+        {
+            if (segments[i].Confidence <= 0)
+                segments[i].Confidence = segments[i].Type is "intro" or "outro" ? 0.75 : 0.55;
+        }
+    }
+
+    private static void MergeAdjacent(List<PartSegment> segments)
+    {
+        for (int i = segments.Count - 1; i > 0; i--)
+        {
+            if (!string.Equals(segments[i - 1].Type, segments[i].Type, StringComparison.Ordinal))
+                continue;
+            if (Math.Abs(segments[i - 1].End - segments[i].Start) > 0.5) continue;
+
+            double total = segments[i - 1].End - segments[i - 1].Start + segments[i].End - segments[i].Start;
+            if (total <= 0) total = 1;
+            double w1 = (segments[i - 1].End - segments[i - 1].Start) / total;
+            double w2 = (segments[i].End - segments[i].Start) / total;
+            segments[i - 1].End = segments[i].End;
+            segments[i - 1].RmsDb = segments[i - 1].RmsDb * w1 + segments[i].RmsDb * w2;
+            segments[i - 1].Confidence = Math.Max(segments[i - 1].Confidence, segments[i].Confidence);
+            segments.RemoveAt(i);
+        }
+    }
+
+    private static void NumberParts(List<PartSegment> segments)
+    {
+        var counters = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var segment in segments)
+        {
+            if (string.IsNullOrEmpty(segment.Type)) segment.Type = "verse";
+            string name = segment.Type switch
+            {
+                "pre-chorus" => "Pre-chorus",
+                "chorus" => "Chorus",
+                "verse" => "Verse",
+                "intro" => "Intro",
+                "outro" => "Outro",
+                "bridge" => "Bridge",
+                _ => "Section"
+            };
+
+            counters.TryGetValue(segment.Type, out int number);
+            counters[segment.Type] = ++number;
+            bool numbered = segment.Type is "verse" or "chorus" or "pre-chorus";
+            segment.Label = numbered ? $"{name} {number}" : name;
+        }
+    }
+
+    private static double Similarity(PartSegment a, PartSegment b)
+    {
+        // Amplitude + spectral balance. Repeated verses/choruses land close even
+        // when their melodies differ; a bridge with a different arrangement does not.
+        double ar = Math.Pow(10, a.RmsDb / 20.0);
+        double br = Math.Pow(10, b.RmsDb / 20.0);
+        var av = new[] { ar * 4, a.Low * 2, a.Mid * 2, a.High * 2 };
+        var bv = new[] { br * 4, b.Low * 2, b.Mid * 2, b.High * 2 };
+        double dot = 0, am = 0, bm = 0;
+        for (int i = 0; i < av.Length; i++)
+        {
+            dot += av[i] * bv[i];
+            am += av[i] * av[i];
+            bm += bv[i] * bv[i];
+        }
+        if (am <= 0 || bm <= 0) return 0;
+        return dot / (Math.Sqrt(am) * Math.Sqrt(bm));
+    }
+
+    private static PartSegment Slice(PartSegment source, double start, double end) => new()
+    {
+        Start = start,
+        End = end,
+        RmsDb = source.RmsDb,
+        Low = source.Low,
+        Mid = source.Mid,
+        High = source.High,
+        Flux = source.Flux,
+        TrendDb = source.TrendDb,
+        Confidence = 0.4
+    };
+
+    private static SongPart FullSong(double duration, List<PartBlock> blocks)
+    {
+        double db = blocks.Count > 0 ? blocks.Average(b => b.RmsDb) : -96;
+        return new SongPart
+        {
+            StartSeconds = 0,
+            EndSeconds = Round(duration, 2),
+            DurationSeconds = Round(duration, 2),
+            Type = "full",
+            Label = "Full song",
+            Confidence = 0.25,
+            EnergyDb = Round(db, 2)
+        };
+    }
+
+    private sealed class PartBlock
+    {
+        public double Start;
+        public double End;
+        public double RmsDb;
+        public double Low;
+        public double Mid;
+        public double High;
+        public double Flux;
+    }
+
+    private sealed class PartSegment
+    {
+        public double Start;
+        public double End;
+        public double RmsDb;
+        public double Low;
+        public double Mid;
+        public double High;
+        public double Flux;
+        public double TrendDb;
+        public string Type = "";
+        public string Label = "";
+        public double Confidence;
+    }
+
+    private static SongQualityReport BuildQuality(        string path,
         WaveFormat format,
         double duration,
         long fileSize,

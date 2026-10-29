@@ -293,9 +293,12 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Equalizer DSP | U | bypass is sample-accurate; +12 dB at 1 kHz raises that band > 1.7×; pre-amp attenuates; output stays in range |
 | Sleep timer state | U | start/remaining/extend/cancel; fade stop; “play last song to the end” holds the queue until the track ends; fade composes with announcement ducking |
 | Song analysis | U | synthetic 120 BPM clicks → 112–128 BPM + confidence; loudness/peak/quality/timeline; no false drops in constant audio; drop after a real energy jump |
+| Song parts | U | structured intro/verse/chorus/verse/chorus/bridge/chorus/outro fixture detects all parts, labels them and keeps non-overlapping chapter ranges |
+| Auto-analysis setting | U | persisted through `saveSettings`/`getSettings`; cached/auto results are pushed for the current track |
 | Analysis cache | U | fresh results are reused, persisted and re-loaded; `force` re-analyses |
 | Command/API surface | U | `analyzeSong`/`getSongAnalysis` through `ExecuteCommandAsync`; HTTP equalizer, sleep-timer and analysis routes |
 | Advanced-audio UI | J | desktop/mobile pages load the panel; equalizer graph/bands/presets; analysis timeline + quality radar; sleep pill in the player top bar; mobile menu entry points |
+| Chapters / BPM UI | J | interactive part/drop markers on desktop + mobile progress bars; BPM badge next to the quality pill; auto-analysis setting on desktop and mobile |
 | Mobile visualization | J/C# | `ResizeObserver` + per-frame canvas re-measure; `visualizationReady` handshake re-arms the tap after a hidden Android tab |
 
 ### 4.9 Remote control & MIDI

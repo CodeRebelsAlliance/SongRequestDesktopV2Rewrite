@@ -50,6 +50,7 @@ namespace SongRequestDesktopV2Rewrite
         private string _cookieBrowser = string.Empty;
         private bool _autoGrabCookies = false;
         private bool _systemMediaIntegration = true;
+        private bool _autoAnalyzeSongs = true;
 
         // Local integration servers (HTTP/WebSocket API and MCP). Both are off by
         // default and bind to loopback only until the user explicitly changes it.
@@ -349,6 +350,17 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _systemMediaIntegration;
             set => SetField(ref _systemMediaIntegration, value);
+        }
+
+        /// <summary>
+        /// Analyze each track as it starts playing so its BPM, drops and song parts
+        /// can be shown on the player progress bar without opening the analysis panel.
+        /// Results are cached, so replaying a track costs nothing.
+        /// </summary>
+        public bool AutoAnalyzeSongs
+        {
+            get => _autoAnalyzeSongs;
+            set => SetField(ref _autoAnalyzeSongs, value);
         }
 
         /// <summary>

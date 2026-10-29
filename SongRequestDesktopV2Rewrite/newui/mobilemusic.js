@@ -1484,6 +1484,8 @@
             '<input id="mm-menu-crossfade" type="range" min="0" max="12" step="0.5" value="' + playback.crossfade + '"></div>' +
           '<div class="mm-sheet-row"><div class="mm-sheet-label">Normalize volume</div>' +
             '<input id="mm-menu-normalize" type="checkbox"' + (cfg && cfg.normalizeVolume ? ' checked' : '') + '></div>' +
+          '<div class="mm-sheet-row"><div class="mm-sheet-label">Auto-analyze songs<div class="mm-sheet-sub">BPM, chapters &amp; drops on the progress bar</div></div>' +
+            '<input id="mm-menu-auto-analyze" type="checkbox"' + ((!cfg || cfg.autoAnalyzeSongs !== false) ? ' checked' : '') + '></div>' +
           '<h3>Audio output</h3>' +
           '<div class="mm-sheet-row"><select id="mm-menu-device">' + deviceOptions + '</select></div>' +
           '<h3>Sound</h3>' +
@@ -1517,6 +1519,12 @@
     var normalize = $('mm-menu-normalize');
     if (normalize) normalize.addEventListener('change', function () {
       send('saveSettings', { settings: { normalizeVolume: this.checked } });
+    });
+
+    var autoAnalyze = $('mm-menu-auto-analyze');
+    if (autoAnalyze) autoAnalyze.addEventListener('change', function () {
+      send('saveSettings', { settings: { autoAnalyzeSongs: this.checked } });
+      if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.refresh();
     });
 
     var device = $('mm-menu-device');
@@ -1583,6 +1591,9 @@
       openSheet(
         '<h3>Operating mode</h3>' +
         '<div class="mm-sheet-row"><select id="mm-set-mode">' + modeOptions + '</select></div>' +
+        '<h3>Playback</h3>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-auto-analyze"' + (cfg.autoAnalyzeSongs !== false ? ' checked' : '') + '> Automatically analyze playing songs</label>' +
+        '<div class="mm-sheet-note" style="margin-top:4px">Shows BPM, song chapters and drops on the player progress bar from the cached analysis.</div>' +
         '<h3>Server</h3>' +
         '<input id="mm-set-address" class="mm-sheet-input" placeholder="http://127.0.0.1:5000" value="' + esc(cfg.address || '') + '">' +
         '<input id="mm-set-token" class="mm-sheet-input" type="password" placeholder="Bearer token" value="' + esc(cfg.bearerToken || '') + '" style="margin-top:8px">' +
@@ -1630,6 +1641,7 @@
         address: $('mm-set-address').value.trim(),
         bearerToken: $('mm-set-token').value,
         autoGrabCookies: $('mm-set-auto-yt').checked,
+        autoAnalyzeSongs: $('mm-set-auto-analyze').checked,
         libraryAutoAddDownloads: $('mm-set-auto-add').checked,
         apiEnabled: $('mm-set-api-enabled').checked,
         apiBindAddress: $('mm-set-api-bind').value.trim() || '127.0.0.1',

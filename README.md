@@ -204,9 +204,15 @@ The player (desktop and mobile) shares the same three audio tools:
   player's top bar shows the countdown. Click either to edit/extend/cancel.
 - **Song analysis** for BPM (with confidence and beat offset), integrated
   loudness, peak, dynamic range, quality score/codec/bitrate/clipping, an audio
-  path/energy timeline, a quality radar and smart drop/build-up detection. It is
-  available from the player toolbar/options and per song in the context menu;
-  every result is also served by the local API.
+  path/energy timeline, a quality radar and smart drop/build-up detection. It
+  also detects **verse, chorus, bridge, intro, outro and pre-chorus chapters**.
+  It is available from the player toolbar/options and per song in the context
+  menu; every result is also served by the local API.
+- **Automatic analysis** (on by default, toggle in Settings on desktop or the
+  player Options/settings sheet on mobile) analyses each track as it starts.
+  Cached results appear as interactive chapter/drop markers on the expanded
+  desktop progress bar and the mobile player seek bar, and the detected BPM is
+  shown next to the quality badge.
 
 All three are exposed through the command dispatcher (and therefore the HTTP
 API, WebSocket events and MCP) — see
