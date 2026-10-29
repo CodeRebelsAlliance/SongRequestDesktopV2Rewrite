@@ -87,6 +87,40 @@ public class AdvancedAudioIntegrationTests
         Assert.Equal("Bass Boost", equalizer.GetState().Preset);
     }
 
+    [SkippableFact]
+    public async Task AutoAnalysis_StartsFromTheEngineWithoutAPlayerPage()
+    {
+        Skip.IfNot(Fixtures.FfmpegAvailable, "ffmpeg not available");
+
+        var original = ConfigService.Instance.Current.AutoAnalyzeSongs;
+        try
+        {
+            ConfigService.Instance.Update(c => c.AutoAnalyzeSongs = true);
+            var path = WriteStructuredWav();
+            var host = new HeadlessHost(new List<System.Net.Cookie>());
+            var interop = new YoutubeFormInterop(host, host.YoutubeService);
+            var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            interop.EventRaised += (name, _) =>
+            {
+                if (name == "songAnalysisUpdate") completed.TrySetResult(true);
+            };
+
+            // The engine raises this on a track change; auto-analysis must not
+            // depend on a player web view being open (the mobile reliability bug).
+            host.Music.NowPlayingChanged?.Invoke(
+                new Song("Auto", "Integration", null, TimeSpan.FromSeconds(56), path));
+
+            var done = await Task.WhenAny(completed.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+            Assert.Same(completed.Task, done);
+            Assert.True(await completed.Task);
+        }
+        finally
+        {
+            ConfigService.Instance.Update(c => c.AutoAnalyzeSongs = original);
+        }
+    }
+
     /// <summary>Writes a 56-second structured 16-bit PCM WAV for the real decoder.</summary>
     private static string WriteStructuredWav()
     {

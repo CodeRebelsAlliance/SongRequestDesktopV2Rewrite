@@ -212,7 +212,8 @@ The player (desktop and mobile) shares the same three audio tools:
   player Options/settings sheet on mobile) analyses each track as it starts.
   Cached results appear as interactive chapter/drop markers on the expanded
   desktop progress bar and the mobile player seek bar, and the detected BPM is
-  shown next to the quality badge.
+  shown next to the quality badge. A spinner/progress badge shows while the
+  automatic analysis is running.
 
 All three are exposed through the command dispatcher (and therefore the HTTP
 API, WebSocket events and MCP) — see

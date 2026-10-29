@@ -235,6 +235,13 @@ public class YoutubeFormInterop
                     MusicPlayerSendEvent("sleepTimerUpdate", CamelCase(state));
                 mp.Equalizer.Changed += state =>
                     MusicPlayerSendEvent("equalizerUpdate", CamelCase(state));
+
+                // Auto-analysis must not depend on the player page being open or
+                // subscribed: track changes drive it directly from the engine.
+                mp.NowPlayingChanged = song =>
+                {
+                    if (song != null) SendOrStartSongAnalysis(song);
+                };
                 _analysis.Progress += progress =>
                     MusicPlayerSendEvent("songAnalysisProgress", new
                     {
@@ -2879,7 +2886,11 @@ public class YoutubeFormInterop
         {
             if (string.IsNullOrWhiteSpace(current.songPath)) return;
             var path = AppPaths.ResolvePortablePath(current.songPath);
-            if (!File.Exists(path)) return;
+            if (!File.Exists(path))
+            {
+                MusicPlayerSendEvent("songAnalysisUnavailable", new { songPath = path });
+                return;
+            }
 
             var cached = _analysis.GetFresh(path);
             if (cached != null)
@@ -2891,8 +2902,23 @@ public class YoutubeFormInterop
             if (ConfigService.Instance.Current?.AutoAnalyzeSongs != true) return;
             _ = Task.Run(async () =>
             {
-                try { await _analysis.AnalyzeAsync(path, current.Title, current.Artist).ConfigureAwait(false); }
-                catch { }
+                // One retry covers the common mobile case where the platform
+                // decoder is briefly unavailable while the track is starting.
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    try
+                    {
+                        await _analysis.AnalyzeAsync(path, current.Title, current.Artist, force: attempt > 0)
+                            .ConfigureAwait(false);
+                        return;
+                    }
+                    catch
+                    {
+                        if (attempt == 0) await Task.Delay(1200).ConfigureAwait(false);
+                    }
+                }
+
+                MusicPlayerSendEvent("songAnalysisUnavailable", new { songPath = path });
             });
         }
         catch { }

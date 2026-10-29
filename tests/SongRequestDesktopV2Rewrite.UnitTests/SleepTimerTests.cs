@@ -127,6 +127,22 @@ public class SleepTimerTests
     }
 
     [Fact]
+    public void HoldingForLastSong_KeepsPlaybackTicksFlowing()
+    {
+        var engine = Engine();
+        engine.AddSong(new Song("a", "artist", null, TimeSpan.FromSeconds(30), "/nonexistent/held.mp3"));
+        engine.StartPlayback(new LongSource(30));
+        int ticks = 0;
+        engine.NowPlayingTick += (_, _) => ticks++;
+        engine.SleepTimerHoldsPlayback = true;
+
+        engine.ProcessTick();
+
+        Assert.True(engine.IsPlaybackActive);
+        Assert.True(ticks > 0, "the player must keep receiving ticks while the sleep timer waits for the last song");
+    }
+
+    [Fact]
     public void SleepFadeFactor_CombinesWithAnnouncementDucking()
     {
         var engine = Engine();

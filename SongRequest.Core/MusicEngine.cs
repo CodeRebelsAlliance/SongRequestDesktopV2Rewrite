@@ -920,7 +920,13 @@ public sealed class MusicEngine
             {
                 StopPlayback();
                 QueueEmptied?.Invoke();
+                return;
             }
+
+            // The timer is waiting for this track to finish. Keep publishing
+            // position/play state so the player UI stays live during the wait
+            // instead of appearing frozen until the fade completes.
+            RaiseNowPlayingTick();
             return;
         }
 
@@ -955,12 +961,23 @@ public sealed class MusicEngine
             QueueEmptied?.Invoke();
         }
 
+        RaiseNowPlayingTick();
+    }
+
+    private void RaiseNowPlayingTick()
+    {
         var current = Queue.Count > 0 ? Queue[0] : null;
-        if (current != null && CurrentReader != null)
+        if (current == null || CurrentReader == null) return;
+        try
         {
-            try { NowPlayingTick?.Invoke(this, new NowPlayingEventArgs { Current = current, CurrentTime = CurrentReader.CurrentTime, TotalTime = CurrentReader.TotalTime }); }
-            catch { }
+            NowPlayingTick?.Invoke(this, new NowPlayingEventArgs
+            {
+                Current = current,
+                CurrentTime = CurrentReader.CurrentTime,
+                TotalTime = CurrentReader.TotalTime
+            });
         }
+        catch { }
     }
 
     private async System.Threading.Tasks.Task BeginCrossfadeToNext(Song nextSong)

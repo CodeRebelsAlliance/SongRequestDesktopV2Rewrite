@@ -21,7 +21,11 @@
     sleepTimerHandle: null,
     currentSongPath: '',
     progressAnalysis: null,
-    analyses: {}
+    analyses: {},
+    autoAnalyzeSongs: true,
+    analysisPending: false,
+    analysisPendingProgress: 0,
+    analysisPendingSince: 0
   };
   var dom = null;
 
@@ -99,6 +103,12 @@
           break;
         case 'songAnalysisProgress':
           state.analysisProgress = data;
+          if (samePath(data.songPath, state.currentSongPath)) {
+            state.analysisPending = true;
+            state.analysisPendingProgress = Number(data.progress) || 0;
+            state.analysisPendingSince = state.analysisPendingSince || Date.now();
+            updateAnalysisPendingUi();
+          }
           if (state.view === 'analysis') renderProgress();
           break;
         case 'songAnalysisUpdate':
@@ -112,6 +122,14 @@
           break;
         case 'nowPlayingUpdate':
           handleNowPlaying(data);
+          break;
+        case 'songAnalysisUnavailable':
+          if (!data.songPath || samePath(data.songPath, state.currentSongPath)) {
+            state.analysisPending = false;
+            state.analysisPendingProgress = 0;
+            state.analysisPendingSince = 0;
+            updateAnalysisPendingUi();
+          }
           break;
         case 'refresh':
           refreshStates();
@@ -154,8 +172,11 @@
     state.analyses[pathKey(data.songPath)] = data;
     if (samePath(state.currentSongPath, data.songPath)) {
       state.progressAnalysis = data;
+      state.analysisPending = false;
+      state.analysisPendingProgress = 1;
       renderTrackMarkers();
       updateBpmBadge();
+      updateAnalysisPendingUi();
     }
   }
 
@@ -165,7 +186,15 @@
     if (changed) {
       state.currentSongPath = path;
       state.progressAnalysis = path ? (state.analyses[pathKey(path)] || null) : null;
+      if (state.progressAnalysis) {
+        state.analysisPending = false;
+      } else if (path && state.autoAnalyzeSongs !== false) {
+        startAnalysisPending();
+      } else {
+        clearAnalysisPending();
+      }
       renderTrackMarkers();
+      updateBpmBadge();
       if (path) {
         // Fetch a cached analysis (or the one auto-analysis just produced) for
         // this track so the chapters appear without opening the panel.
@@ -175,9 +204,33 @@
       }
     }
     updateBpmBadge();
+    updateAnalysisPendingUi();
+  }
+
+  function startAnalysisPending() {
+    state.analysisPending = true;
+    state.analysisPendingProgress = 0;
+    state.analysisPendingSince = Date.now();
+    updateAnalysisPendingUi();
+  }
+
+  function clearAnalysisPending() {
+    state.analysisPending = false;
+    state.analysisPendingProgress = 0;
+    state.analysisPendingSince = 0;
+    updateAnalysisPendingUi();
   }
 
   function refreshStates() {
+    request('getSettings').then(function (cfg) {
+      state.autoAnalyzeSongs = !cfg || cfg.autoAnalyzeSongs !== false;
+      if (state.autoAnalyzeSongs && state.currentSongPath && !state.progressAnalysis) {
+        startAnalysisPending();
+      } else if (!state.autoAnalyzeSongs) {
+        clearAnalysisPending();
+      }
+    }).catch(function () { });
+
     request('getEqualizer').then(function (eq) {
       state.equalizer = eq;
       if (state.view === 'equalizer') render();
@@ -1313,6 +1366,80 @@
     updateMobileBpmBadge(bpm);
   }
 
+  function updateAnalysisPendingUi() {
+    if (state.analysisPending && state.analysisPendingSince &&
+        Date.now() - state.analysisPendingSince > 180000) {
+      state.analysisPending = false;
+      state.analysisPendingProgress = 0;
+      state.analysisPendingSince = 0;
+    }
+
+    var pending = !!state.analysisPending && !!state.currentSongPath;
+    var progress = Math.max(0, Math.min(100, Math.round((state.analysisPendingProgress || 0) * 100)));
+    var label = progress > 0 ? 'Analyzing ' + progress + '%' : 'Analyzing';
+    var html = '<i class="fas fa-circle-notch fa-spin"></i> ' + label;
+
+    upsertAnalysisPendingPill('player-bar-quality', 'ad-analysis-pending-player', pending, html);
+    upsertAnalysisPendingPill('expanded-quality', 'ad-analysis-pending-expanded', pending, html);
+    updateMobileAnalysisPending(pending, html);
+  }
+
+  function upsertAnalysisPendingPill(anchorId, id, pending, html) {
+    var doc = global.document;
+    if (!doc) return;
+    var anchor = doc.getElementById(anchorId);
+    if (!anchor) return;
+    var pill = doc.getElementById(id);
+
+    if (!pending) {
+      if (pill) pill.remove();
+      return;
+    }
+
+    if (!pill) {
+      pill = doc.createElement('span');
+      pill.id = id;
+      pill.className = 'pill ad-analysis-pending';
+      if (anchor.parentNode) anchor.parentNode.insertBefore(pill, anchor.nextSibling);
+    }
+    if (pill.innerHTML !== html) pill.innerHTML = html;
+    pill.title = 'Automatic song analysis is running';
+  }
+
+  function updateMobileAnalysisPending(pending, html) {
+    var doc = global.document;
+    if (!doc) return;
+
+    var top = doc.querySelector('.mm-player-top');
+    var pill = doc.getElementById('ad-analysis-pill');
+    if (top) {
+      if (!pill) {
+        pill = doc.createElement('span');
+        pill.id = 'ad-analysis-pill';
+        pill.className = 'mm-pill-btn ad-analysis-pending ad-analysis-pill';
+        top.appendChild(pill);
+      }
+      pill.hidden = !pending;
+      if (pending && pill.innerHTML !== html) pill.innerHTML = html;
+    }
+
+    var meta = doc.getElementById('mm-options-meta');
+    if (meta) {
+      var badge = doc.getElementById('ad-analysis-pending-mobile');
+      if (!pending) {
+        if (badge) badge.remove();
+      } else {
+        if (!badge) {
+          badge = doc.createElement('span');
+          badge.id = 'ad-analysis-pending-mobile';
+          badge.className = 'mm-badge ad-analysis-pending';
+          meta.appendChild(badge);
+        }
+        if (badge.innerHTML !== html) badge.innerHTML = html;
+      }
+    }
+  }
+
   function upsertBpmPill(anchorId, id, bpm) {
     var doc = global.document;
     if (!doc) return;
@@ -1398,6 +1525,6 @@
   // Pick up an already-running timer when the page loads/reloads. Deferring lets
   // the page register its own music bridge first.
   setTimeout(function () { refreshStates(); }, 400);
-  setInterval(function () { updateSleepPill(); }, 1000);
+  setInterval(function () { updateSleepPill(); updateAnalysisPendingUi(); }, 1000);
 
 })(typeof window !== 'undefined' ? window : globalThis);

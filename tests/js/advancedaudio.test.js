@@ -196,6 +196,29 @@ test('analysis result exposes song parts in the panel', () => {
   assert.match(js, /analysis\.parts/);
 });
 
+test('automatic analysis shows a loading indicator in both players', () => {
+  const js = read('advancedaudio.js');
+  const css = read('advancedaudio.css');
+
+  assert.match(js, /analysisPending/);
+  assert.match(js, /startAnalysisPending/);
+  assert.match(js, /songAnalysisProgress/);
+  assert.match(js, /songAnalysisUnavailable/);
+  assert.match(js, /ad-analysis-pending-player/);
+  assert.match(js, /ad-analysis-pending-expanded/);
+  assert.match(js, /ad-analysis-pill/);
+  assert.match(js, /ad-analysis-pending-mobile/);
+  assert.match(js, /Analyzing /);
+  assert.match(css, /\.ad-analysis-pending/);
+  assert.match(css, /fa-spin|is-spinning|ad-analysis-pending i/);
+});
+
+test('auto analysis is driven by the engine, not the player page', () => {
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  assert.match(interop, /mp\.NowPlayingChanged = song/);
+  assert.match(interop, /SendOrStartSongAnalysis\(song\)/);
+});
+
 test('advanced audio is exposed through the local API and command catalogue', () => {
   const api = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'AppIntegrationServer.Api.cs'), 'utf8');
   const catalog = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'CommandCatalog.cs'), 'utf8');

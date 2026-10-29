@@ -383,6 +383,34 @@
   color: #e4d8ff;
 }
 
+.ad-analysis-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 193, 7, .38);
+  background: rgba(255, 193, 7, .10);
+  color: #ffe082;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ad-analysis-pending i { color: #ffc107; }
+.ad-analysis-pending[hidden] { display: none !important; }
+:root[data-shell="mobile"] .ad-analysis-pill {
+  height: 32px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+:root[data-shell="mobile"] .ad-analysis-pending {
+  border-color: rgba(255, 193, 7, .38);
+  background: rgba(255, 193, 7, .12);
+  color: #ffe082;
+}
+
 .ad-part-dot {
   width: 8px;
   height: 8px;
