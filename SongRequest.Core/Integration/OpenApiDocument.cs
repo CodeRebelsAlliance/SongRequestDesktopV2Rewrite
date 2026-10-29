@@ -39,7 +39,8 @@ internal static class OpenApiDocument
             ["tags"] = new JArray
             {
                 Tag("Status"), Tag("Songs"), Tag("Requests"), Tag("Playback"), Tag("Queue"),
-                Tag("Library"), Tag("Playlists"), Tag("History"), Tag("Settings"), Tag("Integration")
+                Tag("Library"), Tag("Playlists"), Tag("History"), Tag("Settings"), Tag("Integration"),
+                Tag("Advanced Audio")
             },
             ["security"] = new JArray
             {
@@ -176,6 +177,53 @@ internal static class OpenApiDocument
         paths["/api/v1/player/seek"] = new JObject { ["post"] = Op("Seek in the current track", "Playback", null, Body(("position", "number"))) };
         paths["/api/v1/player/volume"] = new JObject { ["post"] = Op("Set volume", "Playback", null, Body(("value", "number"))) };
         paths["/api/v1/player/crossfade"] = new JObject { ["post"] = Op("Set crossfade seconds", "Playback", null, Body(("value", "number"))) };
+
+        paths["/api/v1/equalizer"] = new JObject
+        {
+            ["get"] = Op("Read the 10-band equalizer, presets and current curve", "Advanced Audio", null, null),
+            ["put"] = Op("Apply equalizer enabled/preamp/preset/gains", "Advanced Audio", null,
+                Body(("enabled", "boolean"), ("preampDb", "number"), ("preset", "string"), ("gains", "number[]")))
+        };
+        paths["/api/v1/equalizer/presets"] = new JObject
+        {
+            ["get"] = Op("List factory and user equalizer presets", "Advanced Audio", null, null),
+            ["post"] = Op("Save the current curve as a named preset", "Advanced Audio", null, Body(("name", "string")))
+        };
+        paths["/api/v1/equalizer/presets/{name}"] = new JObject
+        {
+            ["delete"] = Op("Delete a user preset", "Advanced Audio", PathParams(("name", "Preset name")), null)
+        };
+        paths["/api/v1/equalizer/reset"] = new JObject
+        {
+            ["post"] = Op("Reset and disable the equalizer", "Advanced Audio", null, null)
+        };
+        paths["/api/v1/sleep-timer"] = new JObject
+        {
+            ["get"] = Op("Read sleep-timer state and remaining seconds", "Advanced Audio", null, null),
+            ["post"] = Op("Start the sleep timer", "Advanced Audio", null,
+                Body(("minutes", "number"), ("fadeOutSeconds", "number"), ("playLastSongToEnd", "boolean"))),
+            ["delete"] = Op("Cancel the sleep timer", "Advanced Audio", null, null)
+        };
+        paths["/api/v1/sleep-timer/extend"] = new JObject
+        {
+            ["post"] = Op("Extend the running sleep timer", "Advanced Audio", null, Body(("minutes", "number")))
+        };
+        paths["/api/v1/sleep-timer/options"] = new JObject
+        {
+            ["post"] = Op("Change fade length or play-last-song-to-end", "Advanced Audio", null,
+                Body(("fadeOutSeconds", "number"), ("playLastSongToEnd", "boolean")))
+        };
+        paths["/api/v1/analysis"] = new JObject
+        {
+            ["get"] = Op("Read a cached BPM/loudness/drop analysis", "Advanced Audio", Params(
+                ("songId", "query", "string", "Library song id"), ("songPath", "query", "string", "Audio file path")), null),
+            ["post"] = Op("Analyse a song (BPM, loudness, quality, drops, timeline)", "Advanced Audio", null,
+                Body(("songId", "string"), ("songPath", "string"), ("force", "boolean")))
+        };
+        paths["/api/v1/analysis/cache"] = new JObject
+        {
+            ["get"] = Op("List every cached song analysis", "Advanced Audio", null, null)
+        };
 
         paths["/api/v1/queue"] = new JObject
         {

@@ -177,7 +177,8 @@ restart/force-close action exposed anywhere now.
 
 - **OS media keys / media overlay** on **macOS** (MPNowPlaying). Linux (MPRIS)
   and Windows (SMTC) are implemented — see *Added*.
-  See `SMTC_NOT_SUPPORTED_IN_WPF.md` and `docs/SYSTEM-MEDIA-INTEGRATION.md`.
+  See [`SMTC_NOT_SUPPORTED_IN_WPF.md`](SMTC_NOT_SUPPORTED_IN_WPF.md) and
+  [`SYSTEM-MEDIA-INTEGRATION.md`](SYSTEM-MEDIA-INTEGRATION.md).
 
 ---
 

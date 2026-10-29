@@ -6,6 +6,7 @@
 <title>Music Player - SongRequest V2</title>
 <link rel="stylesheet" href="musicplayer.css">
 <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="advancedaudio.css">
   <link rel="stylesheet" href="mobile.css">
 </head>
 <body>
@@ -33,6 +34,9 @@
         </div>
       </div>
       <button id="btn-visualization" class="top-btn" title="Audio Visualization"><i class="fas fa-wave-square"></i></button>
+      <button id="btn-equalizer" class="top-btn" title="Equalizer"><i class="fas fa-sliders"></i></button>
+      <button id="btn-sleep-timer" class="top-btn" title="Sleep timer"><i class="fas fa-moon"></i></button>
+      <button id="btn-analysis" class="top-btn" title="Song analysis"><i class="fas fa-chart-line"></i></button>
       <button id="btn-announcement" class="top-btn" title="Announcements" style="display:none"><i class="fas fa-microphone"></i></button>
       <button id="btn-share" class="top-btn"><i class="fas fa-broadcast-tower"></i> Share</button>
       <button id="btn-settings" class="top-btn" style="display: none;"><i class="fas fa-cog"></i> Settings</button>
@@ -327,6 +331,7 @@
   <!-- Context menu -->
   <div id="context-menu" class="context-menu" style="display:none" data-source="">
     <button class="context-menu-item" data-action="play"><i class="fas fa-play"></i> Play</button>
+    <button class="context-menu-item" data-action="analyze"><i class="fas fa-chart-line"></i> Analyse Track</button>
     <button class="context-menu-item" data-action="playNext"><i class="fas fa-step-forward"></i> Play Next</button>
     <button class="context-menu-item" data-action="addToQueue"><i class="fas fa-plus"></i> Add to Queue</button>
     <div class="context-menu-separator"></div>
@@ -488,5 +493,6 @@
 <script src="hostbridge.js"></script>
 <script src="playlisticons.js"></script>
 <script src="musicplayer.js"></script>
+<script src="advancedaudio.js"></script>
 </body>
 </html>

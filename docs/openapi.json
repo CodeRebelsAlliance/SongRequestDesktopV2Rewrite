@@ -41,6 +41,9 @@
     },
     {
       "name": "Integration"
+    },
+    {
+      "name": "Advanced Audio"
     }
   ],
   "security": [
@@ -2956,6 +2959,316 @@
                 "additionalProperties": true
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/equalizer": {
+      "get": {
+        "summary": "Read the 10-band equalizer, presets and current curve",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "summary": "Apply equalizer enabled/preamp/preset/gains",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "preampDb": {
+                    "type": "number"
+                  },
+                  "preset": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/equalizer/presets": {
+      "get": {
+        "summary": "List factory and user equalizer presets",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "summary": "Save the current curve as a named preset",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/equalizer/presets/{name}": {
+      "delete": {
+        "summary": "Delete a user preset",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/equalizer/reset": {
+      "post": {
+        "summary": "Reset and disable the equalizer",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sleep-timer": {
+      "get": {
+        "summary": "Read sleep-timer state and remaining seconds",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "summary": "Start the sleep timer",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "minutes": {
+                    "type": "number"
+                  },
+                  "fadeOutSeconds": {
+                    "type": "number"
+                  },
+                  "playLastSongToEnd": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cancel the sleep timer",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sleep-timer/extend": {
+      "post": {
+        "summary": "Extend the running sleep timer",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "minutes": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sleep-timer/options": {
+      "post": {
+        "summary": "Change fade length or play-last-song-to-end",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fadeOutSeconds": {
+                    "type": "number"
+                  },
+                  "playLastSongToEnd": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analysis": {
+      "get": {
+        "summary": "Read a cached BPM/loudness/drop analysis",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "summary": "Analyse a song (BPM, loudness, quality, drops, timeline)",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "songId": {
+                    "type": "string"
+                  },
+                  "songPath": {
+                    "type": "string"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analysis/cache": {
+      "get": {
+        "summary": "List every cached song analysis",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analysis/{key}": {
+      "get": {
+        "summary": "Read one cached analysis by key",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }

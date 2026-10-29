@@ -54,7 +54,11 @@ public sealed partial class AppIntegrationServer : IDisposable
         "presentationQueueUpdate",
         "presentationSettings",
         "updateProgress",
-        "toolProgress"
+        "toolProgress",
+        "sleepTimerUpdate",
+        "equalizerUpdate",
+        "songAnalysisProgress",
+        "songAnalysisUpdate"
     };
 
     private readonly object _sync = new();

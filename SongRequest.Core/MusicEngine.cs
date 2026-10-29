@@ -34,6 +34,27 @@ public sealed class MusicEngine
     public float Volume { get; set; } = 0.9f;
     public float AnnouncementOutputFactor { get; set; } = 1f;
 
+    /// <summary>
+    /// Sleep-timer fade factor. Kept separate from the announcement ducking factor
+    /// so a running sleep fade cannot be undone by announcement restore logic.
+    /// </summary>
+    public float SleepFadeFactor { get; private set; } = 1f;
+
+    /// <summary>
+    /// While a sleep timer is letting the last song finish, the engine must not
+    /// crossfade into (or advance to) the next queue item.
+    /// </summary>
+    public bool SleepTimerHoldsPlayback { get; set; }
+
+    /// <summary>The countdown/fade service owned by this engine.</summary>
+    public SleepTimerService SleepTimer { get; }
+
+    /// <summary>The live equalizer state/service used by this engine.</summary>
+    public EqualizerService Equalizer { get; set; } = EqualizerService.Instance;
+
+    /// <summary>Equalizer stage in the live pipeline (null when stopped).</summary>
+    public EqualizerProcessor? EqualizerProcessor { get; private set; }
+
     public bool RepeatEnabled { get; set; }
 
     /// <summary>Common mixer format (44.1 kHz stereo float).</summary>
@@ -76,6 +97,8 @@ public sealed class MusicEngine
 
     public MusicEngine()
     {
+        SleepTimer = new SleepTimerService(this);
+
         // Wait times depend on every song before them, so they are recomputed *before*
         // the UI is told about the change: this notification is what pushes the queue
         // to the music player window, and it used to fire before the newly added song
@@ -304,6 +327,37 @@ public sealed class MusicEngine
         RequestVolumeSliderUpdate?.Invoke(Volume);
     }
 
+    /// <summary>Sets the sleep-timer fade (1 = full volume, 0 = silent) and applies it.</summary>
+    public void SetSleepFadeFactor(float factor)
+    {
+        SleepFadeFactor = System.Math.Clamp(factor, 0f, 1f);
+        ApplyOutputVolume();
+    }
+
+    /// <summary>Re-applies every master-volume factor (announcement ducking × sleep fade).</summary>
+    public void ApplyOutputVolume()
+    {
+        var output = Output;
+        if (output == null) return;
+        try { output.Volume = System.Math.Clamp(AnnouncementOutputFactor * SleepFadeFactor, 0f, 1f); } catch { }
+    }
+
+    /// <summary>Remaining time of the current track (null when nothing is playing).</summary>
+    public TimeSpan? CurrentTrackRemaining
+    {
+        get
+        {
+            var reader = CurrentReader;
+            if (reader == null) return null;
+            try
+            {
+                var remaining = reader.TotalTime - reader.CurrentTime;
+                return remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining;
+            }
+            catch { return null; }
+        }
+    }
+
     public void AdjustCrossfade(double delta)
     {
         CrossfadeSeconds = System.Math.Clamp(CrossfadeSeconds + delta, 0.0, CrossfadeMax);
@@ -363,11 +417,11 @@ public sealed class MusicEngine
                 float t = i / (float)steps;
                 float eased = 1f - (1f - t) * (1f - t);
                 float current = startFactor + (targetFactor - startFactor) * eased;
-                try { output.Volume = System.Math.Clamp(current, 0f, 1f); } catch { break; }
+                try { output.Volume = System.Math.Clamp(current * SleepFadeFactor, 0f, 1f); } catch { break; }
                 if (i < steps) await Delay(delay).ConfigureAwait(false);
             }
 
-            try { output.Volume = System.Math.Clamp(targetFactor, 0f, 1f); } catch { }
+            try { output.Volume = System.Math.Clamp(targetFactor * SleepFadeFactor, 0f, 1f); } catch { }
         }
         finally
         {
@@ -451,7 +505,7 @@ public sealed class MusicEngine
             var old = Output;
             var replacement = OutputFactory();
             replacement.DeviceNumber = deviceNumber;
-            replacement.Volume = Math.Clamp(AnnouncementOutputFactor, 0f, 1f);
+            replacement.Volume = Math.Clamp(AnnouncementOutputFactor * SleepFadeFactor, 0f, 1f);
             replacement.Init(CapturingProvider ?? (ISampleProvider)Mixer);
             replacement.PlaybackStopped += Output_PlaybackStopped;
             replacement.Play();
@@ -671,7 +725,10 @@ public sealed class MusicEngine
 
         if (CapturingProvider == null)
         {
-            CapturingProvider = new CapturingSampleProvider(Mixer);
+            // The equalizer sits before the capture tap so visualization, recording
+            // and Music Share all see exactly what leaves the speakers.
+            EqualizerProcessor = new EqualizerProcessor(Mixer, Equalizer);
+            CapturingProvider = new CapturingSampleProvider(EqualizerProcessor);
             CapturingProvider.SamplesCaptured += (_, samples) => AudioSamplesCaptured?.Invoke(this, samples);
         }
 
@@ -681,7 +738,7 @@ public sealed class MusicEngine
             try { Output.DeviceNumber = OutputDeviceNumber; } catch { }
         }
         Output.Init(CapturingProvider);
-        Output.Volume = System.Math.Clamp(AnnouncementOutputFactor, 0f, 1f);
+        Output.Volume = System.Math.Clamp(AnnouncementOutputFactor * SleepFadeFactor, 0f, 1f);
         Output.PlaybackStopped += Output_PlaybackStopped;
         Output.Play();
 
@@ -773,6 +830,7 @@ public sealed class MusicEngine
         CurrentVolProvider = null!;
         NextVolProvider = null!;
         Mixer = null!;
+        EqualizerProcessor = null;
         CapturingProvider = null;
 
         StopTickTimer();
@@ -784,6 +842,15 @@ public sealed class MusicEngine
     {
         void Handle()
         {
+            // The sleep timer is letting this track finish: never advance/repeat
+            // into another queue item when the output stops naturally.
+            if (SleepTimerHoldsPlayback)
+            {
+                StopPlayback();
+                QueueEmptied?.Invoke();
+                return;
+            }
+
             if (RepeatEnabled && Queue.Count > 0)
             {
                 try
@@ -843,6 +910,19 @@ public sealed class MusicEngine
         var nowUtc = DateTime.UtcNow;
         if ((nowUtc - _lastSecondaryTickUtc) < TimeSpan.FromMilliseconds(250)) return;
         _lastSecondaryTickUtc = nowUtc;
+
+        // A sleep timer that is letting the last song finish must not crossfade
+        // into the next queue item. Stop at the real end; the service fades the
+        // final seconds before this point.
+        if (SleepTimerHoldsPlayback)
+        {
+            if (remainingTime.TotalSeconds <= 0.15)
+            {
+                StopPlayback();
+                QueueEmptied?.Invoke();
+            }
+            return;
+        }
 
         // Fill the next queue slot from the playlist *before* the crossfade check.
         // Previously the last queue song hit the "Queue.Count == 1" branch and was

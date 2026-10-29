@@ -34,6 +34,9 @@ public static class AppPaths
     /// <summary>Persisted YouTube auth cookies.</summary>
     public static string YoutubeAuthPath => Path.Combine(AppDataDir, "youtube_auth.json");
 
+    /// <summary>Disk cache of BPM/loudness/drop analyses (one JSON document).</summary>
+    public static string AnalysisCachePath => Path.Combine(AppDataDir, "song-analysis-cache.json");
+
     /// <summary>
     /// The pre-announcement chime. Ships next to the desktop executable; on mobile
     /// the host materialises it from the app package into the data root, which is

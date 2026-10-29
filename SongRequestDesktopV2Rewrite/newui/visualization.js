@@ -2,6 +2,12 @@
   'use strict';
 
   // ── IPC ────────────────────────────────────────────────────────
+  var requestId = 0;
+  function postToHost(method, params) {
+    var msg = JSON.stringify(Object.assign({ type: 'request', id: ++requestId, method: method }, params || {}));
+    if (!SongRequestHost.sendToHost(msg)) console.error('Failed to send message: no host channel');
+  }
+
   function handleIncoming(json) {
     try {
       const msg = JSON.parse(json);
@@ -9,6 +15,13 @@
         decodeFrame(msg.data);
       } else if (msg.type === 'event' && msg.eventName === 'mobileThemeColors') {
         if (window.SongRequestTheme) window.SongRequestTheme.apply(msg.data || {}, 'vz', '#1d1b20', '#26232c');
+        resize();
+      } else if (msg.type === 'event' && msg.eventName === 'refresh') {
+        // Android pauses JavaScript in a hidden web view. When this page becomes
+        // visible again the canvas may still have the 1×1 size measured while it
+        // was hidden, so re-measure and re-request the audio tap.
+        resize();
+        requestAnimationFrame(resize);
       }
     } catch (e) { console.error('Parse error:', e); }
   }
@@ -65,11 +78,23 @@
   function resize() {
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const width = Math.max(1, Math.round(rect.width * dpr));
+    const height = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 80));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+  // The stage page can be created while its tab is still hidden (notably in the
+  // Android WebView). Without observing the element itself the canvas kept the
+  // 1×1 size measured at load and stayed black; a window resize never fired.
+  if (window.ResizeObserver) {
+    try { new ResizeObserver(resize).observe(canvas.parentElement); } catch (e) { }
+  }
   resize();
 
   // ── FFT / band helpers (pure, unit-tested in tests/js/vizmath.test.js) ──
@@ -305,6 +330,11 @@
   function render() {
     requestAnimationFrame(render);
     const w = canvas.clientWidth, h = canvas.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+    if (w > 0 && h > 0 &&
+        (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr))) {
+      resize();
+    }
     ctx.clearRect(0, 0, w, h);
 
     const idle = performance.now() - _lastFrameTime > 400;
@@ -334,14 +364,8 @@
   // Fullscreen is applied to the *native* window by the host: the DOM Fullscreen API
   // needs the embedder to handle WebKit's enter-fullscreen request, which Photino does
   // not do — so `document.documentElement.requestFullscreen()` silently rejects here.
-  let requestId = 0;
   let _fullscreen = false;
   const fullscreenBtn = document.getElementById('viz-fullscreen');
-
-  function postToHost(method, params) {
-    var msg = JSON.stringify(Object.assign({ type: 'request', id: ++requestId, method: method }, params || {}));
-    if (!SongRequestHost.sendToHost(msg)) console.error('Failed to send message: no host channel');
-  }
 
   function setFullscreenIcon(on) {
     if (!fullscreenBtn) return;
@@ -365,4 +389,18 @@
   });
 
   setFullscreenIcon(false);
+
+  // Handshake: the host starts the audio tap only after the page is really ready.
+  // On mobile the page may be constructed while hidden, so the first frame can be
+  // missed; announcing again on visibility changes re-arms the stream.
+  function announceReady() {
+    resize();
+    requestAnimationFrame(resize);
+    postToHost('visualizationReady', {});
+  }
+  window.addEventListener('load', announceReady);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) announceReady();
+  });
+  setTimeout(announceReady, 0);
 })();

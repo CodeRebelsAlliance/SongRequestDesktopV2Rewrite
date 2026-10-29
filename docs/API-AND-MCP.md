@@ -191,6 +191,34 @@ The player's `quality` object has `format`, `bitrateKbps`, `lossless`, `text` an
 `tier` (`is-lossless`, `is-high`, `is-good`, `is-low` or `is-unknown`), matching
 the badges in the music player UI.
 
+### Advanced audio: equalizer, sleep timer and analysis
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/equalizer` | 10-band curve (`enabled`, `preampDb`, `preset`, `bands`) plus all factory/user `presets`. |
+| `PUT` | `/api/v1/equalizer` | Apply `enabled`, `preampDb`, `preset` and/or a `gains` array in one call. |
+| `GET` | `/api/v1/equalizer/presets` | List presets (same payload as `getEqualizer`). |
+| `POST` | `/api/v1/equalizer/presets` | Save the current curve as `{ "name": "..." }`. |
+| `DELETE` | `/api/v1/equalizer/presets/{name}` | Delete a user preset. |
+| `POST` | `/api/v1/equalizer/reset` | Reset the curve and disable the equalizer. |
+| `GET` | `/api/v1/sleep-timer` | State: `isActive`, `phase`, `remainingSeconds`, `fadeOutSeconds`, `playLastSongToEnd`. |
+| `POST` | `/api/v1/sleep-timer` | Start: `{ "minutes": 30, "fadeOutSeconds": 10, "playLastSongToEnd": true }`. |
+| `DELETE` | `/api/v1/sleep-timer` | Cancel and restore full volume. |
+| `POST` | `/api/v1/sleep-timer/extend` | `{ "minutes": 5 }`. |
+| `POST` | `/api/v1/sleep-timer/options` | Change `fadeOutSeconds` / `playLastSongToEnd` while running. |
+| `GET` | `/api/v1/analysis?songId=...` | Cached BPM/loudness/quality/drop analysis (or `?songPath=...`). |
+| `POST` | `/api/v1/analysis` | Run analysis for `{ "songId": "..." }` or `{ "songPath": "..." }`; pass `force: true` to re-analyse. |
+| `GET` | `/api/v1/analysis/cache` | All cached analyses. |
+| `GET` | `/api/v1/analysis/{key}` | One cached analysis by the `key` returned from a POST. |
+
+The analysis result contains `bpm`, `bpmConfidence`, `beatOffsetSeconds`,
+`loudnessLufs`, `loudnessRangeLu`, `peakDb`, `dynamicRangeDb`, a `quality` object
+(`score`, `tier`, codec, bitrate, sample rate, clipping, dynamic range), detected
+`drops` (time, confidence, type/label), a per-window `timeline` (RMS/peak/low/mid/
+high energy and novelty) and the decoder `analysisPath`. Analysis runs in the
+background; progress arrives as the `songAnalysisProgress` WebSocket event, and
+a finished run emits `songAnalysisUpdate`.
+
 ### Playlists and history
 
 | Method | Path | Description |
@@ -353,6 +381,9 @@ Live events include:
 | `announcementState` | Announcement state changes. |
 | `musicShareStatus`, `musicShareMetadataReceived`, `musicShareError` | Music Share events. |
 | `presentationUpdate`, `presentationQueueUpdate`, `presentationSettings` | Presentation updates. |
+| `sleepTimerUpdate` | Sleep-timer countdown, fade and finishing-track state. |
+| `equalizerUpdate` | Equalizer enabled flag, pre-amp or band curve changed. |
+| `songAnalysisProgress` / `songAnalysisUpdate` | Background analysis progress and the finished BPM/loudness/drop result. |
 | `updateProgress`, `toolProgress` | Self-update and tool-download progress. |
 
 Example browser client:

@@ -2256,9 +2256,11 @@
     var ytEl = ctxSongYtEl;
     var songEl = ctxSongEl;
     hideContextMenu();
-    if (ytEl) {
+    if (ytEl && action !== 'analyze') {
       var ytAction = action === 'play' ? 'play' : action === 'playNext' ? 'playNext' : 'queue';
       startYouTubeDownload(ytEl, ytAction);
+    } else if (action === 'analyze') {
+      if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openAnalysis({ songId: songId });
     } else if (action === 'play') {
       hostSend('playLibrarySong', { songId: songId });
     } else if (action === 'playNext') {

@@ -79,10 +79,12 @@ public sealed class MobileShell : IUiShell
     public void ShowVisualizationWindow()
     {
         // Desktop starts the streamer in its native WindowCreated hook. The mobile
-        // stage has no such window, so opening it must start the audio tap itself —
-        // otherwise the page renders but only ever shows "No audio playing".
-        AppHost.Current?.Interop.StartVisualizationStreaming();
+        // stage has no such window, so opening it starts the audio tap here too.
+        // The page also sends `visualizationReady` once its canvas is measurable;
+        // that handshake is what makes the first frames appear reliably after a
+        // hidden/background tab (Android pauses JS in hidden web views).
         _page.ShowFileInTab("visualization.html", "stage");
+        AppHost.Current?.Interop.StartVisualizationStreaming();
     }
 
     public void CloseVisualizationWindow()

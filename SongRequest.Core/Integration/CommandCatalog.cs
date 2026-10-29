@@ -49,6 +49,7 @@ public static class CommandCatalog
         Add("closePresentation", "Windows", "Close the presentation window.", null);
         Add("presentationReady", "Windows", "Tell the app the presentation page finished loading and push its current state.", null);
         Add("showVisualization", "Windows", "Open the audio visualization window.", null);
+        Add("visualizationReady", "Windows", "Start/refresh the audio visualization stream after the page is ready.", null);
         Add("closeVisualization", "Windows", "Close the visualization window.", null);
         Add("showSoundboard", "Windows", "Open the soundboard window or tab.", null);
         Add("soundboardClose", "Windows", "Close the soundboard window or tab.", null);
@@ -228,6 +229,24 @@ public static class CommandCatalog
         // ── Presentation ──────────────────────────────────────────────────
         Add("setPresentationZoom", "Windows", "Set the presentation zoom (0.5..2.0).", new[] { "zoom" });
         Add("setPresentationSource", "Windows", "Choose what the presentation shows (player or music share).", new[] { "source" });
+
+        // ── Advanced audio ────────────────────────────────────────────────
+        Add("getEqualizer", "Advanced Audio", "Read the 10-band equalizer state, bands and presets.", null);
+        Add("setEqualizer", "Advanced Audio", "Apply equalizer enabled/preamp/preset/gains in one call.", new[] { "enabled", "preampDb", "preset", "gains" });
+        Add("setEqualizerEnabled", "Advanced Audio", "Enable or bypass the equalizer.", new[] { "enabled" });
+        Add("setEqualizerBand", "Advanced Audio", "Set one equalizer band gain in dB (-12..12).", new[] { "index", "gainDb" });
+        Add("setEqualizerPreset", "Advanced Audio", "Apply a factory or user equalizer preset.", new[] { "preset" });
+        Add("saveEqualizerPreset", "Advanced Audio", "Save the current curve as a named user preset.", new[] { "name" });
+        Add("deleteEqualizerPreset", "Advanced Audio", "Delete a user equalizer preset.", new[] { "name" });
+        Add("resetEqualizer", "Advanced Audio", "Reset and disable the equalizer.", null);
+        Add("getSleepTimer", "Advanced Audio", "Read sleep-timer state and remaining seconds.", null);
+        Add("startSleepTimer", "Advanced Audio", "Start the sleep timer.", new[] { "minutes", "fadeOutSeconds", "playLastSongToEnd" });
+        Add("cancelSleepTimer", "Advanced Audio", "Cancel the sleep timer and restore volume.", null);
+        Add("extendSleepTimer", "Advanced Audio", "Add minutes to the running sleep timer.", new[] { "minutes" });
+        Add("setSleepTimerOptions", "Advanced Audio", "Change fade length or play-last-song-to-end.", new[] { "fadeOutSeconds", "playLastSongToEnd" });
+        Add("getSongAnalysis", "Advanced Audio", "Read a cached BPM/loudness/drop analysis for a song.", new[] { "songId", "songPath", "title", "artist" });
+        Add("analyzeSong", "Advanced Audio", "Analyse a song's BPM, loudness, quality and drops (may take a few seconds).", new[] { "songId", "songPath", "force", "title", "artist" });
+        Add("getSongAnalysisCache", "Advanced Audio", "List every cached song analysis.", null);
 
         return list
             .GroupBy(c => c.Name, StringComparer.Ordinal)

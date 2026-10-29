@@ -416,6 +416,12 @@ namespace SongRequestDesktopV2Rewrite
             set => SetField(ref _mcpToken, value?.Trim() ?? string.Empty);
         }
 
+        /// <summary>
+        /// Persisted 10-band equalizer curve (enabled flag, pre-amp, band gains and
+        /// user presets). Shared by desktop and mobile through config.json.
+        /// </summary>
+        public EqualizerConfiguration Equalizer { get; set; } = new();
+
         protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
         {
             if (EqualityComparer<T>.Default.Equals(field, value)) return false;

@@ -96,6 +96,28 @@ public class IntegrationServerTests
         var settings = await interop.ExecuteCommandAsync("getSettings");
         Assert.NotNull(settings?["apiEnabled"]);
         Assert.False(settings!["apiEnabled"]!.ToObject<bool>());
+
+        // Advanced audio commands share the same dispatcher as the web UI.
+        var equalizer = await interop.ExecuteCommandAsync("getEqualizer");
+        Assert.Equal(10, (equalizer?["bands"] as JArray)?.Count);
+        Assert.NotNull(equalizer?["presets"]);
+
+        var enabled = await interop.ExecuteCommandAsync("setEqualizerEnabled",
+            new JObject { ["enabled"] = true });
+        Assert.True(enabled?["enabled"]?.ToObject<bool>());
+        await interop.ExecuteCommandAsync("resetEqualizer");
+
+        var sleep = await interop.ExecuteCommandAsync("getSleepTimer");
+        Assert.False(sleep?["isActive"]?.ToObject<bool>());
+        var started = await interop.ExecuteCommandAsync("startSleepTimer",
+            new JObject { ["minutes"] = 5, ["playLastSongToEnd"] = true });
+        Assert.True(started?["isActive"]?.ToObject<bool>());
+        var cancelled = await interop.ExecuteCommandAsync("cancelSleepTimer");
+        Assert.False(cancelled?["isActive"]?.ToObject<bool>());
+
+        var missingAnalysis = await interop.ExecuteCommandAsync("analyzeSong",
+            new JObject { ["songPath"] = Path.Combine(Path.GetTempPath(), "does-not-exist.mp3") });
+        Assert.False(missingAnalysis?["success"]?.ToObject<bool>() ?? true);
     }
 
     [Fact]
@@ -156,6 +178,28 @@ public class IntegrationServerTests
 
             var playerResponse = await SendAsync(http, HttpMethod.Get, apiBase + "/api/v1/player", "api-secret");
             Assert.Equal(HttpStatusCode.OK, playerResponse.StatusCode);
+
+            var equalizerResponse = await SendAsync(http, HttpMethod.Get, apiBase + "/api/v1/equalizer", "api-secret");
+            Assert.Equal(HttpStatusCode.OK, equalizerResponse.StatusCode);
+            var equalizerJson = JObject.Parse(await equalizerResponse.Content.ReadAsStringAsync());
+            Assert.Equal(10, (equalizerJson["bands"] as JArray)?.Count);
+
+            var sleepResponse = await SendAsync(http, HttpMethod.Get, apiBase + "/api/v1/sleep-timer", "api-secret");
+            Assert.Equal(HttpStatusCode.OK, sleepResponse.StatusCode);
+            Assert.False(JObject.Parse(await sleepResponse.Content.ReadAsStringAsync())["isActive"]?.ToObject<bool>());
+
+            var startSleep = await SendAsync(http, HttpMethod.Post, apiBase + "/api/v1/sleep-timer", "api-secret",
+                "{\"minutes\":5,\"fadeOutSeconds\":10,\"playLastSongToEnd\":true}");
+            Assert.Equal(HttpStatusCode.OK, startSleep.StatusCode);
+            Assert.True(JObject.Parse(await startSleep.Content.ReadAsStringAsync())["isActive"]?.ToObject<bool>());
+
+            var stopSleep = await SendAsync(http, HttpMethod.Delete, apiBase + "/api/v1/sleep-timer", "api-secret");
+            Assert.Equal(HttpStatusCode.OK, stopSleep.StatusCode);
+            Assert.False(JObject.Parse(await stopSleep.Content.ReadAsStringAsync())["isActive"]?.ToObject<bool>());
+
+            var analysisResponse = await SendAsync(http, HttpMethod.Get, apiBase + "/api/v1/analysis/cache", "api-secret");
+            Assert.Equal(HttpStatusCode.OK, analysisResponse.StatusCode);
+            Assert.NotNull(JObject.Parse(await analysisResponse.Content.ReadAsStringAsync())["analyses"]);
 
             // Song search works without the companion server for the library source.
             var songsResponse = await SendAsync(http, HttpMethod.Get,

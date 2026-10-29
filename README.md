@@ -188,8 +188,31 @@ plan and the milestone state live in
 [`docs/MOBILE-APP-PLAN.md`](docs/MOBILE-APP-PLAN.md), the build/test commands and
 device checklists in [`docs/MOBILE-TESTING.md`](docs/MOBILE-TESTING.md).
 
-## Local API & MCP (optional, off by default)
+## Advanced audio
 
+The player (desktop and mobile) shares the same three audio tools:
+
+- **10-band equalizer** with a live graphical curve, pre-amp, factory presets
+  (Flat, Rock, Pop, Jazz, Classical, Electronic, Hip-Hop, Acoustic, Vocal, Bass
+  Boost, Treble Boost, Loudness) and saved user presets. It is applied in the
+  audio pipeline before the output/capture tap, so it also affects the
+  visualization and Music Share.
+- **Sleep timer** with 15–120 minute shortcuts and custom durations, a
+  configurable fade-out, and *play the last song to the end*. On desktop the
+  remaining time is shown in the player bar (and the toolbar moon button stays
+  highlighted); on mobile the player options start it and an extra pill in the
+  player's top bar shows the countdown. Click either to edit/extend/cancel.
+- **Song analysis** for BPM (with confidence and beat offset), integrated
+  loudness, peak, dynamic range, quality score/codec/bitrate/clipping, an audio
+  path/energy timeline, a quality radar and smart drop/build-up detection. It is
+  available from the player toolbar/options and per song in the context menu;
+  every result is also served by the local API.
+
+All three are exposed through the command dispatcher (and therefore the HTTP
+API, WebSocket events and MCP) — see
+[`docs/API-AND-MCP.md`](docs/API-AND-MCP.md#advanced-audio-equalizer-sleep-timer-and-analysis).
+
+## Local API & MCP (optional, off by default)
 Settings → **API & MCP** can start two independent local servers:
 
 - an **HTTP API** (`http://127.0.0.1:8730`) with a bidirectional **WebSocket**

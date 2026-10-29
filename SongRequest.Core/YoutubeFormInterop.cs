@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Serialization;
 using System;
 using System.Collections.Concurrent;
 using System.IO;
@@ -155,6 +156,10 @@ public class YoutubeFormInterop
     private VisualizationStreamer? _vizStreamer;
     private readonly object _vizLock = new();
 
+    // Advanced audio: song analysis cache + event subscriptions for the sleep
+    // timer and equalizer.
+    private readonly SongAnalysisService _analysis = SongAnalysisService.Instance;
+
     // Announcement engine (lazily created; kept alive across window open/close)
     private AnnouncementEngine? _announcement;
     private readonly object _announcementLock = new();
@@ -222,6 +227,23 @@ public class YoutubeFormInterop
                     EnsureAnnouncement();
                     _ytForm.NewUiRef?.ShowAnnouncementWindow();
                 };
+
+                // Advanced audio state is pushed to the player pages and mirrored to
+                // the WebSocket/API event stream by SendEvent. The strongly typed
+                // snapshots are camel-cased to match the rest of the JSON protocol.
+                mp.SleepTimer.StateChanged += state =>
+                    MusicPlayerSendEvent("sleepTimerUpdate", CamelCase(state));
+                mp.Equalizer.Changed += state =>
+                    MusicPlayerSendEvent("equalizerUpdate", CamelCase(state));
+                _analysis.Progress += progress =>
+                    MusicPlayerSendEvent("songAnalysisProgress", new
+                    {
+                        songPath = progress.SongPath,
+                        progress = progress.Progress,
+                        stage = progress.Stage
+                    });
+                _analysis.Analyzed += analysis =>
+                    MusicPlayerSendEvent("songAnalysisUpdate", CamelCase(analysis));
             }
         }
         catch { }
@@ -360,6 +382,21 @@ public class YoutubeFormInterop
         var method = msg["method"]?.ToString();
         var responseTarget = _responseTarget.Value ?? SendMessage;
 
+        // Friendly aliases for API/MCP clients that use feature-prefixed names.
+        method = method switch
+        {
+            "sleepTimerGetState" => "getSleepTimer",
+            "sleepTimerStart" => "startSleepTimer",
+            "sleepTimerCancel" => "cancelSleepTimer",
+            "sleepTimerExtend" => "extendSleepTimer",
+            "sleepTimerSetOptions" => "setSleepTimerOptions",
+            "getEqualizerState" => "getEqualizer",
+            "setEqualizerGains" => "setEqualizer",
+            "getSongAnalysisResult" => "getSongAnalysis",
+            "analyseSong" => "analyzeSong",
+            _ => method
+        };
+
         try
         {
             switch (method)
@@ -438,6 +475,13 @@ public class YoutubeFormInterop
                     ShowVisualization();
                     SendResponse(id, new { success = true });
                     return;
+                case "visualizationReady":
+                    // The page (desktop window or mobile stage tab) is ready for
+                    // frames. Starting/refreshing here also covers a page that was
+                    // constructed hidden before playback started.
+                    EnsureVisualization();
+                    SendResponse(id, new { success = true, capturing = _ytForm.Music.CapturingProvider != null });
+                    return;
                 case "closeVisualization":
                     _ytForm.NewUiRef?.CloseVisualizationWindow();
                     SendResponse(id, new { success = true });
@@ -513,7 +557,7 @@ public class YoutubeFormInterop
                             canControlInit = mp.CanControlVolume;
                             repeatInit = mp.RepeatEnabled;
                         }
-                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit, repeatEnabled = repeatInit, lyricsFontScale = (double)ConfigService.Instance.Current.LyricsFontScale, lyricsHidden = ConfigService.Instance.Current.LyricsHidden });
+                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit, repeatEnabled = repeatInit, lyricsFontScale = (double)ConfigService.Instance.Current.LyricsFontScale, lyricsHidden = ConfigService.Instance.Current.LyricsHidden, sleepTimer = CamelCase(_ytForm.Music.SleepTimer.GetState()), equalizer = CamelCase(_ytForm.Music.Equalizer.GetState()) });
                         SendCurrentNowPlayingToNewUI();
 
                         MusicPlayerSendEvent("musicPlayerConfig", new
@@ -668,6 +712,84 @@ public class YoutubeFormInterop
                     SendResponse(id, new { success = true });
                     return;
                 }
+                case "getEqualizer":
+                    SendResponse(id, CamelCase(_ytForm.Music.Equalizer.GetState()));
+                    return;
+                case "setEqualizer":
+                {
+                    var eq = _ytForm.Music.Equalizer;
+                    var enabled = msg["enabled"]?.ToObject<bool?>();
+                    var preamp = msg["preampDb"]?.ToObject<double?>() ?? msg["preamp"]?.ToObject<double?>();
+                    var preset = msg["preset"]?.ToString();
+                    var gains = msg["gains"]?.ToObject<double[]>();
+                    SendResponse(id, CamelCase(eq.Apply(enabled, preamp, preset, gains)));
+                    return;
+                }
+                case "setEqualizerEnabled":
+                    SendResponse(id, CamelCase(_ytForm.Music.Equalizer.SetEnabled(msg["enabled"]?.ToObject<bool>() ?? true)));
+                    return;
+                case "setEqualizerBand":
+                {
+                    var band = msg["index"]?.ToObject<int>() ?? -1;
+                    var gain = msg["gainDb"]?.ToObject<double?>() ?? msg["gain"]?.ToObject<double>() ?? 0;
+                    SendResponse(id, CamelCase(_ytForm.Music.Equalizer.SetBandGain(band, gain)));
+                    return;
+                }
+                case "setEqualizerPreset":
+                    SendResponse(id, CamelCase(_ytForm.Music.Equalizer.ApplyPreset(msg["preset"]?.ToString() ?? msg["name"]?.ToString() ?? "Flat")));
+                    return;
+                case "saveEqualizerPreset":
+                    SendResponse(id, CamelCase(_ytForm.Music.Equalizer.SavePreset(msg["name"]?.ToString() ?? "Custom")));
+                    return;
+                case "deleteEqualizerPreset":
+                    SendResponse(id, CamelCase(_ytForm.Music.Equalizer.DeletePreset(msg["name"]?.ToString() ?? "")));
+                    return;
+                case "resetEqualizer":
+                    SendResponse(id, CamelCase(_ytForm.Music.Equalizer.Reset()));
+                    return;
+                case "getSleepTimer":
+                    SendResponse(id, CamelCase(_ytForm.Music.SleepTimer.GetState()));
+                    return;
+                case "startSleepTimer":
+                {
+                    var minutes = msg["minutes"]?.ToObject<double?>()
+                        ?? msg["durationMinutes"]?.ToObject<double?>()
+                        ?? (msg["seconds"]?.ToObject<double?>() is double seconds ? seconds / 60.0
+                            : msg["durationSeconds"]?.ToObject<double?>() is double durationSeconds ? durationSeconds / 60.0
+                            : 30);
+                    var fade = msg["fadeOutSeconds"]?.ToObject<double?>() ?? msg["fadeSeconds"]?.ToObject<double?>();
+                    var lastSong = msg["playLastSongToEnd"]?.ToObject<bool?>() ?? msg["playToEnd"]?.ToObject<bool?>();
+                    SendResponse(id, CamelCase(_ytForm.Music.SleepTimer.Start(minutes, fade, lastSong)));
+                    return;
+                }
+                case "cancelSleepTimer":
+                    SendResponse(id, CamelCase(_ytForm.Music.SleepTimer.Cancel()));
+                    return;
+                case "extendSleepTimer":
+                {
+                    var minutes = msg["minutes"]?.ToObject<double?>() ?? 5;
+                    SendResponse(id, CamelCase(_ytForm.Music.SleepTimer.Extend(TimeSpan.FromMinutes(minutes))));
+                    return;
+                }
+                case "setSleepTimerOptions":
+                {
+                    var fade = msg["fadeOutSeconds"]?.ToObject<double?>() ?? msg["fadeSeconds"]?.ToObject<double?>();
+                    var lastSong = msg["playLastSongToEnd"]?.ToObject<bool?>() ?? msg["playToEnd"]?.ToObject<bool?>();
+                    SendResponse(id, CamelCase(_ytForm.Music.SleepTimer.SetOptions(fade, lastSong)));
+                    return;
+                }
+                case "getSongAnalysis":
+                    SendResponse(id, CamelCase(GetSongAnalysis(msg)));
+                    return;
+                case "analyzeSong":
+                {
+                    var analysis = await AnalyzeSongAsync(msg).ConfigureAwait(false);
+                    SendResponse(id, CamelCase(analysis));
+                    return;
+                }
+                case "getSongAnalysisCache":
+                    SendResponse(id, CamelCase(new { analyses = _analysis.Cached }));
+                    return;
             }
 
             object result;
@@ -1165,6 +1287,13 @@ public class YoutubeFormInterop
             _ytForm.NewUiRef?.MusicPlayerSendMessage?.Invoke(json);
         }
         catch { }
+
+        // Advanced-audio events are part of the documented WebSocket event list;
+        // forward them to API/MCP clients as well as the player page.
+        if (eventName is "sleepTimerUpdate" or "equalizerUpdate" or "songAnalysisProgress" or "songAnalysisUpdate")
+        {
+            try { EventRaised?.Invoke(eventName, data); } catch { }
+        }
     }
 
     private async Task<object> FetchDataAsync()
@@ -2673,21 +2802,135 @@ public class YoutubeFormInterop
         }
     }
 
+    // ──────────────────────────────────────────────────
+    //  Advanced audio: song analysis commands
+    // ──────────────────────────────────────────────────
+
+    /// <summary>Resolves a request to an audio file (library id, path, or current track).</summary>
+    private (string Path, string Title, string Artist)? ResolveAnalysisTarget(JObject msg)
+    {
+        string? path = msg["songPath"]?.ToString() ?? msg["path"]?.ToString() ?? msg["filePath"]?.ToString();
+        string title = msg["title"]?.ToString() ?? "";
+        string artist = msg["artist"]?.ToString() ?? "";
+
+        var songId = msg["songId"]?.ToString() ?? msg["id"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(songId))
+        {
+            var librarySong = _libraryService.Data.FindSong(songId);
+            if (librarySong != null)
+            {
+                path = librarySong.FilePath;
+                if (string.IsNullOrWhiteSpace(title)) title = librarySong.Title;
+                if (string.IsNullOrWhiteSpace(artist)) artist = librarySong.Artist;
+            }
+        }
+
+        // The API also exposes /api/v1/analysis/{key}; resolve that stable id
+        // against the analysis cache when it is not a library song id.
+        var analysisKey = msg["analysisKey"]?.ToString();
+        if (string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(analysisKey))
+        {
+            var cached = _analysis.Cached.FirstOrDefault(a =>
+                string.Equals(SongAnalysisService.KeyFor(a.SongPath), analysisKey, StringComparison.OrdinalIgnoreCase));
+            if (cached != null)
+            {
+                path = cached.SongPath;
+                if (string.IsNullOrWhiteSpace(title)) title = cached.Title;
+                if (string.IsNullOrWhiteSpace(artist)) artist = cached.Artist;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            var current = _ytForm.Music.Queue.FirstOrDefault();
+            if (current != null)
+            {
+                path = current.songPath;
+                if (string.IsNullOrWhiteSpace(title)) title = current.Title;
+                if (string.IsNullOrWhiteSpace(artist)) artist = current.Artist;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        path = AppPaths.ResolvePortablePath(path);
+        return (path, title, artist);
+    }
+
+    private SongAnalysis? GetSongAnalysis(JObject msg)
+    {
+        var target = ResolveAnalysisTarget(msg);
+        if (target == null) return null;
+        return _analysis.GetFresh(target.Value.Path) ?? _analysis.GetCached(target.Value.Path);
+    }
+
+    private async Task<object> AnalyzeSongAsync(JObject msg)
+    {
+        var target = ResolveAnalysisTarget(msg);
+        if (target == null)
+            return new { success = false, error = "No song to analyse. Pass songId/songPath or start playback first." };
+
+        try
+        {
+            bool force = msg["force"]?.ToObject<bool>() ?? false;
+            var analysis = await _analysis.AnalyzeAsync(
+                target.Value.Path, target.Value.Title, target.Value.Artist, force).ConfigureAwait(false);
+
+            return new
+            {
+                success = true,
+                key = SongAnalysisService.KeyFor(analysis.SongPath),
+                songPath = analysis.SongPath,
+                title = analysis.Title,
+                artist = analysis.Artist,
+                bpm = analysis.Bpm,
+                bpmConfidence = analysis.BpmConfidence,
+                beatOffsetSeconds = analysis.BeatOffsetSeconds,
+                loudnessLufs = analysis.IntegratedLoudnessLufs,
+                loudnessRangeLu = analysis.LoudnessRangeLu,
+                peakDb = analysis.PeakDb,
+                dynamicRangeDb = analysis.DynamicRangeDb,
+                durationSeconds = analysis.DurationSeconds,
+                isLowConfidence = analysis.IsLowConfidence,
+                quality = analysis.Quality,
+                drops = analysis.Drops,
+                timeline = analysis.Timeline,
+                analysisPath = analysis.AnalysisPath,
+                analyzedUtc = analysis.AnalyzedUtc
+            };
+        }
+        catch (Exception ex)
+        {
+            return new { success = false, error = ex.Message };
+        }
+    }
+
+    private static readonly JsonSerializerSettings CamelCaseSettings = new()
+    {
+        ContractResolver = new CamelCasePropertyNamesContractResolver()
+    };
+
+    /// <summary>
+    /// Serializes a strongly-typed result with camelCase names, matching every
+    /// hand-built anonymous object in the command API (the web UI and API clients
+    /// expect lower-case properties such as <c>isActive</c> and <c>bands</c>).
+    /// </summary>
+    private static JToken? CamelCase(object? value)
+        => value == null ? null : JToken.FromObject(value, JsonSerializer.Create(CamelCaseSettings));
+
     private object GetFullConfig()
     {
         var cfg = ConfigService.Instance.Current;
         if (cfg == null) return new { };
         return new
-        {
-            address = cfg.Address ?? "",
+        {            address = cfg.Address ?? "",
             fetchingTimer = cfg.FetchingTimer,
             threads = cfg.Threads,
             autoEnqueue = cfg.AutoEnqueue,
             requestUrl = cfg.RequestUrl ?? "",
             presentationFullscreen = cfg.PresentationFullscreen,
             normalizeVolume = cfg.NormalizeVolume,
-            useCaptionLyricsFallback = cfg.UseCaptionLyricsFallback,
-            enableAnnouncements = cfg.EnableAnnouncements,
+            equalizer = CamelCase(cfg.Equalizer),
+            useCaptionLyricsFallback = cfg.UseCaptionLyricsFallback,            enableAnnouncements = cfg.EnableAnnouncements,
             bearerToken = cfg.BearerToken ?? "",
             defaultSorting = cfg.DefaultSorting ?? "",
             defaultSubmitMethod = cfg.DefaultSubmitMethod ?? "search",
@@ -3013,6 +3256,11 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("requestUrl", out var ru)) cfg.RequestUrl = ru.ToString();
                 if (settings.TryGetValue("presentationFullscreen", out var pf)) cfg.PresentationFullscreen = pf.ToObject<bool>();
                 if (settings.TryGetValue("normalizeVolume", out var nv)) cfg.NormalizeVolume = nv.ToObject<bool>();
+                if (settings.TryGetValue("equalizer", out var eqJson) && eqJson is JObject eqObj)
+                {
+                    var next = eqObj.ToObject<EqualizerConfiguration>() ?? new EqualizerConfiguration();
+                    cfg.Equalizer = next.Normalized();
+                }
                 if (settings.TryGetValue("useCaptionLyricsFallback", out var cl)) cfg.UseCaptionLyricsFallback = cl.ToObject<bool>();
                 if (settings.TryGetValue("enableAnnouncements", out var ea)) cfg.EnableAnnouncements = ea.ToObject<bool>();
                 if (settings.TryGetValue("bearerToken", out var bt))

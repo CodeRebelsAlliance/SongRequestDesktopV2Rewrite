@@ -1486,6 +1486,10 @@
             '<input id="mm-menu-normalize" type="checkbox"' + (cfg && cfg.normalizeVolume ? ' checked' : '') + '></div>' +
           '<h3>Audio output</h3>' +
           '<div class="mm-sheet-row"><select id="mm-menu-device">' + deviceOptions + '</select></div>' +
+          '<h3>Sound</h3>' +
+          '<button class="mm-sheet-action" data-menu="equalizer"><i class="fas fa-sliders"></i> Equalizer</button>' +
+          '<button class="mm-sheet-action" data-menu="sleep"><i class="fas fa-moon"></i> Sleep timer</button>' +
+          '<button class="mm-sheet-action" data-menu="analysis"><i class="fas fa-chart-line"></i> Analyse current track</button>' +
           '<h3>Tools</h3>' +
           '<button class="mm-sheet-action" data-menu="presentation"><i class="fas fa-tv"></i> Presentation</button>' +
           '<button class="mm-sheet-action" data-menu="visualization"><i class="fas fa-wave-square"></i> Visualization</button>' +
@@ -1540,6 +1544,18 @@
       case 'announcements':
         send('announcementOpen');
         closeSheet();
+        break;
+      case 'equalizer':
+        closeSheet();
+        if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openEqualizer();
+        break;
+      case 'sleep':
+        closeSheet();
+        if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openSleepTimer();
+        break;
+      case 'analysis':
+        closeSheet();
+        if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openAnalysis({});
         break;
     }
   }
@@ -1721,6 +1737,7 @@
       '<button class="mm-sheet-action" data-song-action="play"><i class="fas fa-play"></i> Play now</button>' +
       '<button class="mm-sheet-action" data-song-action="next"><i class="fas fa-forward-step"></i> Play next</button>' +
       '<button class="mm-sheet-action" data-song-action="queue"><i class="fas fa-list"></i> Add to queue</button>' +
+      '<button class="mm-sheet-action" data-song-action="analyze"><i class="fas fa-chart-line"></i> Analyse track</button>' +
       '<button class="mm-sheet-action" data-song-action="playlist"><i class="fas fa-plus"></i> Add to playlist</button>' +
       '<button class="mm-sheet-action is-danger" data-song-action="delete"><i class="fas fa-trash-alt"></i> Remove from library</button>'
     );
@@ -1743,6 +1760,10 @@
       case 'queue':
         send('queueLibrarySong', { songId: songId });
         closeSheet();
+        break;
+      case 'analyze':
+        closeSheet();
+        if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openAnalysis({ songId: songId });
         break;
       case 'playlist':
         openPlaylistPicker(songId);

@@ -137,6 +137,47 @@ public sealed partial class AppIntegrationServer
             if (PathEquals(request.Path, "/api/v1/player/crossfade"))
                 return await CommandResponseAsync("setCrossfade", ReadJsonBody(request), request);
 
+            // ── Advanced audio: equalizer, sleep timer, song analysis ────────
+            if (PathEquals(request.Path, "/api/v1/equalizer") && IsGet(request))
+                return await CommandResponseAsync("getEqualizer", new JObject(), request);
+            if (PathEquals(request.Path, "/api/v1/equalizer") &&
+                (IsPost(request) || IsPut(request) || IsPatch(request)))
+                return await CommandResponseAsync("setEqualizer", ReadJsonBody(request), request);
+            if (PathEquals(request.Path, "/api/v1/equalizer/presets") && IsGet(request))
+                return await CommandResponseAsync("getEqualizer", new JObject(), request);
+            if (PathEquals(request.Path, "/api/v1/equalizer/presets") && IsPost(request))
+                return await CommandResponseAsync("saveEqualizerPreset", ReadJsonBody(request), request);
+            if (request.Path.StartsWith("/api/v1/equalizer/presets/", StringComparison.OrdinalIgnoreCase) && IsDelete(request))
+            {
+                var name = Uri.UnescapeDataString(request.Path["/api/v1/equalizer/presets/".Length..]);
+                return await CommandResponseAsync("deleteEqualizerPreset", new JObject { ["name"] = name }, request);
+            }
+            if (PathEquals(request.Path, "/api/v1/equalizer/reset") && IsPost(request))
+                return await CommandResponseAsync("resetEqualizer", new JObject(), request);
+
+            if (PathEquals(request.Path, "/api/v1/sleep-timer") && IsGet(request))
+                return await CommandResponseAsync("getSleepTimer", new JObject(), request);
+            if (PathEquals(request.Path, "/api/v1/sleep-timer") && IsPost(request))
+                return await CommandResponseAsync("startSleepTimer", ReadJsonBody(request), request);
+            if (PathEquals(request.Path, "/api/v1/sleep-timer") && IsDelete(request))
+                return await CommandResponseAsync("cancelSleepTimer", new JObject(), request);
+            if (PathEquals(request.Path, "/api/v1/sleep-timer/extend") && IsPost(request))
+                return await CommandResponseAsync("extendSleepTimer", ReadJsonBody(request), request);
+            if (PathEquals(request.Path, "/api/v1/sleep-timer/options") && (IsPost(request) || IsPut(request)))
+                return await CommandResponseAsync("setSleepTimerOptions", ReadJsonBody(request), request);
+
+            if (PathEquals(request.Path, "/api/v1/analysis") && IsGet(request))
+                return await CommandResponseAsync("getSongAnalysis", QueryObject(request), request);
+            if (PathEquals(request.Path, "/api/v1/analysis") && IsPost(request))
+                return await CommandResponseAsync("analyzeSong", ReadJsonBody(request), request);
+            if (PathEquals(request.Path, "/api/v1/analysis/cache") && IsGet(request))
+                return await CommandResponseAsync("getSongAnalysisCache", new JObject(), request);
+            if (request.Path.StartsWith("/api/v1/analysis/", StringComparison.OrdinalIgnoreCase) && IsGet(request))
+            {
+                var key = Uri.UnescapeDataString(request.Path["/api/v1/analysis/".Length..]);
+                return await CommandResponseAsync("getSongAnalysis", new JObject { ["analysisKey"] = key }, request);
+            }
+
             if (PathEquals(request.Path, "/api/v1/library/songs"))
                 return await CommandResponseAsync("getLibrarySongs", QueryObject(request), request);
             if (PathEquals(request.Path, "/api/v1/library/stats"))
