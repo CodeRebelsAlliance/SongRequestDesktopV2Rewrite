@@ -22,6 +22,11 @@
 }
 #ad-overlay.is-open { opacity: 1; }
 
+/* The explicit display:flex above outranks the browser's [hidden] rule, which
+   left an invisible overlay swallowing every click after a modal was closed.
+   Keep the closed/hidden state authoritative on desktop and mobile. */
+#ad-overlay[hidden] { display: none !important; pointer-events: none; }
+
 #ad-panel {
   width: min(780px, 100%);
   max-height: min(86vh, 900px);

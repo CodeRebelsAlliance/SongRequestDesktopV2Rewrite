@@ -110,6 +110,20 @@ test('analysis is reachable per song on both platforms', () => {
   assert.match(mobile, /openAnalysis\(\{ songId: songId \}\)/);
 });
 
+test('closing an advanced-audio modal cannot leave an invisible click blocker', () => {
+  const css = read('advancedaudio.css');
+  const js = read('advancedaudio.js');
+
+  // display:flex on #ad-overlay overrides the browser's [hidden] rule unless the
+  // hidden state is made authoritative. The stuck overlay used to swallow every
+  // click in the desktop music player after closing the equalizer/sleep/analysis
+  // panel.
+  assert.match(css, /#ad-overlay\[hidden\]\s*\{[^}]*display:\s*none\s*!important/s);
+  assert.match(css, /#ad-overlay\[hidden\]\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(js, /overlay\.hidden = true/);
+  assert.match(js, /overlay\.hidden = false/);
+});
+
 test('advanced audio is exposed through the local API and command catalogue', () => {
   const api = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'AppIntegrationServer.Api.cs'), 'utf8');
   const catalog = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'CommandCatalog.cs'), 'utf8');
