@@ -26,7 +26,13 @@
     karaokeMode: false,
     analysisPending: false,
     analysisPendingProgress: 0,
-    analysisPendingSince: 0
+    analysisPendingSince: 0,
+    karaokeGenerating: false,
+    karaokeProgress: 0,
+    karaokeStage: '',
+    karaokeError: '',
+    karaokeTitle: '',
+    karaokeClearTimer: null
   };
   var dom = null;
 
@@ -134,6 +140,9 @@
           break;
         case 'karaokeModeChanged':
           applyKaraokeMode(data.enabled === true);
+          break;
+        case 'karaokeGenerationProgress':
+          handleKaraokeGeneration(data);
           break;
         case 'refresh':
           refreshStates();
@@ -1382,6 +1391,138 @@
     upsertBpmPill('player-bar-quality', 'ad-bpm-player', bpm);
     upsertBpmPill('expanded-quality', 'ad-bpm-expanded', bpm);
     updateMobileBpmBadge(bpm);
+  }
+
+  function handleKaraokeGeneration(data) {
+    if (!data) return;
+    if (state.karaokeClearTimer) {
+      clearTimeout(state.karaokeClearTimer);
+      state.karaokeClearTimer = null;
+    }
+
+    state.karaokeTitle = data.title || state.karaokeTitle || '';
+    if (data.error) {
+      state.karaokeGenerating = false;
+      state.karaokeProgress = 0;
+      state.karaokeError = data.error;
+      state.karaokeStage = 'Karaoke generation failed';
+    } else if ((Number(data.progress) || 0) >= 1) {
+      state.karaokeGenerating = false;
+      state.karaokeProgress = 1;
+      state.karaokeError = '';
+      state.karaokeStage = 'Karaoke ready';
+      state.karaokeClearTimer = setTimeout(function () {
+        state.karaokeProgress = 0;
+        state.karaokeStage = '';
+        updateKaraokePill();
+      }, 2500);
+    } else if ((Number(data.progress) || 0) > 0 || data.stage) {
+      state.karaokeGenerating = true;
+      state.karaokeProgress = Number(data.progress) || 0;
+      state.karaokeError = '';
+      state.karaokeStage = data.stage || 'Creating karaoke version';
+    } else {
+      state.karaokeGenerating = false;
+      state.karaokeProgress = 0;
+      state.karaokeError = '';
+      state.karaokeStage = '';
+    }
+    updateKaraokePill();
+  }
+
+  function updateKaraokePill() {
+    var progress = Math.max(0, Math.min(100, Math.round((state.karaokeProgress || 0) * 100)));
+    var visible = state.karaokeGenerating || !!state.karaokeError || progress >= 100;
+    var html;
+    if (state.karaokeError) {
+      html = '<i class="fas fa-triangle-exclamation"></i> Karaoke failed';
+    } else if (state.karaokeGenerating) {
+      html = '<i class="fas fa-circle-notch fa-spin"></i> Karaoke ' + progress + '%';
+    } else {
+      html = '<i class="fas fa-check"></i> Karaoke ready';
+    }
+    var title = state.karaokeError || (state.karaokeTitle
+      ? state.karaokeTitle + ' · ' + (state.karaokeStage || 'Creating karaoke version')
+      : (state.karaokeStage || 'Creating karaoke version'));
+
+    upsertKaraokePill('player-bar-quality', 'ad-karaoke-player', visible, html, title);
+    upsertKaraokePill('expanded-quality', 'ad-karaoke-expanded', visible, html, title);
+    updateMobileKaraoke(visible, html, title);
+  }
+
+  function upsertKaraokePill(anchorId, id, visible, html, title) {
+    var doc = global.document;
+    if (!doc) return;
+    var anchor = doc.getElementById(anchorId);
+    if (!anchor) return;
+    var pill = doc.getElementById(id);
+    if (!visible) {
+      if (pill) pill.remove();
+      return;
+    }
+    if (!pill) {
+      pill = doc.createElement('span');
+      pill.id = id;
+      pill.className = 'pill ad-karaoke-pending' + (state.karaokeError ? ' is-error' : '');
+      if (anchor.parentNode) anchor.parentNode.insertBefore(pill, anchor.nextSibling);
+    }
+    pill.classList.toggle('is-error', !!state.karaokeError);
+    if (pill.innerHTML !== html) pill.innerHTML = html;
+    pill.title = title;
+  }
+
+  function updateMobileKaraoke(visible, html, title) {
+    var doc = global.document;
+    if (!doc) return;
+    var top = doc.querySelector('.mm-player-top');
+    var pill = doc.getElementById('ad-karaoke-pill');
+    if (top) {
+      if (!pill) {
+        pill = doc.createElement('span');
+        pill.id = 'ad-karaoke-pill';
+        pill.className = 'mm-pill-btn ad-karaoke-pending';
+        top.appendChild(pill);
+      }
+      pill.hidden = !visible;
+      if (visible && pill.innerHTML !== html) pill.innerHTML = html;
+      pill.title = title;
+      pill.classList.toggle('is-error', !!state.karaokeError);
+    }
+
+    // On mobile the player tab may not be the visible tab (e.g. starting a song
+    // from the library). Keep a floating indicator visible during the delayed
+    // start as well.
+    var globalPill = doc.getElementById('ad-karaoke-global');
+    if (!globalPill) {
+      globalPill = doc.createElement('div');
+      globalPill.id = 'ad-karaoke-global';
+      globalPill.className = 'ad-karaoke-global ad-karaoke-pending';
+      doc.body.appendChild(globalPill);
+    }
+    var playerView = doc.getElementById('mm-view-player');
+    var playerVisible = playerView && !playerView.hidden;
+    globalPill.hidden = !visible || playerVisible;
+    if (visible && globalPill.innerHTML !== html) globalPill.innerHTML = html;
+    globalPill.title = title;
+    globalPill.classList.toggle('is-error', !!state.karaokeError);
+
+    var meta = doc.getElementById('mm-options-meta');
+    if (meta) {
+      var badge = doc.getElementById('ad-karaoke-mobile');
+      if (!visible) {
+        if (badge) badge.remove();
+      } else {
+        if (!badge) {
+          badge = doc.createElement('span');
+          badge.id = 'ad-karaoke-mobile';
+          badge.className = 'mm-badge ad-karaoke-pending';
+          meta.appendChild(badge);
+        }
+        badge.classList.toggle('is-error', !!state.karaokeError);
+        if (badge.innerHTML !== html) badge.innerHTML = html;
+        badge.title = title;
+      }
+    }
   }
 
   function updateAnalysisPendingUi() {

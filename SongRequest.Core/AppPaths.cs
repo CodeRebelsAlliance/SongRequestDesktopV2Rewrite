@@ -37,6 +37,12 @@ public static class AppPaths
     /// <summary>Disk cache of BPM/loudness/drop analyses (one JSON document).</summary>
     public static string AnalysisCachePath => Path.Combine(AppDataDir, "song-analysis-cache.json");
 
+    /// <summary>Folder holding generated karaoke/instrumental versions.</summary>
+    public static string KaraokePath => Path.Combine(DataRoot, "karaoke");
+
+    /// <summary>Index linking source songs to generated karaoke versions.</summary>
+    public static string KaraokeIndexPath => Path.Combine(AppDataDir, "karaoke-versions.json");
+
     /// <summary>
     /// The pre-announcement chime. Ships next to the desktop executable; on mobile
     /// the host materialises it from the app package into the data root, which is
@@ -205,7 +211,7 @@ public static class AppPaths
         AppDataDir = root;
         LocalAppDataDir = root;
 
-        foreach (var dir in new[] { DownloadPath, LibraryDataDir, AppDataDir, LocalAppDataDir })
+        foreach (var dir in new[] { DownloadPath, LibraryDataDir, AppDataDir, LocalAppDataDir, KaraokePath })
         {
             try { Directory.CreateDirectory(dir); } catch { }
         }

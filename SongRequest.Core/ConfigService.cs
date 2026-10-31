@@ -54,6 +54,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _autoAnalyzeLibraryOnAdd = true;
         private bool _autoAnalyzeLibraryOnAlgorithmUpdate = true;
         private bool _karaokeMode = false;
+        private bool _playKaraokeVersions = false;
 
         // Local integration servers (HTTP/WebSocket API and MCP). Both are off by
         // default and bind to loopback only until the user explicitly changes it.
@@ -391,6 +392,16 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _karaokeMode;
             set => SetField(ref _karaokeMode, value);
+        }
+
+        /// <summary>
+        /// Play the generated instrumental/karaoke file instead of the original when
+        /// one is available (and generate it first when missing).
+        /// </summary>
+        public bool PlayKaraokeVersions
+        {
+            get => _playKaraokeVersions;
+            set => SetField(ref _playKaraokeVersions, value);
         }
 
         /// <summary>

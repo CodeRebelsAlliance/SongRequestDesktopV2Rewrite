@@ -299,6 +299,8 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Chapter lyrics UI | J | desktop/mobile/presentation lyrics receive colour-coded chapter labels and per-line chapter data; timed lines carry their timestamps |
 | Karaoke timing | U | syllable/novelty-based word timings stay monotonic inside lyric lines; long instrumental gaps become pauses; fallback works without analysis |
 | Karaoke UI | J | shared module renders word spans, sung/active states and animated pause bars; pages load it and expose the persisted toggle |
+| Vocal remover | U | stereo centre-channel suppression lowers a centred vocal and keeps side content; output is a playable WAV |
+| Karaoke versions | U | generation links/versions the file, reuses current results, deletes on song removal, and playback waits for the prepared path |
 | Auto-analysis setting | U | persisted through `saveSettings`/`getSettings`; cached/auto results are pushed for the current track |
 | Analysis cache | U | fresh results are reused, persisted and re-loaded; `force` re-analyses; algorithm-version mismatch invalidates; deleting a library song deletes its analysis |
 | Library pre-analysis | U | background pass analyzes missing songs, reports progress, skips current analyses, and stops/queues safely |

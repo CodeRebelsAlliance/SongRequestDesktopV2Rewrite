@@ -2276,6 +2276,13 @@
       startYouTubeDownload(ytEl, ytAction);
     } else if (action === 'analyze') {
       if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openAnalysis({ songId: songId });
+    } else if (action === 'karaoke') {
+      hostRequest('generateKaraokeVersion', { songId: songId }, 30 * 60 * 1000)
+        .then(function (result) {
+          if (result && result.success) toast('Karaoke version ready', 'success');
+          else toast((result && result.error) || 'Karaoke generation failed', 'error');
+        })
+        .catch(function (error) { toast(error.message, 'error'); });
     } else if (action === 'play') {
       hostSend('playLibrarySong', { songId: songId });
     } else if (action === 'playNext') {

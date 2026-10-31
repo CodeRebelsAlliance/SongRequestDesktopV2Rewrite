@@ -410,6 +410,7 @@
       document.getElementById('s-normalize-volume').checked = cfg.normalizeVolume ?? false;
       document.getElementById('s-auto-analyze').checked = cfg.autoAnalyzeSongs ?? true;
       document.getElementById('s-karaoke-mode').checked = cfg.karaokeMode === true;
+      document.getElementById('s-play-karaoke').checked = cfg.playKaraokeVersions === true;
       document.getElementById('s-caption-fallback').checked = cfg.useCaptionLyricsFallback ?? false;
       document.getElementById('s-enable-announcements').checked = cfg.enableAnnouncements ?? false;
       document.getElementById('s-autopilot').checked = cfg.autoEnqueue ?? false;
@@ -565,6 +566,7 @@
         normalizeVolume: document.getElementById('s-normalize-volume').checked,
         autoAnalyzeSongs: document.getElementById('s-auto-analyze').checked,
         karaokeMode: document.getElementById('s-karaoke-mode').checked,
+        playKaraokeVersions: document.getElementById('s-play-karaoke').checked,
         autoAnalyzeLibraryOnAdd: document.getElementById('s-library-auto-analyze-add').checked,
         autoAnalyzeLibraryOnAlgorithmUpdate: document.getElementById('s-library-auto-analyze-version').checked,
         useCaptionLyricsFallback: document.getElementById('s-caption-fallback').checked,

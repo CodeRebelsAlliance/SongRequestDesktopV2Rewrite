@@ -228,6 +228,12 @@ The player (desktop and mobile) shares the same three audio tools:
   countdown/progress bar in long instrumental pauses only while that pause is
   playing. The same renderer is used by the desktop player, mobile player and
   presentation/TV page.
+- **On-device karaoke versions**: generate instrumental mixes from stereo songs
+  (spectral center-channel suppression with bass preservation) on request, or
+  automatically when “Play karaoke versions” is enabled. Files are versioned and
+  linked to their source songs, regenerated after algorithm upgrades, deleted
+  with the song, and exposed through the API. A progress pill appears while
+  generation delays playback.
 
 All three are exposed through the command dispatcher (and therefore the HTTP
 API, WebSocket events and MCP) — see

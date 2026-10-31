@@ -213,6 +213,10 @@ the badges in the music player UI.
 | `GET` | `/api/v1/library/analysis` | Background library-analysis state/progress. |
 | `POST` | `/api/v1/library/analysis` | Start pre-analysis of the library (`{ "force": false }`). |
 | `DELETE` | `/api/v1/library/analysis` | Stop the running library analysis. |
+| `POST` | `/api/v1/karaoke/generate` | Generate a versioned instrumental/karaoke file for `{ "songId" }` or `{ "songPath" }` (long-running). |
+| `GET` | `/api/v1/karaoke?songId=...` | Read the linked karaoke version for a song. |
+| `DELETE` | `/api/v1/karaoke?songId=...` | Delete a linked karaoke file. |
+| `GET` | `/api/v1/karaoke/versions` | List every linked karaoke version with its algorithm version. |
 | `GET` | `/api/v1/analysis/{key}` | One cached analysis by the `key` returned from a POST. |
 
 The analysis result contains `bpm`, `bpmConfidence`, `beatOffsetSeconds`,
@@ -395,6 +399,7 @@ Live events include:
 | `equalizerUpdate` | Equalizer enabled flag, pre-amp or band curve changed. |
 | `songAnalysisProgress` / `songAnalysisUpdate` | Background analysis progress and the finished BPM/loudness/drop result. |
 | `libraryAnalysisProgress` | Full-library pre-analysis progress (`total`, `completed`, `analyzed`, `failed`, `currentSong`, `status`). |
+| `karaokeGenerationProgress` | On-device instrumental generation progress (`title`, `progress`, `stage`, `error`). |
 | `updateProgress`, `toolProgress` | Self-update and tool-download progress. |
 
 Example browser client:

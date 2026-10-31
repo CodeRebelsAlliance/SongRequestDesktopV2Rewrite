@@ -251,6 +251,10 @@ public static class CommandCatalog
         Add("startLibraryAnalysis", "Advanced Audio", "Start background analysis of the whole library.", new[] { "force" });
         Add("stopLibraryAnalysis", "Advanced Audio", "Stop background library analysis.", null);
         Add("clearSongAnalysisCache", "Advanced Audio", "Delete every cached song analysis.", null, true);
+        Add("generateKaraokeVersion", "Karaoke", "Generate an on-device instrumental/karaoke version (may take a while).", new[] { "songId", "songPath", "force" });
+        Add("getKaraokeVersion", "Karaoke", "Read the linked karaoke version for a song.", new[] { "songId", "songPath" });
+        Add("getKaraokeVersions", "Karaoke", "List every linked karaoke version.", null);
+        Add("deleteKaraokeVersion", "Karaoke", "Delete a linked karaoke version.", new[] { "songId", "songPath" }, true);
 
         return list
             .GroupBy(c => c.Name, StringComparer.Ordinal)

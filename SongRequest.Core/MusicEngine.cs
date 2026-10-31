@@ -607,6 +607,16 @@ public sealed class MusicEngine
     /// <summary>Creates the audio output; tests replace it to avoid touching real devices.</summary>
     public Func<IAudioOutput> OutputFactory { get; set; } = AudioOutputFactory.Create;
 
+    /// <summary>
+    /// Optional host hook that can return an alternate playback file (for example a
+    /// generated karaoke version). It may take as long as needed; the player waits
+    /// for it so a karaoke version is ready before the song starts.
+    /// </summary>
+    public Func<Song, CancellationToken, Task<string?>>? PreparePlaybackPathAsync { get; set; }
+
+    private int _playRequestVersion;
+    private CancellationTokenSource? _playPrepareCts;
+
     public double CrossfadeSeconds { get; set; } = 4;
     public double CrossfadeMax { get; set; } = 10;
     public bool IsUserSeeking { get; set; }
@@ -755,8 +765,50 @@ public sealed class MusicEngine
     public void PlaySong(Song s)
     {
         if (s == null || !System.IO.File.Exists(s.songPath)) return;
-        var reader = AudioSourceFactory.Open(s.songPath);
-        StartPlayback(reader);
+
+        int request = System.Threading.Interlocked.Increment(ref _playRequestVersion);
+        var cts = new CancellationTokenSource();
+        var previous = System.Threading.Interlocked.Exchange(ref _playPrepareCts, cts);
+        try { previous?.Cancel(); previous?.Dispose(); } catch { }
+
+        _ = PlaySongPreparedAsync(s, request, cts);
+    }
+
+    private async Task PlaySongPreparedAsync(Song song, int request, CancellationTokenSource cts)
+    {
+        try
+        {
+            var path = await ResolvePlaybackPathAsync(song, cts.Token).ConfigureAwait(false);
+            cts.Token.ThrowIfCancellationRequested();
+            if (request != System.Threading.Volatile.Read(ref _playRequestVersion)) return;
+            if (!System.IO.File.Exists(path)) return;
+
+            var reader = AudioSourceFactory.Open(path);
+            StartPlayback(reader);
+        }
+        catch (OperationCanceledException) { }
+        catch { }
+        finally
+        {
+            try { cts.Dispose(); } catch { }
+        }
+    }
+
+    private async Task<string> ResolvePlaybackPathAsync(Song song, CancellationToken token)
+    {
+        string path = song.songPath;
+        var prepare = PreparePlaybackPathAsync;
+        if (prepare == null) return path;
+
+        try
+        {
+            var prepared = await prepare(song, token).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(prepared)) path = prepared;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { }
+
+        return path;
     }
 
     public void TogglePlayPause()
@@ -853,12 +905,7 @@ public sealed class MusicEngine
 
             if (RepeatEnabled && Queue.Count > 0)
             {
-                try
-                {
-                    var reader = AudioSourceFactory.Open(Queue[0].songPath);
-                    StartPlayback(reader);
-                }
-                catch { StopPlayback(); QueueEmptied?.Invoke(); }
+                _ = RestartCurrentAsync();
             }
             else if (!IsCrossfading && Queue.Count > 1)
             {
@@ -880,11 +927,14 @@ public sealed class MusicEngine
         else Handle();
     }
 
-    private void RestartCurrent()
+    private async Task RestartCurrentAsync()
     {
         try
         {
-            var reader = AudioSourceFactory.Open(Queue[0].songPath);
+            if (Queue.Count == 0) return;
+            var path = await ResolvePlaybackPathAsync(Queue[0], CancellationToken.None).ConfigureAwait(false);
+            if (!System.IO.File.Exists(path)) { StopPlayback(); QueueEmptied?.Invoke(); return; }
+            var reader = AudioSourceFactory.Open(path);
             StartPlayback(reader);
         }
         catch { StopPlayback(); QueueEmptied?.Invoke(); }
@@ -944,18 +994,18 @@ public sealed class MusicEngine
         {
             if (remaining <= cross && remaining > 0.15)
             {
-                if (RepeatEnabled) RestartCurrent();
+                if (RepeatEnabled) { _ = RestartCurrentAsync(); return; }
                 else _ = BeginCrossfadeToNext(Queue[1]);
             }
             else if (remaining <= 0.15)
             {
-                if (RepeatEnabled) RestartCurrent();
+                if (RepeatEnabled) { _ = RestartCurrentAsync(); return; }
                 else _ = AdvanceToNextImmediate();
             }
         }
         else if (Queue.Count == 1 && remaining <= 0.15)
         {
-            if (RepeatEnabled) { RestartCurrent(); return; }
+            if (RepeatEnabled) { _ = RestartCurrentAsync(); return; }
             if (PlaylistQueue.Count > 0) { AdvanceFromPlaylistQueue(); return; }
             StopPlayback();
             QueueEmptied?.Invoke();
@@ -1016,7 +1066,8 @@ public sealed class MusicEngine
 
         float targetNextVolume = CalculateNormalizedVolume(nextSong, Volume);
 
-        NextReader = AudioSourceFactory.Open(nextSong.songPath);
+        NextReader = AudioSourceFactory.Open(
+            await ResolvePlaybackPathAsync(nextSong, CancellationToken.None).ConfigureAwait(false));
         var nextSp = GetSampleProviderCompatible(NextReader);
         NextVolProvider = new VolumeSampleProvider(nextSp) { Volume = 0f };
 
@@ -1104,7 +1155,8 @@ public sealed class MusicEngine
             if (Queue.Count > 0) Queue.RemoveAt(0);
             RefillQueueFromPlaylist();
 
-            var reader = AudioSourceFactory.Open(nextSong.songPath);
+            var nextPath = await ResolvePlaybackPathAsync(nextSong, CancellationToken.None).ConfigureAwait(false);
+            var reader = AudioSourceFactory.Open(nextPath);
             StartPlayback(reader);
 
             if (Queue.Count > 0) NowPlayingChanged?.Invoke(Queue[0]);

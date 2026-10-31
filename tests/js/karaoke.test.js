@@ -40,6 +40,32 @@ test('karaoke toggle is exposed in settings and persisted', () => {
   assert.match(interop, /karaokeModeChanged/);
 });
 
+test('karaoke version generation is linked, versioned and shown as a loading pill', () => {
+  const config = fs.readFileSync(path.join(root, 'SongRequest.Core', 'ConfigService.cs'), 'utf8');
+  const service = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'KaraokeVersionService.cs'), 'utf8');
+  const remover = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'VocalRemover.cs'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'SongRequest.Core', 'MusicEngine.cs'), 'utf8');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  const js = read('advancedaudio.js');
+  const desktop = read('index.html');
+  const mobile = read('mobilemusic.js');
+
+  assert.match(config, /PlayKaraokeVersions/);
+  assert.match(service, /CurrentVersion/);
+  assert.match(service, /EnsureAsync/);
+  assert.match(service, /Delete/);
+  assert.match(remover, /AlgorithmVersion/);
+  assert.match(engine, /PreparePlaybackPathAsync/);
+  assert.match(interop, /PrepareKaraokePlaybackAsync/);
+  assert.match(interop, /karaokeGenerationProgress/);
+  assert.match(interop, /generateKaraokeVersion/);
+  assert.match(js, /handleKaraokeGeneration/);
+  assert.match(js, /ad-karaoke-pill/);
+  assert.match(js, /Karaoke failed/);
+  assert.match(desktop, /id="s-play-karaoke"/);
+  assert.match(mobile, /mm-menu-play-karaoke/);
+});
+
 test('karaoke timings are generated in the core from analysis and timed lyrics', () => {
   const core = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'KaraokeLyrics.cs'), 'utf8');
   const analyzer = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'SongAnalyzer.cs'), 'utf8');

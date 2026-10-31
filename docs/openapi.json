@@ -44,6 +44,9 @@
     },
     {
       "name": "Advanced Audio"
+    },
+    {
+      "name": "Karaoke"
     }
   ],
   "security": [
@@ -3325,6 +3328,76 @@
         "summary": "Stop background library analysis",
         "tags": [
           "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/karaoke/generate": {
+      "post": {
+        "summary": "Generate a versioned instrumental/karaoke file",
+        "tags": [
+          "Karaoke"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "songId": {
+                    "type": "string"
+                  },
+                  "songPath": {
+                    "type": "string"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/karaoke": {
+      "get": {
+        "summary": "Read the linked karaoke version for a song",
+        "tags": [
+          "Karaoke"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a linked karaoke version",
+        "tags": [
+          "Karaoke"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/karaoke/versions": {
+      "get": {
+        "summary": "List every linked karaoke version",
+        "tags": [
+          "Karaoke"
         ],
         "responses": {
           "200": {

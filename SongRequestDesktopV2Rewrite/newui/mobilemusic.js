@@ -1510,6 +1510,8 @@
             '<input id="mm-menu-auto-analyze" type="checkbox"' + ((!cfg || cfg.autoAnalyzeSongs !== false) ? ' checked' : '') + '></div>' +
           '<div class="mm-sheet-row"><div class="mm-sheet-label">Karaoke mode<div class="mm-sheet-sub">Word-by-word lyrics and pause bars</div></div>' +
             '<input id="mm-menu-karaoke" type="checkbox"' + (cfg && cfg.karaokeMode ? ' checked' : '') + '></div>' +
+          '<div class="mm-sheet-row"><div class="mm-sheet-label">Play karaoke versions<div class="mm-sheet-sub">Generate and play instrumental tracks</div></div>' +
+            '<input id="mm-menu-play-karaoke" type="checkbox"' + (cfg && cfg.playKaraokeVersions ? ' checked' : '') + '></div>' +
           '<h3>Audio output</h3>' +
           '<div class="mm-sheet-row"><select id="mm-menu-device">' + deviceOptions + '</select></div>' +
           '<h3>Sound</h3>' +
@@ -1555,6 +1557,12 @@
     if (karaoke) karaoke.addEventListener('change', function () {
       send('saveSettings', { settings: { karaokeMode: this.checked } });
       if (window.SongRequestKaraoke) window.SongRequestKaraoke.setEnabled(this.checked);
+    });
+
+    var playKaraoke = $('mm-menu-play-karaoke');
+    if (playKaraoke) playKaraoke.addEventListener('change', function () {
+      send('saveSettings', { settings: { playKaraokeVersions: this.checked } });
+      toast(this.checked ? 'Karaoke playback enabled' : 'Original songs enabled', 'success');
     });
 
     var device = $('mm-menu-device');
@@ -1624,6 +1632,7 @@
         '<h3>Playback</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-auto-analyze"' + (cfg.autoAnalyzeSongs !== false ? ' checked' : '') + '> Automatically analyze playing songs</label>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-karaoke"' + (cfg.karaokeMode === true ? ' checked' : '') + '> Karaoke mode (word-by-word lyrics and pause bars)</label>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-play-karaoke"' + (cfg.playKaraokeVersions === true ? ' checked' : '') + '> Play karaoke (instrumental) versions of songs</label>' +
         '<div class="mm-sheet-note" style="margin-top:4px">Shows BPM, song chapters and drops on the player progress bar from the cached analysis.</div>' +
         '<h3>Library analysis</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-library-analyze-add"' + (cfg.autoAnalyzeLibraryOnAdd !== false ? ' checked' : '') + '> Analyze new library songs automatically</label>' +
@@ -1745,6 +1754,7 @@
         autoGrabCookies: $('mm-set-auto-yt').checked,
         autoAnalyzeSongs: $('mm-set-auto-analyze').checked,
         karaokeMode: $('mm-set-karaoke').checked,
+        playKaraokeVersions: $('mm-set-play-karaoke').checked,
         autoAnalyzeLibraryOnAdd: $('mm-set-library-analyze-add').checked,
         autoAnalyzeLibraryOnAlgorithmUpdate: $('mm-set-library-analyze-version').checked,
         libraryAutoAddDownloads: $('mm-set-auto-add').checked,
@@ -1855,6 +1865,7 @@
       '<button class="mm-sheet-action" data-song-action="next"><i class="fas fa-forward-step"></i> Play next</button>' +
       '<button class="mm-sheet-action" data-song-action="queue"><i class="fas fa-list"></i> Add to queue</button>' +
       '<button class="mm-sheet-action" data-song-action="analyze"><i class="fas fa-chart-line"></i> Analyse track</button>' +
+      '<button class="mm-sheet-action" data-song-action="karaoke"><i class="fas fa-microphone-slash"></i> Create karaoke version</button>' +
       '<button class="mm-sheet-action" data-song-action="playlist"><i class="fas fa-plus"></i> Add to playlist</button>' +
       '<button class="mm-sheet-action is-danger" data-song-action="delete"><i class="fas fa-trash-alt"></i> Remove from library</button>'
     );
@@ -1881,6 +1892,15 @@
       case 'analyze':
         closeSheet();
         if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openAnalysis({ songId: songId });
+        break;
+      case 'karaoke':
+        closeSheet();
+        request('generateKaraokeVersion', { songId: songId }, 30 * 60 * 1000)
+          .then(function (result) {
+            if (result && result.success) toast('Karaoke version ready', 'success');
+            else toast((result && result.error) || 'Karaoke generation failed', 'error');
+          })
+          .catch(function (error) { toast(error.message, 'error'); });
         break;
       case 'playlist':
         openPlaylistPicker(songId);

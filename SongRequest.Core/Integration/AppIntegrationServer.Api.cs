@@ -174,6 +174,15 @@ public sealed partial class AppIntegrationServer
                 return await CommandResponseAsync("getSongAnalysisCache", new JObject(), request);
             if (PathEquals(request.Path, "/api/v1/analysis/cache") && IsDelete(request))
                 return await CommandResponseAsync("clearSongAnalysisCache", new JObject(), request);
+
+            if (PathEquals(request.Path, "/api/v1/karaoke") && IsGet(request))
+                return await CommandResponseAsync("getKaraokeVersion", QueryObject(request), request);
+            if (PathEquals(request.Path, "/api/v1/karaoke") && IsDelete(request))
+                return await CommandResponseAsync("deleteKaraokeVersion", QueryObject(request), request);
+            if (PathEquals(request.Path, "/api/v1/karaoke/generate") && IsPost(request))
+                return await CommandResponseAsync("generateKaraokeVersion", ReadJsonBody(request), request);
+            if (PathEquals(request.Path, "/api/v1/karaoke/versions") && IsGet(request))
+                return await CommandResponseAsync("getKaraokeVersions", new JObject(), request);
             if (request.Path.StartsWith("/api/v1/analysis/", StringComparison.OrdinalIgnoreCase) && IsGet(request))
             {
                 var key = Uri.UnescapeDataString(request.Path["/api/v1/analysis/".Length..]);

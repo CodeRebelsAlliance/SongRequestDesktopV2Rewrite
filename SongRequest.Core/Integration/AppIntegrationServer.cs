@@ -41,6 +41,7 @@ public sealed partial class AppIntegrationServer : IDisposable
         "libraryScanProgress",
         "libraryScanCompleted",
         "libraryAnalysisProgress",
+        "karaokeGenerationProgress",
         "libraryChanged",
         "midiActivity",
         "soundboardPlayback",

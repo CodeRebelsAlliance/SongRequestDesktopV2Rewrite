@@ -160,8 +160,10 @@ public class YoutubeFormInterop
     // timer and equalizer.
     private readonly SongAnalysisService _analysis = SongAnalysisService.Instance;
     private readonly LibraryAnalysisService _libraryAnalysis;
+    private readonly KaraokeVersionService _karaoke = KaraokeVersionService.Instance;
 
     public LibraryAnalysisService LibraryAnalysis => _libraryAnalysis;
+    public KaraokeVersionService KaraokeVersions => _karaoke;
 
     // Announcement engine (lazily created; kept alive across window open/close)
     private AnnouncementEngine? _announcement;
@@ -221,13 +223,24 @@ public class YoutubeFormInterop
             }
             catch { }
         };
-        _libraryService.SongRemoved += song => _libraryAnalysis.RemoveSong(song);
+        _libraryService.SongRemoved += song =>
+        {
+            _libraryAnalysis.RemoveSong(song);
+            try { _karaoke.Delete(song.FilePath); } catch { }
+        };
         _libraryAnalysis.ProgressChanged += progress =>
         {
             var json = CamelCase(progress);
             if (json == null) return;
             try { SendEvent("libraryAnalysisProgress", json); } catch { }
             try { MusicPlayerSendEvent("libraryAnalysisProgress", json); } catch { }
+        };
+        _karaoke.Progress += progress =>
+        {
+            var json = CamelCase(progress);
+            if (json == null) return;
+            try { SendEvent("karaokeGenerationProgress", json); } catch { }
+            try { MusicPlayerSendEvent("karaokeGenerationProgress", json); } catch { }
         };
         try
         {
@@ -272,6 +285,8 @@ public class YoutubeFormInterop
                 {
                     if (song != null) SendOrStartSongAnalysis(song);
                 };
+
+                mp.PreparePlaybackPathAsync = PrepareKaraokePlaybackAsync;
                 _analysis.Progress += progress =>
                     MusicPlayerSendEvent("songAnalysisProgress", new
                     {
@@ -864,6 +879,45 @@ public class YoutubeFormInterop
                             .ToList()
                     }));
                     return;
+                case "generateKaraokeVersion":
+                {
+                    var target = ResolveAnalysisTarget(msg);
+                    if (target == null)
+                    {
+                        SendResponse(id, new { success = false, error = "No song to generate. Pass songId/songPath." });
+                        return;
+                    }
+                    bool force = msg["force"]?.ToObject<bool>() ?? false;
+                    var version = await _karaoke.EnsureAsync(
+                        target.Value.Path, target.Value.Title, target.Value.Artist, force).ConfigureAwait(false);
+                    SendResponse(id, version == null
+                        ? new { success = false, error = "Karaoke generation failed." }
+                        : new
+                        {
+                            success = true,
+                            sourcePath = version.SourcePath,
+                            karaokePath = version.KaraokePath,
+                            version = version.Version,
+                            createdUtc = version.CreatedUtc
+                        });
+                    return;
+                }
+                case "getKaraokeVersion":
+                {
+                    var target = ResolveAnalysisTarget(msg);
+                    if (target == null) { SendResponse(id, null); return; }
+                    SendResponse(id, CamelCase(_karaoke.Get(target.Value.Path)));
+                    return;
+                }
+                case "getKaraokeVersions":
+                    SendResponse(id, CamelCase(new { versions = _karaoke.All }));
+                    return;
+                case "deleteKaraokeVersion":
+                {
+                    var target = ResolveAnalysisTarget(msg);
+                    SendResponse(id, new { success = target != null && _karaoke.Delete(target.Value.Path) });
+                    return;
+                }
             }
 
             object result;
@@ -2187,6 +2241,33 @@ public class YoutubeFormInterop
         SendQueueUpdate();
         SendPresentationQueueUpdate();
         _ = PrefetchNextLyricsAsync();
+        PrewarmKaraokeVersions();
+    }
+
+    /// <summary>
+    /// Starts karaoke generation for the current/next few queue items so an
+    /// auto-advance does not have to wait for the whole separation at the last
+    /// moment. User-requested playback still waits for the result.
+    /// </summary>
+    private void PrewarmKaraokeVersions()
+    {
+        try
+        {
+            if (ConfigService.Instance.Current?.PlayKaraokeVersions != true) return;
+            var songs = _ytForm.Music.Queue.Take(3).ToList();
+            foreach (var song in songs)
+            {
+                var title = song.Title;
+                var artist = song.Artist;
+                var path = AppPaths.ResolvePortablePath(song.songPath);
+                if (!File.Exists(path) || _karaoke.GetCurrent(path) != null) continue;
+                _ = Task.Run(async () =>
+                {
+                    try { await _karaoke.EnsureAsync(path, title, artist).ConfigureAwait(false); } catch { }
+                });
+            }
+        }
+        catch { }
     }
 
     private void SendQueueUpdate()
@@ -3037,6 +3118,28 @@ public class YoutubeFormInterop
     }
 
     /// <summary>
+    /// Playback hook: when karaoke playback is enabled, generate (or reuse) the
+    /// linked instrumental version before the track starts. The engine waits for
+    /// this task, and progress is streamed to the player pill.
+    /// </summary>
+    private async Task<string?> PrepareKaraokePlaybackAsync(Song song, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (ConfigService.Instance.Current?.PlayKaraokeVersions != true) return null;
+            if (song == null || string.IsNullOrWhiteSpace(song.songPath)) return null;
+
+            var source = AppPaths.ResolvePortablePath(song.songPath);
+            if (!File.Exists(source)) return null;
+
+            var version = await _karaoke.EnsureAsync(
+                source, song.Title, song.Artist, force: false, cancellationToken).ConfigureAwait(false);
+            return version?.KaraokePath;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
     /// Pushes a cached analysis for the just-started track, or starts one in the
     /// background when the auto-analysis setting is on. Failures stay silent: a
     /// track that cannot be decoded simply has no chapters.
@@ -3190,6 +3293,7 @@ public class YoutubeFormInterop
             autoAnalyzeLibraryOnAdd = cfg.AutoAnalyzeLibraryOnAdd,
             autoAnalyzeLibraryOnAlgorithmUpdate = cfg.AutoAnalyzeLibraryOnAlgorithmUpdate,
             karaokeMode = cfg.KaraokeMode,
+            playKaraokeVersions = cfg.PlayKaraokeVersions,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
             systemMediaActive = SystemMediaActive,
@@ -3539,6 +3643,7 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("autoAnalyzeLibraryOnAdd", out var aala)) cfg.AutoAnalyzeLibraryOnAdd = aala.ToObject<bool>();
                 if (settings.TryGetValue("autoAnalyzeLibraryOnAlgorithmUpdate", out var aalau)) cfg.AutoAnalyzeLibraryOnAlgorithmUpdate = aalau.ToObject<bool>();
                 if (settings.TryGetValue("karaokeMode", out var karaoke)) cfg.KaraokeMode = karaoke.ToObject<bool>();
+                if (settings.TryGetValue("playKaraokeVersions", out var playKaraoke)) cfg.PlayKaraokeVersions = playKaraoke.ToObject<bool>();
                 if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
 
                 // Local API / MCP servers. ApplyConfig is called after the update;
@@ -3581,6 +3686,12 @@ public class YoutubeFormInterop
                 var enabled = ConfigService.Instance.Current?.KaraokeMode == true;
                 MusicPlayerSendEvent("karaokeModeChanged", new { enabled });
                 PresentationSendEvent("karaokeModeChanged", new { enabled });
+            }
+
+            if (settings.TryGetValue("playKaraokeVersions", out var playKaraokeSetting) &&
+                playKaraokeSetting.ToObject<bool>())
+            {
+                PrewarmKaraokeVersions();
             }
 
             // Re-register global hotkeys if the toggle changed.

@@ -1,0 +1,286 @@
+using System;
+using System.IO;
+using System.Threading;
+using NAudio.Wave;
+
+namespace SongRequestDesktopV2Rewrite;
+
+/// <summary>
+/// Quality-first on-device vocal removal.
+///
+/// Uses a stereo STFT center-channel suppressor: vocals are normally panned to
+/// the centre, so bins with high left/right coherence are attenuated while
+/// hard-panned instruments and low bass are preserved. The result is a 16-bit
+/// PCM WAV that every platform decoder can play.
+/// </summary>
+public static class VocalRemover
+{
+    public const string AlgorithmVersion = "1.0";
+
+    public static void Process(
+        string inputPath,
+        string outputPath,
+        Action<double, string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var source = AudioSourceFactory.Open(inputPath);
+        var format = source.WaveFormat;
+        if (format.Channels < 2)
+            throw new InvalidOperationException(
+                "Karaoke generation needs a stereo source; this track is mono.");
+
+        int sampleRate = Math.Max(8000, format.SampleRate);
+        int windowSize = sampleRate >= 32000 ? 4096 : 2048;
+        int hop = windowSize / 4;
+        int channels = format.Channels;
+
+        var window = new double[windowSize];
+        for (int i = 0; i < windowSize; i++)
+            window[i] = Math.Sqrt(0.5 - 0.5 * Math.Cos(2 * Math.PI * i / (windowSize - 1)));
+
+        var leftWindow = new double[windowSize];
+        var rightWindow = new double[windowSize];
+        var outLeft = new double[windowSize];
+        var outRight = new double[windowSize];
+        var norm = new double[windowSize];
+        var reL = new double[windowSize];
+        var imL = new double[windowSize];
+        var reR = new double[windowSize];
+        var imR = new double[windowSize];
+        var inputBuffer = new float[windowSize * channels];
+        var mask = new double[windowSize];
+
+        double totalFrames = source.TotalTime > TimeSpan.Zero
+            ? source.TotalTime.TotalSeconds * sampleRate
+            : 0;
+        long emittedFrames = 0;
+        bool sourceEnded = false;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        var tempPath = outputPath + ".part";
+        using var stream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None, 1 << 20);
+        using var writer = new BinaryWriter(stream);
+        WriteWavHeader(writer, sampleRate, 2, 0);
+
+        // Prime the first window.
+        ReadIntoWindow(source, leftWindow, rightWindow, 0, windowSize, inputBuffer, channels);
+
+        while (!sourceEnded)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ProcessWindow(sampleRate, windowSize, hop, window, leftWindow, rightWindow,
+                outLeft, outRight, norm, reL, imL, reR, imR, mask);
+
+            int framesToEmit = hop;
+            if (totalFrames > 0)
+            {
+                long remaining = (long)totalFrames - emittedFrames;
+                if (remaining <= 0) break;
+                if (remaining < framesToEmit) framesToEmit = (int)remaining;
+            }
+
+            for (int i = 0; i < framesToEmit; i++)
+            {
+                double n = norm[i];
+                double l = n > 1e-8 ? outLeft[i] / n : 0;
+                double r = n > 1e-8 ? outRight[i] / n : 0;
+                writer.Write((short)Math.Clamp((int)Math.Round(l * short.MaxValue), short.MinValue, short.MaxValue));
+                writer.Write((short)Math.Clamp((int)Math.Round(r * short.MaxValue), short.MinValue, short.MaxValue));
+            }
+            emittedFrames += framesToEmit;
+
+            // Slide the overlap-add and analysis windows by one hop.
+            Array.Copy(outLeft, hop, outLeft, 0, windowSize - hop);
+            Array.Copy(outRight, hop, outRight, 0, windowSize - hop);
+            Array.Copy(norm, hop, norm, 0, windowSize - hop);
+            Array.Clear(outLeft, windowSize - hop, hop);
+            Array.Clear(outRight, windowSize - hop, hop);
+            Array.Clear(norm, windowSize - hop, hop);
+
+            Array.Copy(leftWindow, hop, leftWindow, 0, windowSize - hop);
+            Array.Copy(rightWindow, hop, rightWindow, 0, windowSize - hop);
+            Array.Clear(leftWindow, windowSize - hop, hop);
+            Array.Clear(rightWindow, windowSize - hop, hop);
+
+            int read = ReadIntoWindow(source, leftWindow, rightWindow, windowSize - hop, hop, inputBuffer, channels);
+            if (read < hop) sourceEnded = true;
+
+            if (totalFrames <= 0 && sourceEnded && emittedFrames >= windowSize)
+                break;
+
+            if (emittedFrames % (hop * 8) == 0)
+            {
+                double pct = totalFrames > 0 ? Math.Clamp(emittedFrames / totalFrames, 0, 1) : 0;
+                progress?.Invoke(0.15 + pct * 0.8, "Separating vocals");
+            }
+        }
+
+        // Flush the final overlap tail: process zero-padded windows until the
+        // accumulated output has been emitted.
+        int guard = 0;
+        while (totalFrames > 0 && emittedFrames < totalFrames && guard++ < 8)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ProcessWindow(sampleRate, windowSize, hop, window, leftWindow, rightWindow,
+                outLeft, outRight, norm, reL, imL, reR, imR, mask);
+            int remaining = (int)Math.Min(hop, totalFrames - emittedFrames);
+            for (int i = 0; i < remaining; i++)
+            {
+                double n = norm[i];
+                double l = n > 1e-8 ? outLeft[i] / n : 0;
+                double r = n > 1e-8 ? outRight[i] / n : 0;
+                writer.Write((short)Math.Clamp((int)Math.Round(l * short.MaxValue), short.MinValue, short.MaxValue));
+                writer.Write((short)Math.Clamp((int)Math.Round(r * short.MaxValue), short.MinValue, short.MaxValue));
+            }
+            emittedFrames += remaining;
+            Array.Copy(outLeft, hop, outLeft, 0, windowSize - hop);
+            Array.Copy(outRight, hop, outRight, 0, windowSize - hop);
+            Array.Copy(norm, hop, norm, 0, windowSize - hop);
+            Array.Clear(outLeft, windowSize - hop, hop);
+            Array.Clear(outRight, windowSize - hop, hop);
+            Array.Clear(norm, windowSize - hop, hop);
+        }
+
+        long dataBytes = stream.Position - 44;
+        writer.Flush();
+        stream.Position = 0;
+        WriteWavHeader(writer, sampleRate, 2, dataBytes);
+        writer.Flush();
+        stream.Position = stream.Length;
+
+        if (File.Exists(outputPath)) File.Delete(outputPath);
+        File.Move(tempPath, outputPath);
+        progress?.Invoke(1.0, "Karaoke version ready");
+    }
+
+    private static int ReadIntoWindow(
+        IAudioSource source,
+        double[] left,
+        double[] right,
+        int frameOffset,
+        int frames,
+        float[] inputBuffer,
+        int channels)
+    {
+        int wanted = frames * channels;
+        int read = source.Read(inputBuffer, 0, wanted);
+        int frameCount = read / channels;
+        for (int i = 0; i < frameCount; i++)
+        {
+            left[frameOffset + i] = inputBuffer[i * channels];
+            right[frameOffset + i] = inputBuffer[i * channels + 1];
+        }
+        return frameCount;
+    }
+
+    private static void ProcessWindow(
+        int sampleRate,
+        int windowSize,
+        int hop,
+        double[] window,
+        double[] leftWindow,
+        double[] rightWindow,
+        double[] outLeft,
+        double[] outRight,
+        double[] norm,
+        double[] reL,
+        double[] imL,
+        double[] reR,
+        double[] imR,
+        double[] mask)
+    {
+        for (int i = 0; i < windowSize; i++)
+        {
+            reL[i] = leftWindow[i] * window[i];
+            imL[i] = 0;
+            reR[i] = rightWindow[i] * window[i];
+            imR[i] = 0;
+        }
+
+        AnalysisFft.Forward(reL, imL);
+        AnalysisFft.Forward(reR, imR);
+
+        int bins = windowSize / 2 + 1;
+        for (int k = 0; k < bins; k++)
+        {
+            double lr = reL[k];
+            double li = imL[k];
+            double rr = reR[k];
+            double ri = imR[k];
+
+            double centerRe = (lr + rr) * 0.5;
+            double centerIm = (li + ri) * 0.5;
+            double sideRe = (lr - rr) * 0.5;
+            double sideIm = (li - ri) * 0.5;
+            double centerMag = Math.Sqrt(centerRe * centerRe + centerIm * centerIm);
+            double sideMag = Math.Sqrt(sideRe * sideRe + sideIm * sideIm);
+            double hz = k * (double)sampleRate / windowSize;
+
+            double vocalWeight = VocalRangeWeight(hz);
+            double m = sideMag / (sideMag + centerMag * vocalWeight + 1e-12);
+            m = Math.Pow(Math.Clamp(m, 0, 1), 1.35);
+            mask[k] = m;
+
+            if (k > 0 && k < windowSize / 2)
+                mask[windowSize - k] = m;
+        }
+
+        for (int k = 0; k < windowSize; k++)
+        {
+            double m = mask[k];
+            reL[k] *= m;
+            imL[k] *= m;
+            reR[k] *= m;
+            imR[k] *= m;
+        }
+
+        InverseFft(reL, imL);
+        InverseFft(reR, imR);
+
+        for (int i = 0; i < windowSize; i++)
+        {
+            double w2 = window[i] * window[i];
+            outLeft[i] += reL[i] * window[i];
+            outRight[i] += reR[i] * window[i];
+            norm[i] += w2;
+        }
+    }
+
+    private static double VocalRangeWeight(double hz)
+    {
+        if (hz < 90) return 0.08;
+        if (hz < 250) return 0.25 + (hz - 90) / 160.0 * 0.55;
+        if (hz <= 8000) return 1.0;
+        if (hz <= 14000) return 0.55;
+        return 0.30;
+    }
+
+    private static void InverseFft(double[] re, double[] im)
+    {
+        int n = re.Length;
+        for (int i = 0; i < n; i++) im[i] = -im[i];
+        AnalysisFft.Forward(re, im);
+        for (int i = 0; i < n; i++)
+        {
+            re[i] /= n;
+            im[i] = -im[i] / n;
+        }
+    }
+
+    private static void WriteWavHeader(BinaryWriter writer, int sampleRate, int channels, long dataBytes)
+    {
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+        writer.Write((int)Math.Min(int.MaxValue, 36 + dataBytes));
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
+        writer.Write(16);
+        writer.Write((short)1);
+        writer.Write((short)channels);
+        writer.Write(sampleRate);
+        writer.Write(sampleRate * channels * 2);
+        writer.Write((short)(channels * 2));
+        writer.Write((short)16);
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+        writer.Write((int)Math.Min(int.MaxValue, dataBytes));
+    }
+}
