@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.Graphics;
 using Android.Graphics.Drawables;
+using Android.Media;
+using Android.Media.Session;
 using Android.OS;
 using AndroidMetadata = Android.Media.MediaMetadata;
 using AndroidPlaybackState = Android.Media.Session.PlaybackState;
@@ -248,5 +251,65 @@ public sealed class PlaybackService : Service
 /// <summary>Hands the media session token to the notification builder.</summary>
 internal static class AndroidSessionHolder
 {
-    public static Android.Media.Session.MediaSession.Token? Current { get; set; }
+    private static MediaSession.Token? _current;
+
+    public static MediaSession.Token? Current
+    {
+        get => _current;
+        set
+        {
+            _current = value;
+            try { SessionChanged?.Invoke(); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Raised when the framework session appears or is released. The car media
+    /// service can be bound before the app's session exists, so it watches this
+    /// instead of only reading the token once in OnCreate.
+    /// </summary>
+    public static event Action? SessionChanged;
+
+    /// <summary>The live framework session (used to publish the car queue).</summary>
+    public static MediaSession? Session { get; set; }
+
+    /// <summary>Media id of the queue's now-playing item (for car queue matching).</summary>
+    public static string? CurrentMediaId { get; set; }
+
+    /// <summary>
+    /// Publishes the play queue to the framework session. Android Auto's queue
+    /// view (and Bluetooth folder listings) read this list, not the browse tree.
+    /// </summary>
+    public static void UpdateQueue(IEnumerable<CarMediaEntry> entries)
+    {
+        var session = Session;
+        if (session == null) return;
+
+        try
+        {
+            var queue = new List<MediaSession.QueueItem>();
+            long id = 0;
+            string? firstId = null;
+            foreach (var entry in entries)
+            {
+                var builder = new MediaDescription.Builder()
+                    .SetMediaId(entry.Id)
+                    .SetTitle(entry.Title)
+                    .SetSubtitle(entry.Artist);
+
+                var art = MediaArtwork.Load(entry.ArtworkPath);
+                if (art != null) builder.SetIconBitmap(art);
+
+                queue.Add(new MediaSession.QueueItem(builder.Build(), id++));
+                firstId ??= entry.Id;
+            }
+
+            session.SetQueue(queue);
+            CurrentMediaId = firstId;
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"Session queue update failed: {ex.Message}");
+        }
+    }
 }

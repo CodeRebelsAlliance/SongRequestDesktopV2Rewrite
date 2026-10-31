@@ -326,6 +326,27 @@ test('car mode uses a music-only layout with a waiting screen', () => {
   const shell = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'MobileShell.cs'), 'utf8');
   assert.match(shell, /Host\.SetupComplete == true/);
   assert.match(shell, /CarMediaBridge\.SetReady\(true\)/);
+
+  // Car navigation: Playlists is the first/default destination, and the queue
+  // and searchable library are reachable too.
+  assert.match(page, /new TabDef\("playlists", "Playlists"/);
+  assert.match(page, /new TabDef\("queue", "Queue"/);
+  assert.match(js, /tab === 'playlists'/);
+  assert.match(js, /ensureSongsMode/);
+  assert.match(js, /patchThumbnails/);
+  assert.match(js, /getThumbnails/);
+
+  // Android Auto browse tree exposes playlists, queue and search; artwork is
+  // embedded as bitmaps because the car cannot read file:// icons.
+  const bridge = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'CarMediaBridge.cs'), 'utf8');
+  assert.match(bridge, /BrowsePlaylists/);
+  assert.match(bridge, /PlayPlaylistFrom/);
+  assert.match(carService, /MediaBrowserServiceCompat/);
+  assert.match(carService, /OnSearch/);
+  assert.match(carService, /PlaylistsId/);
+  assert.match(carService, /SetIconBitmap/);
+  assert.match(appHost, /AndroidSessionHolder\.UpdateQueue/);
+  assert.match(appHost, /GetCarPlaylists/);
 });
 
 test('advanced audio is exposed through the local API and command catalogue', () => {

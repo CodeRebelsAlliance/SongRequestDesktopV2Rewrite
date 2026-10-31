@@ -141,9 +141,33 @@ public sealed class AppHost : IDisposable
 
     private string? _modeBeforeCar;
 
+    private volatile IReadOnlyList<CarMediaEntry> _carQueueCache = Array.Empty<CarMediaEntry>();
+
     private void RegisterCarMediaBridge()
     {
         CarMediaBridge.Register(
+            browsePlaylists: () =>
+            {
+                try
+                {
+                    return Interop.GetCarPlaylists()
+                        .Select(p => new CarPlaylistEntry(p.Id, p.Name, p.Icon, p.SongCount))
+                        .ToList();
+                }
+                catch { return new List<CarPlaylistEntry>(); }
+            },
+            browsePlaylistSongs: playlistId =>
+            {
+                try
+                {
+                    return Interop.GetCarPlaylistSongs(playlistId)
+                        .Select(LibraryEntry)
+                        .ToList();
+                }
+                catch { return new List<CarMediaEntry>(); }
+            },
+            playPlaylist: (playlistId, songId) =>
+                Interop.PlayCarPlaylist(playlistId, songId),
             browseLibrary: () =>
             {
                 try
@@ -155,22 +179,7 @@ public sealed class AppHost : IDisposable
                 }
                 catch { return new List<CarMediaEntry>(); }
             },
-            browseQueue: () =>
-            {
-                try
-                {
-                    return Host.Music.Queue
-                        .Select((song, index) => new CarMediaEntry(
-                            "queue:" + index,
-                            song.Title,
-                            song.Artist,
-                            "",
-                            song.thumbnail as string,
-                            (long)song.Duration.TotalMilliseconds))
-                        .ToList();
-                }
-                catch { return new List<CarMediaEntry>(); }
-            },
+            browseQueue: () => _carQueueCache,
             search: query =>
             {
                 try
@@ -182,7 +191,75 @@ public sealed class AppHost : IDisposable
                 catch { return new List<CarMediaEntry>(); }
             },
             play: PlayCarMediaId);
+
         CarMediaBridge.SetReady(Host.SetupComplete);
+
+        // Android Auto's queue view reads the framework media-session queue; keep
+        // it in step with the engine without waiting for a browse request.
+        Host.Music.QueueChanged += OnCarQueueChanged;
+        Host.Music.PlaylistQueueChanged += OnCarQueueChanged;
+#if ANDROID
+        // The media session may be created after AppHost (or recreated); publish
+        // the current queue as soon as it has a token.
+        AndroidSessionHolder.SessionChanged += OnCarQueueChanged;
+#endif
+        OnCarQueueChanged();
+    }
+
+    private void OnCarQueueChanged(object? sender, EventArgs e) => OnCarQueueChanged();
+
+    private void OnCarQueueChanged()
+    {
+        // The engine queues are UI-thread collections; snapshot them there and let
+        // the car browse/search threads read the immutable snapshot.
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(OnCarQueueChanged);
+            return;
+        }
+
+        var entries = BuildCarQueueEntries();
+        _carQueueCache = entries;
+        try { CarMediaBridge.NotifyQueueChanged(); } catch { }
+
+#if ANDROID
+        try { AndroidSessionHolder.UpdateQueue(entries); } catch { }
+#endif
+    }
+
+    private List<CarMediaEntry> BuildCarQueueEntries()
+    {
+        var entries = new List<CarMediaEntry>();
+        try
+        {
+            entries.AddRange(Host.Music.Queue.Select((song, index) => QueueEntry(song, "queue:" + index)));
+            entries.AddRange(Host.Music.PlaylistQueue.Select((song, index) => QueueEntry(song, "plqueue:" + index)));
+        }
+        catch { }
+        return entries;
+    }
+
+    private CarMediaEntry QueueEntry(Song song, string id) => new(
+        id,
+        song.Title,
+        song.Artist,
+        "",
+        LibraryArtworkForPath(song.songPath),
+        (long)song.Duration.TotalMilliseconds);
+
+    private string? LibraryArtworkForPath(string? filePath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return null;
+        try
+        {
+            lock (Interop.LibraryService.Data)
+            {
+                return Interop.LibraryService.Data.Songs
+                    .FirstOrDefault(s => string.Equals(s.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
+                    ?.ThumbnailPath;
+            }
+        }
+        catch { return null; }
     }
 
     private static CarMediaEntry LibraryEntry(LibrarySong song) => new(
@@ -217,14 +294,40 @@ public sealed class AppHost : IDisposable
             return true;
         }
 
-        if (mediaId.StartsWith("queue:", StringComparison.Ordinal) &&
-            int.TryParse(mediaId["queue:".Length..], out int index))
+        if (mediaId.StartsWith("plsong:", StringComparison.Ordinal))
+        {
+            // plsong:<playlistId>:<songId>; dynamic playlist ids contain a colon.
+            var payload = mediaId["plsong:".Length..];
+            var separator = payload.LastIndexOf(':');
+            if (separator <= 0) return false;
+            return Interop.PlayCarPlaylist(payload[..separator], payload[(separator + 1)..]);
+        }
+
+        if (mediaId.StartsWith("plqueue:", StringComparison.Ordinal) &&
+            int.TryParse(mediaId["plqueue:".Length..], out int playlistIndex))
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 try
                 {
-                    while (index-- > 0 && Host.Music.Queue.Count > 1)
+                    for (int i = 0; i < playlistIndex && Host.Music.PlaylistQueue.Count > 0; i++)
+                        Host.Music.RemovePlaylistQueueItem(0);
+                    if (Host.Music.PlaylistQueue.Count > 0)
+                        Host.Music.AdvanceFromPlaylistQueue();
+                }
+                catch { }
+            });
+            return true;
+        }
+
+        if (mediaId.StartsWith("queue:", StringComparison.Ordinal) &&
+            int.TryParse(mediaId["queue:".Length..], out int queueIndex))
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                try
+                {
+                    while (queueIndex-- > 0 && Host.Music.Queue.Count > 1)
                         Host.Music.RemoveQueueItem(0);
                     if (Host.Music.Queue.Count > 0) Host.Music.PlaySong(Host.Music.Queue[0]);
                 }

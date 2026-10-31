@@ -153,7 +153,16 @@ test('mobile queue is a player chip, not a navigation tab', () => {
   const page = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Mobile', 'MainPage.cs'), 'utf8');
   assert.match(html, /id="mm-queue-toggle"/);
   assert.match(html, /id="mm-more"[\s\S]*?<span>Options<\/span>/);
-  assert.doesNotMatch(page, /new TabDef\("queue"/);
+
+  // The phone layout keeps the queue as a player chip. Car screens add a
+  // dedicated queue tab because there is no other way to reach it while driving.
+  const tabsStart = page.indexOf('private IReadOnlyList<TabDef> TabsFor(');
+  const carStart = page.indexOf('if (_carMode)', tabsStart);
+  const carEnd = page.indexOf('return TabsForMode', carStart);
+  assert.ok(tabsStart >= 0 && carStart > tabsStart && carEnd > carStart, 'expected a car-mode tab branch');
+  const outsideCar = page.slice(0, carStart) + page.slice(carEnd);
+  assert.doesNotMatch(outsideCar, /new TabDef\("queue"/);
+  assert.match(page.slice(carStart, carEnd), /new TabDef\("queue"/);
 });
 
 test('mobile queue reorders both the play queue and the playlist queue', () => {

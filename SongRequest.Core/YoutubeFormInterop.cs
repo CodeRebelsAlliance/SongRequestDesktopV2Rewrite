@@ -15,6 +15,9 @@ namespace SongRequestDesktopV2Rewrite;
 /// <summary>A request that appeared in the send-in list for the first time.</summary>
 public sealed record NewRequestInfo(string Ytid, DateTime? SentInUtc, string Message, bool IsApproved);
 
+/// <summary>Playlist row exposed to the Android Auto media browser.</summary>
+public sealed record CarPlaylistSummary(string Id, string Name, string Icon, int SongCount);
+
 public class YoutubeFormInterop
 {
     private readonly ISongRequestHost _ytForm;
@@ -5579,6 +5582,124 @@ public class YoutubeFormInterop
         }
 
         return new { playlists };
+    }
+
+    /// <summary>
+    /// Playlist summaries for the Android Auto media browser: the three dynamic
+    /// playlists first, then the user's saved playlists.
+    /// </summary>
+    public IReadOnlyList<CarPlaylistSummary> GetCarPlaylists()
+    {
+        var result = new List<CarPlaylistSummary>(DynamicPlaylists.Length + 8);
+
+        int presentCount;
+        lock (_libraryService.Data)
+            presentCount = _libraryService.Data.Songs.Count(s => !s.IsMissing);
+
+        foreach (var dynamicPlaylist in DynamicPlaylists)
+        {
+            result.Add(new CarPlaylistSummary(
+                dynamicPlaylist.Id,
+                dynamicPlaylist.Name,
+                dynamicPlaylist.Icon,
+                Math.Min(100, presentCount)));
+        }
+
+        foreach (var playlist in _libraryService.GetPlaylistsSummary())
+        {
+            result.Add(new CarPlaylistSummary(
+                playlist.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "",
+                playlist.TryGetValue("name", out var name) ? name?.ToString() ?? "Playlist" : "Playlist",
+                playlist.TryGetValue("icon", out var icon) ? icon?.ToString() ?? "" : "",
+                playlist.TryGetValue("songCount", out var count) && count is int n ? n : 0));
+        }
+
+        return result;
+    }
+
+    /// <summary>Playable library songs in a playlist, in playlist order.</summary>
+    public IReadOnlyList<LibrarySong> GetCarPlaylistSongs(string? playlistId)
+    {
+        if (string.IsNullOrWhiteSpace(playlistId)) return Array.Empty<LibrarySong>();
+
+        if (IsDynamicPlaylist(playlistId))
+            return SelectDynamicSongs(playlistId, shuffle: false)
+                .Where(s => !s.IsMissing && File.Exists(s.FilePath))
+                .ToList();
+
+        var playlist = _libraryService.GetPlaylist(playlistId);
+        if (playlist == null) return Array.Empty<LibrarySong>();
+
+        var songs = new List<LibrarySong>(playlist.Entries.Count);
+        var byId = new Dictionary<string, LibrarySong>(StringComparer.Ordinal);
+        lock (_libraryService.Data)
+        {
+            foreach (var song in _libraryService.Data.Songs)
+                if (!string.IsNullOrEmpty(song.Id)) byId[song.Id] = song;
+        }
+
+        foreach (var entry in playlist.Entries.OrderBy(e => e.SortOrder))
+        {
+            if (byId.TryGetValue(entry.SongId, out var song) &&
+                !song.IsMissing && File.Exists(song.FilePath))
+            {
+                songs.Add(song);
+            }
+        }
+
+        return songs;
+    }
+
+    /// <summary>
+    /// Starts a playlist at the chosen song for the car media browser. The whole
+    /// playlist is loaded so "next" keeps following it.
+    /// </summary>
+    public bool PlayCarPlaylist(string? playlistId, string? songId)
+    {
+        var librarySongs = GetCarPlaylistSongs(playlistId).ToList();
+        if (librarySongs.Count == 0) return false;
+
+        int startIndex = 0;
+        if (!string.IsNullOrEmpty(songId))
+        {
+            var match = librarySongs.FindIndex(s =>
+                string.Equals(s.Id, songId, StringComparison.Ordinal));
+            if (match >= 0) startIndex = match;
+        }
+
+        var songs = librarySongs.Select(CreateSongFromLibrary).ToList();
+        var startAt = startIndex;
+
+        PostToUi(() =>
+        {
+            try
+            {
+                var mp = _ytForm.Music;
+                if (mp == null) return;
+
+                using (mp.BeginBulkUpdate())
+                {
+                    mp.ClearQueue();
+                    mp.LoadPlaylist(songs, false);
+
+                    // Drop the songs before the chosen one; the rest stays in the
+                    // playlist buffer so playback continues in order.
+                    for (int i = 0; i < startAt && mp.PlaylistQueue.Count > 0; i++)
+                        mp.PlaylistQueue.RemoveAt(0);
+
+                    mp.AdvanceFromPlaylistQueue();
+                }
+
+                if (!string.IsNullOrEmpty(playlistId))
+                    _libraryService.MarkPlaylistPlayed(playlistId);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"PlayCarPlaylist failed: {ex.Message}");
+            }
+        });
+
+        return true;
     }
 
     private object GetPlaylist(JObject msg)

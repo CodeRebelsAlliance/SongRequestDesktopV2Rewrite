@@ -33,6 +33,13 @@ public sealed class ThumbnailStore
     /// <summary>Sources smaller than this are reused as-is instead of running FFmpeg.</summary>
     private const int SmallEnoughBytes = 40 * 1024;
 
+    /// <summary>
+    /// On platforms without FFmpeg (Android/iOS) the original artwork is inlined
+    /// instead of being downscaled. Keep a cap so one unusually large image cannot
+    /// flood the web-view bridge.
+    /// </summary>
+    private const int NoConverterInlineBytes = 384 * 1024;
+
     /// <summary>Conversions allowed to run synchronously inside one call.</summary>
     private const int MaxGenerationsPerCall = 6;
 
@@ -91,8 +98,9 @@ public sealed class ThumbnailStore
             {
                 if (!ConverterAvailable())
                 {
-                    // No converter: only inline it when it is already small.
-                    if (info.Length <= SmallEnoughBytes) return CacheAndReturn(key, File.ReadAllBytes(sourcePath));
+                    // No converter (Android/iOS): inline the saved artwork as-is.
+                    if (info.Length <= NoConverterInlineBytes)
+                        return CacheAndReturn(key, File.ReadAllBytes(sourcePath));
                     return null;
                 }
 
@@ -134,9 +142,15 @@ public sealed class ThumbnailStore
 
             if (!File.Exists(target))
             {
-                if (!ConverterAvailable() || bytes.Length <= SmallEnoughBytes)
+                if (!ConverterAvailable())
                 {
-                    if (bytes.Length > SmallEnoughBytes && !ConverterAvailable()) return null;
+                    if (bytes.Length > NoConverterInlineBytes) return null;
+                    Directory.CreateDirectory(CacheDirectory);
+                    return CacheAndReturn(key, bytes);
+                }
+
+                if (bytes.Length <= SmallEnoughBytes)
+                {
                     Directory.CreateDirectory(CacheDirectory);
                     return CacheAndReturn(key, bytes);
                 }
@@ -269,7 +283,11 @@ public sealed class ThumbnailStore
     {
         if (bytes == null || bytes.Length == 0) return null;
 
-        var url = "data:image/jpeg;base64," + System.Convert.ToBase64String(bytes);
+        // Inlined originals may be PNG; downscaled files are always JPEG.
+        var mime = bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50
+            ? "image/png"
+            : "image/jpeg";
+        var url = "data:" + mime + ";base64," + System.Convert.ToBase64String(bytes);
         if (_dataUrls.TryAdd(key, url))
         {
             _dataUrlOrder.Enqueue(key);

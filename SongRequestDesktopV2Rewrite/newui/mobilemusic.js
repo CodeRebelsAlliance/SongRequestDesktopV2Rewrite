@@ -193,6 +193,14 @@
       return;
     }
 
+    // The car navigation exposes Playlists as its own tab; it reuses the
+    // library view so the same list/search code serves both destinations.
+    var libraryMode = null;
+    if (tab === 'playlists') {
+      libraryMode = 'playlists';
+      tab = 'library';
+    }
+
     if (!views[tab]) tab = 'home';
     currentTab = tab;
 
@@ -202,7 +210,19 @@
     updateMini();
 
     if (tab === 'home') loadHomeFeed(false);
-    if (tab === 'library') loadLibrary(false);
+    if (tab === 'library') {
+      if (libraryMode) {
+        if (lib.mode === libraryMode) loadLibrary(false);
+        else setLibraryMode(libraryMode);
+      } else if (document.documentElement.getAttribute('data-car') === '1') {
+        // The car's Library tab is the searchable song list; Playlists has its
+        // own tab, so do not inherit the previous chip selection here.
+        if (lib.mode !== 'songs') setLibraryMode('songs');
+        else loadLibrary(false);
+      } else {
+        loadLibrary(false);
+      }
+    }
     if (tab === 'player') updatePlayer();
     if (tab === 'share') loadShareStatus();
   }
@@ -283,12 +303,15 @@
     var added = (feed && feed.newlyAdded) || [];
     $('mm-row-new').hidden = added.length === 0;
     $('mm-new').innerHTML = added.map(songCard).join('');
+
+    patchThumbnails($('mm-home-feed'), 0);
   }
 
   function songCard(song) {
     var id = song.songId || song.id || '';
+    var artClass = 'mm-card-art' + (song.thumbnail ? '' : ' thumb-pending');
     return '<button class="mm-card" data-song-id="' + esc(id) + '">' +
-      '<div class="mm-card-art">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
+      '<div class="' + artClass + '" data-songid="' + esc(id) + '">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-card-title">' + esc(song.title || 'Unknown') + '</div>' +
       '<div class="mm-card-sub">' + esc(song.artist || '—') + '</div>' +
       '</button>';
@@ -313,7 +336,17 @@
     var chips = document.querySelectorAll('.mm-chip');
     chips.forEach(function (chip) { chip.classList.toggle('is-active', chip.dataset.lib === mode); });
 
-    $('mm-lib-search-wrap').hidden = mode !== 'songs';
+    var title = $('mm-library-title');
+    if (title) {
+      title.textContent = mode === 'playlists' ? 'Playlists'
+        : mode === 'recent' ? 'Recently Played'
+        : 'Library';
+    }
+
+    // On a car screen the search field stays visible even while playlists are
+    // shown, so there is always a way to search; typing switches to songs.
+    var car = document.documentElement.getAttribute('data-car') === '1';
+    $('mm-lib-search-wrap').hidden = mode !== 'songs' && !car;
     $('mm-lib-songs').hidden = mode !== 'songs';
     $('mm-lib-recent').hidden = mode !== 'recent';
     $('mm-lib-playlists').hidden = mode !== 'playlists';
@@ -322,6 +355,25 @@
     $('mm-library-scroll').scrollTop = 0;
 
     loadLibrary(true);
+  }
+
+  // Switches the library to the song list without clearing a query the user is
+  // currently typing (used by the always-visible car search field).
+  function ensureSongsMode() {
+    if (lib.mode === 'songs') return;
+    lib.mode = 'songs';
+    lib.page = 0;
+    document.querySelectorAll('.mm-chip').forEach(function (chip) {
+      chip.classList.toggle('is-active', chip.dataset.lib === 'songs');
+    });
+    var title = $('mm-library-title');
+    if (title) title.textContent = 'Library';
+    $('mm-lib-search-wrap').hidden = false;
+    $('mm-lib-songs').hidden = false;
+    $('mm-lib-recent').hidden = true;
+    $('mm-lib-playlists').hidden = true;
+    $('mm-lib-more-wrap').hidden = true;
+    $('mm-playlist-new-wrap').hidden = true;
   }
 
   function loadLibrary(force) {
@@ -382,6 +434,7 @@
       : '<div class="mm-empty"><i class="fas fa-compact-disc"></i><span>No songs found</span></div>';
 
     $('mm-lib-more-wrap').hidden = libSongs.length >= lib.total || !!lib.query;
+    patchThumbnails($('mm-lib-songs'), 0);
   }
 
   function renderRecent() {
@@ -397,6 +450,7 @@
           });
         }).join('')
       : '<div class="mm-empty"><i class="fas fa-clock-rotate-left"></i><span>Nothing played yet</span></div>';
+    patchThumbnails($('mm-lib-recent'), 0);
   }
 
   function renderPlaylists() {
@@ -422,14 +476,62 @@
       var played = relativeTime(song.playedUtc);
       if (played) sub += ' · Played ' + esc(played);
     }
+    var thumbClass = 'mm-thumb' + (song.thumbnail ? '' : ' thumb-pending');
     return '<button class="mm-song" data-song-id="' + esc(id) + '">' +
-      '<div class="mm-thumb">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
+      '<div class="' + thumbClass + '" data-songid="' + esc(id) + '">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-song-text">' +
         '<div class="mm-song-title">' + esc(song.title || 'Unknown') + '</div>' +
         '<div class="mm-song-sub">' + sub + '</div>' +
       '</div>' +
       '<span class="mm-song-dur">' + esc(duration) + '</span>' +
       '</button>';
+  }
+
+  // Artwork that the host has not downscaled yet arrives as a placeholder.
+  // Ask for it again shortly and patch only the image, without re-rendering
+  // the whole list (which would reset its scroll position).
+  var _thumbTimers = [];
+  function patchThumbnails(root, attempt) {
+    if (!root) return;
+    attempt = attempt || 0;
+    if (attempt > 8) return;
+
+    var pending = root.querySelectorAll('.thumb-pending[data-songid]');
+    if (!pending.length) return;
+
+    var ids = [];
+    for (var i = 0; i < pending.length && ids.length < 24; i++) {
+      var id = pending[i].dataset.songid;
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    }
+    if (!ids.length) return;
+
+    request('getThumbnails', { songIds: ids }).then(function (result) {
+      var thumbs = (result && result.thumbs) || {};
+      var patched = 0;
+      for (var i = 0; i < pending.length; i++) {
+        var el = pending[i];
+        var url = thumbs[el.dataset.songid];
+        if (!url) continue;
+        el.classList.remove('thumb-pending');
+        var icon = el.querySelector('i');
+        if (icon) icon.remove();
+        var play = el.querySelector('.mm-card-play');
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.loading = 'lazy';
+        if (play) el.insertBefore(img, play); else el.insertBefore(img, el.firstChild);
+        patched++;
+      }
+      if (patched < pending.length) scheduleThumbPatch(root, attempt + 1);
+    }).catch(function () { scheduleThumbPatch(root, attempt + 1); });
+  }
+
+  function scheduleThumbPatch(root, attempt) {
+    var timer = setTimeout(function () { patchThumbnails(root, attempt); }, 700 + attempt * 400);
+    _thumbTimers.push(timer);
+    if (_thumbTimers.length > 40) _thumbTimers.splice(0, 20);
   }
 
   // ── Playlist detail (browse + modify) ────────────────────
@@ -464,6 +566,7 @@
       : '<div class="mm-empty"><i class="fas fa-list"></i><span>This playlist is empty</span>' +
         (editable ? '<button class="mm-btn" data-playlist-action="add"><i class="fas fa-plus"></i> Add songs</button>' : '') +
         '</div>';
+    patchThumbnails($('mm-playlist-list'), 0);
   }
 
   function playlistSongRow(entry, index, total, editable) {
@@ -481,7 +584,7 @@
 
     return '<div class="mm-playlist-song" data-entry-id="' + esc(entry.entryId || '') + '">' +
       '<button class="mm-song mm-song-main" data-song-id="' + esc(entry.songId || '') + '">' +
-        '<div class="mm-thumb">' + (entry.thumbnail ? '<img src="' + esc(entry.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
+        '<div class="mm-thumb' + (entry.thumbnail ? '' : ' thumb-pending') + '" data-songid="' + esc(entry.songId || '') + '">' + (entry.thumbnail ? '<img src="' + esc(entry.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
         '<div class="mm-song-text">' +
           '<div class="mm-song-title">' + esc(entry.title || 'Unknown') + '</div>' +
           '<div class="mm-song-sub">' + esc(entry.artist || '—') + '</div>' +
@@ -1365,6 +1468,9 @@
   var libSearch = $('mm-lib-search');
   var libTimer = null;
   libSearch.addEventListener('input', function () {
+    // Cars show the search field on every library destination; start typing and
+    // the list switches to song results without losing the text.
+    ensureSongsMode();
     clearTimeout(libTimer);
     libTimer = setTimeout(function () {
       lib.query = libSearch.value.trim();

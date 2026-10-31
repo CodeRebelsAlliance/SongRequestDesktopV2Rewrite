@@ -28,7 +28,7 @@
          must increase monotonically per release, so it is set explicitly
          (major*10000 + minor*100 + patch). -->
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
-    <ApplicationVersion>62500</ApplicationVersion>
+    <ApplicationVersion>62600</ApplicationVersion>
 
     <!-- Android 8.0 (API 26): the floor for media notifications and modern
          foreground services (the plan's recommended minimum). -->
@@ -54,6 +54,13 @@
   <ItemGroup>
     <!-- Since .NET 8 `UseMaui` no longer implies the package references. -->
     <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+    <!-- Android Auto media browser/search (MediaBrowserServiceCompat). -->
+    <PackageReference Include="Xamarin.AndroidX.Media" Version="1.8.0.1" />
+    <!-- Align Core/Core.Ktx: Media 1.8 needs Core 1.19, while MAUI's transitive
+         Core.Ktx 1.16 would otherwise leave both AARs with the same Kotlin
+         classes and break D8. -->
+    <PackageReference Include="Xamarin.AndroidX.Core" Version="1.19.1" />
+    <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.1" />
   </ItemGroup>
 
   <ItemGroup>

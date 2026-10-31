@@ -210,9 +210,13 @@ public sealed class MainPage : ContentPage
     }
 
     /// <summary>
-    /// Switches the shell into the car-optimized music-only layout: Home,
-    /// Library and Player, no Stage/Presentation tabs. The native navigation stays
-    /// hidden behind a waiting screen until the normal startup flow finishes.
+    /// Switches the shell into the car-optimized music-only layout: Playlists,
+    /// Library, Player and Queue, no Stage/Presentation tabs.
+    ///
+    /// During startup the phone keeps its loading flow visible and running; only
+    /// a native car head unit (UiMode car) shows the native waiting overlay. An
+    /// Android Auto connection is represented by the media browser's waiting
+    /// item instead, and the layout switches once startup completes.
     /// </summary>
     public void EnableCarMode()
     {
@@ -223,15 +227,23 @@ public sealed class MainPage : ContentPage
         }
 
         _carMode = true;
-        var alreadyReady = _navigationVisible;
-        _carWaiting.IsVisible = !alreadyReady;
-        if (!alreadyReady) SetNavigationVisible(false);
-        ConfigureMode(StartupMode.MusicPlayer, force: true);
-        if (alreadyReady)
+        var startupComplete = _navigationVisible;
+        var nativeCar = CarModeState.IsUiModeCar;
+
+        if (startupComplete)
         {
             _carWaiting.IsVisible = false;
+            ConfigureMode(StartupMode.MusicPlayer, force: true);
             SetNavigationVisible(true);
         }
+        else
+        {
+            _carWaiting.IsVisible = nativeCar;
+            if (nativeCar) SetNavigationVisible(false);
+            // The phone-side startup page stays in front so its loading/auth flow
+            // can finish; ConfigureMode would hide it and pause its JavaScript.
+        }
+
         BroadcastCarMode(true);
     }
 
@@ -246,11 +258,18 @@ public sealed class MainPage : ContentPage
 
         _carMode = false;
         _carWaiting.IsVisible = false;
-        SetNavigationVisible(true);
-        var mode = Enum.TryParse<StartupMode>(previousMode, out var parsed)
-            ? parsed
-            : StartupMode.SongRequests;
-        ConfigureMode(mode, force: true);
+
+        // If startup is still running, leave its page and hidden navigation alone;
+        // completeSetup will apply the normal mode when it finishes.
+        if (_navigationVisible)
+        {
+            SetNavigationVisible(true);
+            var mode = Enum.TryParse<StartupMode>(previousMode, out var parsed)
+                ? parsed
+                : StartupMode.SongRequests;
+            ConfigureMode(mode, force: true);
+        }
+
         BroadcastCarMode(false);
     }
 
@@ -264,7 +283,14 @@ public sealed class MainPage : ContentPage
         }
 
         if (!_carMode) return;
+
         _carWaiting.IsVisible = false;
+
+        // Ensure the completed startup actually landed on the car layout; this
+        // also covers callers that finish setup without a mode switch.
+        if (!string.Equals(_mode, StartupMode.MusicPlayer.ToString(), StringComparison.Ordinal))
+            ConfigureMode(StartupMode.MusicPlayer, force: true);
+
         SetNavigationVisible(true);
     }
 
@@ -506,11 +532,14 @@ public sealed class MainPage : ContentPage
     {
         if (_carMode)
         {
+            // Car screens get the music-only layout with Playlists as the default
+            // destination, then the searchable library, the player, and the queue.
             return new[]
             {
-                new TabDef("home", "Home", MobileMusicFile, "\uf015"),
-                new TabDef("library", "Library", MobileMusicFile, "\uf51f"),
-                new TabDef("player", "Player", MobileMusicFile, "\uf025"),
+                new TabDef("playlists", "Playlists", MobileMusicFile, "\uf03a"), // fa-list
+                new TabDef("library", "Library", MobileMusicFile, "\uf51f"),     // fa-compact-disc
+                new TabDef("player", "Player", MobileMusicFile, "\uf025"),       // fa-headphones
+                new TabDef("queue", "Queue", MobileMusicFile, "\uf0ca"),         // fa-list-ul
             };
         }
 
@@ -653,7 +682,7 @@ public sealed class MainPage : ContentPage
         // shows. (On its first load the page asks with mobileTabReady.)
         if (string.Equals(file, MobileMusicFile, StringComparison.Ordinal))
         {
-            var tab = _activeKey is "home" or "library" or "player" or "queue" or "share" ? _activeKey : "player";
+            var tab = _activeKey is "home" or "playlists" or "library" or "player" or "queue" or "share" ? _activeKey : "player";
             try
             {
                 view.SendRawMessage(

@@ -52,6 +52,7 @@ internal sealed class AndroidSystemMediaSession : ISystemMediaSession
             _session.SetFlags(MediaSessionFlags.HandlesMediaButtons | MediaSessionFlags.HandlesTransportControls);
             _session.SetCallback(new TransportCallback(this));
             _session.Active = true;
+            AndroidSessionHolder.Session = _session;
             AndroidSessionHolder.Current = _session.SessionToken;
 
             // Notification actions arrive at the service, which forwards them here.
@@ -104,6 +105,10 @@ internal sealed class AndroidSystemMediaSession : ISystemMediaSession
             builder.PutString(AndroidMetadata.MetadataKeyArtist, metadata.Artist);
             builder.PutString(AndroidMetadata.MetadataKeyAlbum, metadata.Album);
             builder.PutLong(AndroidMetadata.MetadataKeyDuration, (long)metadata.Duration.TotalMilliseconds);
+
+            var mediaId = AndroidSessionHolder.CurrentMediaId;
+            if (!string.IsNullOrEmpty(mediaId))
+                builder.PutString(AndroidMetadata.MetadataKeyMediaId, mediaId);
 
             var artwork = TryLoadArtwork(metadata.ArtworkPath);
             if (artwork != null)
@@ -172,6 +177,7 @@ internal sealed class AndroidSystemMediaSession : ISystemMediaSession
         PlaybackService.CommandReceived -= OnServiceCommand;
 
         AndroidSessionHolder.Current = null;
+        AndroidSessionHolder.Session = null;
         try { if (_session != null) _session.Active = false; } catch { }
         try { _session?.Release(); } catch { }
         try { PlaybackService.Stop(Android.App.Application.Context); } catch { }
@@ -194,7 +200,7 @@ internal sealed class AndroidSystemMediaSession : ISystemMediaSession
     private static Bitmap? TryLoadArtwork(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path)) return null;
-        try { return BitmapFactory.DecodeFile(path); }
+        try { return MediaArtwork.Load(path); }
         catch { return null; }
     }
 
