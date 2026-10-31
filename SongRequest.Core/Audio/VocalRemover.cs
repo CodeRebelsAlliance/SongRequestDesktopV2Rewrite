@@ -15,7 +15,7 @@ namespace SongRequestDesktopV2Rewrite;
 /// </summary>
 public static class VocalRemover
 {
-    public const string AlgorithmVersion = "1.0";
+    public const string AlgorithmVersion = "2.0";
 
     public static void Process(
         string inputPath,
@@ -31,7 +31,7 @@ public static class VocalRemover
 
         int sampleRate = Math.Max(8000, format.SampleRate);
         int windowSize = sampleRate >= 32000 ? 4096 : 2048;
-        int hop = windowSize / 4;
+        int hop = windowSize / 8;
         int channels = format.Channels;
 
         var window = new double[windowSize];
@@ -49,6 +49,11 @@ public static class VocalRemover
         var imR = new double[windowSize];
         var inputBuffer = new float[windowSize * channels];
         var mask = new double[windowSize];
+        var previousMask = new double[windowSize];
+        var magnitude = new double[windowSize];
+        var previousMagnitude = new double[windowSize];
+        var smoothMask = new double[windowSize];
+        double fluxAverage = 0;
 
         double totalFrames = source.TotalTime > TimeSpan.Zero
             ? source.TotalTime.TotalSeconds * sampleRate
@@ -69,7 +74,8 @@ public static class VocalRemover
         {
             cancellationToken.ThrowIfCancellationRequested();
             ProcessWindow(sampleRate, windowSize, hop, window, leftWindow, rightWindow,
-                outLeft, outRight, norm, reL, imL, reR, imR, mask);
+                outLeft, outRight, norm, reL, imL, reR, imR, mask, previousMask,
+                magnitude, previousMagnitude, smoothMask, ref fluxAverage);
 
             int framesToEmit = hop;
             if (totalFrames > 0)
@@ -122,7 +128,8 @@ public static class VocalRemover
         {
             cancellationToken.ThrowIfCancellationRequested();
             ProcessWindow(sampleRate, windowSize, hop, window, leftWindow, rightWindow,
-                outLeft, outRight, norm, reL, imL, reR, imR, mask);
+                outLeft, outRight, norm, reL, imL, reR, imR, mask, previousMask,
+                magnitude, previousMagnitude, smoothMask, ref fluxAverage);
             int remaining = (int)Math.Min(hop, totalFrames - emittedFrames);
             for (int i = 0; i < remaining; i++)
             {
@@ -187,7 +194,12 @@ public static class VocalRemover
         double[] imL,
         double[] reR,
         double[] imR,
-        double[] mask)
+        double[] mask,
+        double[] previousMask,
+        double[] magnitude,
+        double[] previousMagnitude,
+        double[] smoothMask,
+        ref double fluxAverage)
     {
         for (int i = 0; i < windowSize; i++)
         {
@@ -201,12 +213,49 @@ public static class VocalRemover
         AnalysisFft.Forward(reR, imR);
 
         int bins = windowSize / 2 + 1;
+        double flux = 0;
+        for (int k = 0; k < bins; k++)
+        {
+            double mag = Math.Sqrt(reL[k] * reL[k] + imL[k] * imL[k] +
+                                   reR[k] * reR[k] + imR[k] * imR[k]);
+            magnitude[k] = mag;
+            double diff = mag - previousMagnitude[k];
+            if (diff > 0) flux += diff;
+            previousMagnitude[k] = mag;
+        }
+
+        double transientStrength = 0;
+        if (fluxAverage <= 0)
+        {
+            fluxAverage = flux;
+        }
+        else
+        {
+            double ratio = flux / (fluxAverage + 1e-9);
+            transientStrength = Math.Clamp((ratio - 1.6) / 2.8, 0, 1);
+            fluxAverage = fluxAverage * 0.90 + flux * 0.10;
+        }
+
         for (int k = 0; k < bins; k++)
         {
             double lr = reL[k];
             double li = imL[k];
             double rr = reR[k];
             double ri = imR[k];
+
+            double powerL = lr * lr + li * li;
+            double powerR = rr * rr + ri * ri;
+            double totalPower = powerL + powerR;
+            if (totalPower < 1e-12)
+            {
+                mask[k] = 0;
+                if (k > 0 && k < windowSize / 2) mask[windowSize - k] = 0;
+                continue;
+            }
+
+            // Signed coherence: only in-phase center material is a vocal candidate.
+            double cross = 2 * (lr * rr + li * ri);
+            double coherence = Math.Clamp(cross / totalPower, 0, 1);
 
             double centerRe = (lr + rr) * 0.5;
             double centerIm = (li + ri) * 0.5;
@@ -216,22 +265,47 @@ public static class VocalRemover
             double sideMag = Math.Sqrt(sideRe * sideRe + sideIm * sideIm);
             double hz = k * (double)sampleRate / windowSize;
 
-            double vocalWeight = VocalRangeWeight(hz);
-            double m = sideMag / (sideMag + centerMag * vocalWeight + 1e-12);
-            m = Math.Pow(Math.Clamp(m, 0, 1), 1.35);
-            mask[k] = m;
+            double band = VocalRangeWeight(hz);
+            double tonal = TonalWeight(magnitude, k, bins);
+            double sideRatio = sideMag / (centerMag + sideMag + 1e-12);
 
-            if (k > 0 && k < windowSize / 2)
-                mask[windowSize - k] = m;
+            double m = band *
+                       Math.Pow(coherence, 1.20) *
+                       (0.70 + 0.30 * tonal) *
+                       (1.0 - 0.42 * transientStrength);
+
+            // Side-heavy content is instrumental even if it happens to be centered.
+            m *= Math.Clamp(0.72 + sideRatio * 0.28, 0, 1);
+            m = Math.Clamp(m, 0, 1);
+            mask[k] = m;
+            if (k > 0 && k < windowSize / 2) mask[windowSize - k] = m;
+        }
+
+        // Frequency smoothing prevents "musical noise" from isolated bins; a
+        // short temporal smoothing keeps the mask from chattering between frames.
+        for (int k = 0; k < windowSize; k++)
+        {
+            double sum = 0;
+            int count = 0;
+            for (int j = Math.Max(0, k - 2); j <= Math.Min(windowSize - 1, k + 2); j++)
+            {
+                sum += mask[j];
+                count++;
+            }
+            double smoothed = sum / count;
+            smoothMask[k] = previousMask[k] * 0.28 + smoothed * 0.72;
+            previousMask[k] = smoothMask[k];
         }
 
         for (int k = 0; k < windowSize; k++)
         {
-            double m = mask[k];
-            reL[k] *= m;
-            imL[k] *= m;
-            reR[k] *= m;
-            imR[k] *= m;
+            double gain = smoothMask[k] * 0.98;
+            double centerRe = (reL[k] + reR[k]) * 0.5;
+            double centerIm = (imL[k] + imR[k]) * 0.5;
+            reL[k] -= gain * centerRe;
+            imL[k] -= gain * centerIm;
+            reR[k] -= gain * centerRe;
+            imR[k] -= gain * centerIm;
         }
 
         InverseFft(reL, imL);
@@ -246,13 +320,32 @@ public static class VocalRemover
         }
     }
 
+    private static double TonalWeight(double[] magnitude, int bin, int bins)
+    {
+        double sum = 0;
+        double logSum = 0;
+        int count = 0;
+        for (int j = Math.Max(1, bin - 4); j <= Math.Min(bins - 1, bin + 4); j++)
+        {
+            double m = magnitude[j] + 1e-12;
+            sum += m;
+            logSum += Math.Log(m);
+            count++;
+        }
+        if (count == 0) return 0.5;
+        double arithmetic = sum / count;
+        double geometric = Math.Exp(logSum / count);
+        double flatness = arithmetic > 0 ? geometric / arithmetic : 1;
+        return Math.Clamp(1.0 - flatness * 3.2, 0, 1);
+    }
+
     private static double VocalRangeWeight(double hz)
     {
-        if (hz < 90) return 0.08;
-        if (hz < 250) return 0.25 + (hz - 90) / 160.0 * 0.55;
-        if (hz <= 8000) return 1.0;
-        if (hz <= 14000) return 0.55;
-        return 0.30;
+        if (hz < 100) return 0.0;
+        if (hz < 180) return (hz - 100) / 80.0 * 0.75;
+        if (hz <= 7000) return 1.0;
+        if (hz <= 12000) return 1.0 - (hz - 7000) / 5000.0 * 0.55;
+        return 0.20;
     }
 
     private static void InverseFft(double[] re, double[] im)

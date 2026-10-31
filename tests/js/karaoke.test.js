@@ -22,6 +22,9 @@ test('karaoke mode is available on desktop, mobile and presentation pages', () =
   assert.match(js, /karaoke-pause-fill/);
   assert.match(js, /is-sung/);
   assert.match(js, /is-active/);
+  assert.match(js, /chooseLineForTime/);
+  assert.match(js, /nextLineForTime/);
+  assert.match(js, /gap \* 0\.5/);
 });
 
 test('karaoke toggle is exposed in settings and persisted', () => {

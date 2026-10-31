@@ -37,6 +37,50 @@
     }
   }
 
+  function getVisibleLines(container) {
+    if (!container) return [];
+    var all = container.querySelectorAll('.lyrics-line[data-time], .mm-line[data-time]');
+    var result = [];
+    for (var i = 0; i < all.length; i++) {
+      if (String(all[i].textContent || '').trim().length > 0) result.push(all[i]);
+    }
+    return result;
+  }
+
+  /**
+   * Picks the lyric line a chapter marker belongs to. Analysis boundaries can be
+   * slightly after the real line; prefer the previous line when it is much closer
+   * than the next one instead of always placing the marker one line late.
+   */
+  function chooseLineForTime(container, time) {
+    var lines = getVisibleLines(container);
+    if (!lines.length) return null;
+    var previous = null;
+    var previousTime = -Infinity;
+    for (var i = 0; i < lines.length; i++) {
+      var t = Number(lines[i].dataset.time);
+      if (!isFinite(t)) continue;
+      if (t >= time - 0.01) {
+        if (!previous) return lines[i];
+        var gap = t - previousTime;
+        return (time - previousTime) <= Math.max(0.8, gap * 0.5) ? previous : lines[i];
+      }
+      previous = lines[i];
+      previousTime = t;
+    }
+    return previous;
+  }
+
+  /** Next visible lyric line at/after a gap end (used by pause bars). */
+  function nextLineForTime(container, time) {
+    var lines = getVisibleLines(container);
+    for (var i = 0; i < lines.length; i++) {
+      var t = Number(lines[i].dataset.time);
+      if (isFinite(t) && t >= time - 0.05) return lines[i];
+    }
+    return null;
+  }
+
   /** Insert pause elements into the lyrics flow. They stay hidden until reached. */
   function attachPauses(container, pauses) {
     if (!container) return;
@@ -44,7 +88,6 @@
     for (var i = 0; i < old.length; i++) old[i].remove();
     if (!pauses || !pauses.length) return;
 
-    var lines = container.querySelectorAll('.lyrics-line[data-time], .mm-line[data-time]');
     for (var p = 0; p < pauses.length; p++) {
       var pause = pauses[p];
       var element = doc().createElement('div');
@@ -59,12 +102,7 @@
         '</div>' +
         '<div class="karaoke-pause-track"><div class="karaoke-pause-fill"></div></div>';
 
-      var target = null;
-      for (var l = 0; l < lines.length; l++) {
-        var time = Number(lines[l].dataset.time);
-        if (isFinite(time) && time >= pause.end - 0.05) { target = lines[l]; break; }
-      }
-
+      var target = nextLineForTime(container, pause.end);
       if (target && target.parentNode) target.parentNode.insertBefore(element, target);
       else {
         var spacer = container.querySelector('.lyrics-spacer, .mm-lyrics-spacer');
@@ -133,6 +171,8 @@
     isEnabled: isEnabled,
     renderLine: renderLine,
     attachPauses: attachPauses,
+    chooseLineForTime: chooseLineForTime,
+    nextLineForTime: nextLineForTime,
     update: update,
     updateAll: updateAll
   };

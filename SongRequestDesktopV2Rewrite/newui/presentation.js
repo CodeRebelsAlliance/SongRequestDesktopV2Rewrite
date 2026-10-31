@@ -380,11 +380,9 @@
     var sorted = presChapters.slice().sort(function (a, b) { return a.startSeconds - b.startSeconds; });
     for (var p = 0; p < sorted.length; p++) {
       var part = sorted[p];
-      var target = null;
-      for (var l = 0; l < lines.length; l++) {
-        var time = Number(lines[l].dataset.time);
-        if (isFinite(time) && time >= part.startSeconds - 0.35) { target = lines[l]; break; }
-      }
+      var target = window.SongRequestKaraoke && window.SongRequestKaraoke.chooseLineForTime
+        ? window.SongRequestKaraoke.chooseLineForTime(presLyrics, part.startSeconds)
+        : null;
       if (!target) continue;
 
       var marker = document.createElement('div');

@@ -57,7 +57,7 @@ public static class KaraokeLyrics
         if (lines == null || lines.Count == 0) return result;
 
         var clean = lines
-            .Where(l => !string.IsNullOrWhiteSpace(l.Text))
+            .Where(l => l.Time >= TimeSpan.Zero)
             .OrderBy(l => l.Time)
             .ToList();
         if (clean.Count == 0) return result;
@@ -70,13 +70,32 @@ public static class KaraokeLyrics
         {
             double start = Math.Max(0, clean[i].Time.TotalSeconds);
             if (start >= duration) break;
-            double nextStart = i + 1 < clean.Count
-                ? Math.Min(duration, clean[i + 1].Time.TotalSeconds)
+
+            string text = (clean[i].Text ?? string.Empty).Trim();
+            var tokens = SplitWords(text);
+
+            // Find the next line that actually has words. Empty timed entries
+            // (instrumental markers, blank LRC lines) still need a karaoke line
+            // slot so UI indexes stay aligned with syncedLyrics.
+            int nextText = -1;
+            for (int j = i + 1; j < clean.Count; j++)
+            {
+                if (!string.IsNullOrWhiteSpace(clean[j].Text)) { nextText = j; break; }
+            }
+            double nextStart = nextText >= 0
+                ? Math.Min(duration, clean[nextText].Time.TotalSeconds)
                 : duration;
 
-            string text = clean[i].Text.Trim();
-            var tokens = SplitWords(text);
-            if (tokens.Count == 0) continue;
+            if (tokens.Count == 0)
+            {
+                result.Lines.Add(new KaraokeLine
+                {
+                    Time = Round(start),
+                    End = Round(start),
+                    Text = text
+                });
+                continue;
+            }
 
             double interval = Math.Max(0.25, nextStart - start);
             double estimated = EstimateLineDuration(tokens);

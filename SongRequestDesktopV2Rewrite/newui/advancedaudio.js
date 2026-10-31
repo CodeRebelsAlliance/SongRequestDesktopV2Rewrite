@@ -1474,6 +1474,7 @@
   function updateMobileKaraoke(visible, html, title) {
     var doc = global.document;
     if (!doc) return;
+    if (doc.documentElement.getAttribute('data-shell') !== 'mobile') return;
     var top = doc.querySelector('.mm-player-top');
     var pill = doc.getElementById('ad-karaoke-pill');
     if (top) {
@@ -1668,18 +1669,14 @@
     if (!parts.length || lines.length === 0) return;
 
     var sorted = parts.slice().sort(function (a, b) { return a.startSeconds - b.startSeconds; });
-    var lastLine = null;
 
     for (var p = 0; p < sorted.length; p++) {
       var part = sorted[p];
-      var target = null;
-      for (var l = 0; l < lines.length; l++) {
-        var time = Number(lines[l].dataset.time);
-        if (isFinite(time) && time >= part.startSeconds - 0.35) { target = lines[l]; break; }
-      }
+      var target = global.SongRequestKaraoke &&
+        global.SongRequestKaraoke.chooseLineForTime
+        ? global.SongRequestKaraoke.chooseLineForTime(container, part.startSeconds)
+        : null;
       if (!target) continue;
-      if (target === lastLine) continue;
-      lastLine = target;
 
       var marker = global.document.createElement('div');
       marker.className = 'lyrics-chapter-marker ' + partClass(part.type);
@@ -1702,7 +1699,8 @@
     }
   }
 
-  function setAnalysisTarget(target) {    state.analysisTarget = target || null;
+  function setAnalysisTarget(target) {
+    state.analysisTarget = target || null;
     state.analysis = null;
     state.analysisLoading = false;
   }

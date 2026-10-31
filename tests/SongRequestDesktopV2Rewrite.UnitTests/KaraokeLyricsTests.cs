@@ -59,6 +59,26 @@ public class KaraokeLyricsTests
     }
 
     [Fact]
+    public void Build_PreservesEmptyTimedLinesSoUiIndexesStayAligned()
+    {
+        var lines = new List<(TimeSpan Time, string Text)>
+        {
+            (TimeSpan.Zero, ""),
+            (TimeSpan.FromSeconds(5), "hello world"),
+            (TimeSpan.FromSeconds(12), ""),
+            (TimeSpan.FromSeconds(14), "last line")
+        };
+
+        var result = KaraokeLyrics.Build(lines, null, 20);
+
+        Assert.Equal(4, result.Lines.Count);
+        Assert.Empty(result.Lines[0].Words);
+        Assert.Equal("hello", result.Lines[1].Words[0].Text);
+        Assert.Empty(result.Lines[2].Words);
+        Assert.Equal("last", result.Lines[3].Words[0].Text);
+    }
+
+    [Fact]
     public void Build_StillProducesWordTimingsWithoutAnalysis()
     {
         var lines = new List<(TimeSpan Time, string Text)>
