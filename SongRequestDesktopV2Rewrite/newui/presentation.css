@@ -613,3 +613,31 @@ body {
 .lyrics-line[data-part="verse"] { border-left-color: rgba(91, 141, 239, .34); }
 .lyrics-line[data-part="pre-chorus"] { border-left-color: rgba(255, 193, 7, .38); }
 .lyrics-line[data-part="bridge"] { border-left-color: rgba(45, 212, 191, .38); }
+
+/* Karaoke mode: word-by-word lyrics + pause progress. */
+.karaoke-word { color: inherit; transition: color .08s linear; }
+.karaoke-word.is-sung { color: #d8ccff; }
+.karaoke-word.is-active {
+  color: transparent;
+  background-image: linear-gradient(90deg,
+    #ffffff 0 var(--karaoke-progress, 0%),
+    rgba(255, 255, 255, .52) var(--karaoke-progress, 0%) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.karaoke-pause {
+  width: min(620px, 92%);
+  margin: 18px auto;
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(208, 188, 255, .22);
+  background: rgba(208, 188, 255, .08);
+  box-sizing: border-box;
+}
+.karaoke-pause[hidden] { display: none !important; }
+.karaoke-pause-copy { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 8px; }
+.karaoke-pause-label { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #cbb7f5; }
+.karaoke-pause-label i { margin-right: 6px; }
+.karaoke-pause-time { font-size: 12px; font-weight: 700; color: rgba(255,255,255,.7); font-variant-numeric: tabular-nums; }
+.karaoke-pause-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,.10); overflow: hidden; }
+.karaoke-pause-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8b7bff, #d0bcff); transition: width .12s linear; }

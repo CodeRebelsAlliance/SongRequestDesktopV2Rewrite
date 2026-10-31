@@ -297,6 +297,8 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Song parts | U | structured intro/verse/chorus/verse/chorus/bridge/chorus/outro fixture detects all parts, labels them and keeps non-overlapping chapter ranges |
 | Lyric-informed parts | U | repeated/unique timed lyric phrases split a 48 s “chorus” into verse/chorus chapters; YouTube captions are excluded |
 | Chapter lyrics UI | J | desktop/mobile/presentation lyrics receive colour-coded chapter labels and per-line chapter data; timed lines carry their timestamps |
+| Karaoke timing | U | syllable/novelty-based word timings stay monotonic inside lyric lines; long instrumental gaps become pauses; fallback works without analysis |
+| Karaoke UI | J | shared module renders word spans, sung/active states and animated pause bars; pages load it and expose the persisted toggle |
 | Auto-analysis setting | U | persisted through `saveSettings`/`getSettings`; cached/auto results are pushed for the current track |
 | Analysis cache | U | fresh results are reused, persisted and re-loaded; `force` re-analyses; algorithm-version mismatch invalidates; deleting a library song deletes its analysis |
 | Library pre-analysis | U | background pass analyzes missing songs, reports progress, skips current analyses, and stops/queues safely |

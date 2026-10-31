@@ -290,6 +290,24 @@ public class YoutubeFormInterop
                                           analysis.SongPath, StringComparison.OrdinalIgnoreCase))
                         {
                             PresentationSendEvent("songChaptersUpdate", new { parts = CamelCase(analysis.Parts) });
+
+                            // When karaoke is on, refresh the lyrics so word timings
+                            // can use the just-finished analysis timeline.
+                            if (ConfigService.Instance.Current?.KaraokeMode == true)
+                            {
+                                var key = $"{current.songPath}|{current.Artist}|{current.Title}";
+                                LyricsResult? cached = null;
+                                lock (_musicPlayerLyricsCacheLock)
+                                {
+                                    _musicPlayerLyricsCache.TryGetValue(key, out cached);
+                                }
+                                if (cached != null)
+                                {
+                                    var mpSend = _ytForm.NewUiRef?.MusicPlayerSendMessage;
+                                    if (mpSend != null) SendLyricsResult(mpSend, cached, current);
+                                    PresentationSendLyricsResult(cached, current);
+                                }
+                            }
                         }
                     }
                     catch { }
@@ -2953,6 +2971,45 @@ public class YoutubeFormInterop
         catch { return null; }
     }
 
+    private SongAnalysis? AnalysisForSong(Song? song)
+    {
+        try
+        {
+            if (song == null || string.IsNullOrWhiteSpace(song.songPath)) return null;
+            return _analysis.GetFresh(AppPaths.ResolvePortablePath(song.songPath));
+        }
+        catch { return null; }
+    }
+
+    private object? BuildKaraokePayload(Song? song, IReadOnlyList<(TimeSpan Time, string Text)> syncedLines)
+    {
+        if (syncedLines.Count == 0) return null;
+        var analysis = AnalysisForSong(song);
+        double duration = analysis?.DurationSeconds ?? (song?.Duration.TotalSeconds ?? 0);
+        var karaoke = KaraokeLyrics.Build(syncedLines, analysis, duration);
+        return new
+        {
+            lines = karaoke.Lines.Select(line => new
+            {
+                time = line.Time,
+                end = line.End,
+                text = line.Text,
+                words = line.Words.Select(word => new
+                {
+                    start = word.Start,
+                    end = word.End,
+                    text = word.Text
+                }).ToList()
+            }).ToList(),
+            pauses = karaoke.Pauses.Select(pause => new
+            {
+                start = pause.Start,
+                end = pause.End,
+                duration = pause.Duration
+            }).ToList()
+        };
+    }
+
     /// <summary>
     /// Feeds non-caption timed lyrics into chapter detection. YouTube captions are
     /// deliberately excluded: they are often auto-generated and their line breaks
@@ -3132,6 +3189,7 @@ public class YoutubeFormInterop
             autoAnalyzeSongs = cfg.AutoAnalyzeSongs,
             autoAnalyzeLibraryOnAdd = cfg.AutoAnalyzeLibraryOnAdd,
             autoAnalyzeLibraryOnAlgorithmUpdate = cfg.AutoAnalyzeLibraryOnAlgorithmUpdate,
+            karaokeMode = cfg.KaraokeMode,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
             systemMediaActive = SystemMediaActive,
@@ -3480,6 +3538,7 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("autoAnalyzeSongs", out var aas)) cfg.AutoAnalyzeSongs = aas.ToObject<bool>();
                 if (settings.TryGetValue("autoAnalyzeLibraryOnAdd", out var aala)) cfg.AutoAnalyzeLibraryOnAdd = aala.ToObject<bool>();
                 if (settings.TryGetValue("autoAnalyzeLibraryOnAlgorithmUpdate", out var aalau)) cfg.AutoAnalyzeLibraryOnAlgorithmUpdate = aalau.ToObject<bool>();
+                if (settings.TryGetValue("karaokeMode", out var karaoke)) cfg.KaraokeMode = karaoke.ToObject<bool>();
                 if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
 
                 // Local API / MCP servers. ApplyConfig is called after the update;
@@ -3515,6 +3574,13 @@ public class YoutubeFormInterop
                 updateLibrary.ToObject<bool>())
             {
                 try { _libraryAnalysis.StartIfOutdated(); } catch { }
+            }
+
+            if (settings.ContainsKey("karaokeMode"))
+            {
+                var enabled = ConfigService.Instance.Current?.KaraokeMode == true;
+                MusicPlayerSendEvent("karaokeModeChanged", new { enabled });
+                PresentationSendEvent("karaokeModeChanged", new { enabled });
             }
 
             // Re-register global hotkeys if the toggle changed.
@@ -4224,12 +4290,17 @@ public class YoutubeFormInterop
             _ => ""
         };
         var data = new System.Collections.Generic.Dictionary<string, object>();
+        var syncedLines = result.Found && result.HasSynced
+            ? result.ParseSyncedLines()
+            : new List<(TimeSpan Time, string Text)>();
 
-        if (result.Found && result.HasSynced)
+        if (syncedLines.Count > 0)
         {
-            var syncedLines = result.ParseSyncedLines();
             data["syncedLyrics"] = syncedLines.Select(l => new { time = l.Time.TotalSeconds, text = l.Text }).ToList();
             data["hasSynced"] = true;
+
+            var karaoke = BuildKaraokePayload(song, syncedLines);
+            if (karaoke != null) data["karaoke"] = karaoke;
         }
         else if (result.Found && !string.IsNullOrWhiteSpace(result.PlainLyrics))
         {
@@ -4247,6 +4318,7 @@ public class YoutubeFormInterop
         }
 
         data["provider"] = provider;
+        data["karaokeMode"] = ConfigService.Instance.Current?.KaraokeMode == true;
         var chapters = ChaptersForSong(song);
         var chaptersJson = chapters == null ? null : CamelCase(chapters);
         if (chaptersJson != null) data["chapters"] = chaptersJson;
@@ -5923,12 +5995,16 @@ public class YoutubeFormInterop
             _ => ""
         };
         var data = new Dictionary<string, object>();
+        var syncedLines = result.Found && result.HasSynced
+            ? result.ParseSyncedLines()
+            : new List<(TimeSpan Time, string Text)>();
 
-        if (result.Found && result.HasSynced)
+        if (syncedLines.Count > 0)
         {
-            var syncedLines = result.ParseSyncedLines();
             data["syncedLyrics"] = syncedLines.Select(l => new { time = l.Time.TotalSeconds, text = l.Text }).ToList();
             data["hasSynced"] = true;
+            var karaoke = BuildKaraokePayload(song, syncedLines);
+            if (karaoke != null) data["karaoke"] = karaoke;
         }
         else if (result.Found && !string.IsNullOrWhiteSpace(result.PlainLyrics))
         {
@@ -5946,6 +6022,7 @@ public class YoutubeFormInterop
         }
 
         data["provider"] = provider;
+        data["karaokeMode"] = ConfigService.Instance.Current?.KaraokeMode == true;
         var presentationChapters = ChaptersForSong(song);
         var presentationChaptersJson = presentationChapters == null ? null : CamelCase(presentationChapters);
         if (presentationChaptersJson != null) data["chapters"] = presentationChaptersJson;

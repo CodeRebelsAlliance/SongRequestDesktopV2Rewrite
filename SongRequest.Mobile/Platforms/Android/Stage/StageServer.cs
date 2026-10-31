@@ -601,6 +601,39 @@ internal sealed class StageServer : IDisposable
                     confidence = part.Confidence
                 }).ToList();
             }
+
+            var karaoke = KaraokeLyrics.Build(result.ParseSyncedLines(), analysis, analysis?.DurationSeconds ?? song.Duration.TotalSeconds);
+            var karaokePayload = new
+            {
+                lines = karaoke.Lines.Select(line => new
+                {
+                    time = line.Time,
+                    end = line.End,
+                    text = line.Text,
+                    words = line.Words.Select(word => new
+                    {
+                        start = word.Start,
+                        end = word.End,
+                        text = word.Text
+                    }).ToList()
+                }).ToList(),
+                pauses = karaoke.Pauses.Select(pause => new
+                {
+                    start = pause.Start,
+                    end = pause.End,
+                    duration = pause.Duration
+                }).ToList()
+            };
+
+            return new
+            {
+                syncedLyrics = synced,
+                plainLyrics = plain,
+                provider,
+                chapters,
+                karaoke = karaokePayload,
+                karaokeMode = ConfigService.Instance.Current?.KaraokeMode == true
+            };
         }
         catch { }
 
@@ -609,7 +642,8 @@ internal sealed class StageServer : IDisposable
             syncedLyrics = synced,
             plainLyrics = plain,
             provider,
-            chapters
+            chapters,
+            karaokeMode = ConfigService.Instance.Current?.KaraokeMode == true
         };
     }
 

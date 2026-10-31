@@ -53,6 +53,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _autoAnalyzeSongs = true;
         private bool _autoAnalyzeLibraryOnAdd = true;
         private bool _autoAnalyzeLibraryOnAlgorithmUpdate = true;
+        private bool _karaokeMode = false;
 
         // Local integration servers (HTTP/WebSocket API and MCP). Both are off by
         // default and bind to loopback only until the user explicitly changes it.
@@ -380,6 +381,16 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _autoAnalyzeLibraryOnAlgorithmUpdate;
             set => SetField(ref _autoAnalyzeLibraryOnAlgorithmUpdate, value);
+        }
+
+        /// <summary>
+        /// Enables word-by-word lyric animation and animated pause bars. When off,
+        /// the lyrics keep the classic line-by-line display.
+        /// </summary>
+        public bool KaraokeMode
+        {
+            get => _karaokeMode;
+            set => SetField(ref _karaokeMode, value);
         }
 
         /// <summary>

@@ -222,6 +222,12 @@ The player (desktop and mobile) shares the same three audio tools:
   and optionally analyze new songs automatically or re-analyze when the analysis
   algorithm changes. Results are cached per song with an algorithm version;
   deleting a library song also deletes its analysis.
+- **Karaoke mode** (Settings → General on desktop, player Options/settings on
+  mobile): infers word-level timing from timed lyrics plus the song’s novelty
+  timeline, animates each lyric word as it is sung, and shows an animated
+  countdown/progress bar in long instrumental pauses only while that pause is
+  playing. The same renderer is used by the desktop player, mobile player and
+  presentation/TV page.
 
 All three are exposed through the command dispatcher (and therefore the HTTP
 API, WebSocket events and MCP) — see

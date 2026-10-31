@@ -1516,6 +1516,10 @@
     plainLyricLines = [];
     hasSyncedLyrics = false;
 
+    if (window.SongRequestKaraoke) {
+      window.SongRequestKaraoke.setEnabled(data.karaokeMode === true);
+    }
+
     var topSpacer = document.createElement('div');
     topSpacer.className = 'lyrics-spacer';
     lyricsContainer.appendChild(topSpacer);
@@ -1541,6 +1545,9 @@
         div.className = 'lyrics-line';
         div.textContent = line.text;
         div.dataset.time = line.time;
+        if (window.SongRequestKaraoke && data.karaoke && data.karaoke.lines && data.karaoke.lines[i]) {
+          window.SongRequestKaraoke.renderLine(div, data.karaoke.lines[i]);
+        }
         lyricsContainer.appendChild(div);
       }
     } else if (data.plainLyrics && data.plainLyrics.length > 0) {
@@ -1561,11 +1568,16 @@
     bottomSpacer.className = 'lyrics-spacer';
     lyricsContainer.appendChild(bottomSpacer);
 
+    if (window.SongRequestKaraoke && data.karaoke) {
+      window.SongRequestKaraoke.attachPauses(lyricsContainer, data.karaoke.pauses);
+    }
+
     if (lyricsProvider) lyricsProvider.textContent = data.provider ? 'Lyrics: ' + data.provider : '';
     lastHighlightIndex = -1;
     updateLyricFontSizes();
     resetLyricsScroll();                       // a new song starts at line one
     if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.decorateLyrics();
+    if (window.SongRequestKaraoke) window.SongRequestKaraoke.update(lyricsContainer, lastCurrentTime);
     if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
   }
 
@@ -1574,6 +1586,7 @@
     if (lines.length === 0) return;
 
     var adjustedTime = currentTime + lyricsSyncOffset;
+    if (window.SongRequestKaraoke) window.SongRequestKaraoke.update(lyricsContainer, adjustedTime);
     var index = -1;
     if (hasSyncedLyrics && syncedLyrics.length > 0) {
       for (var i = 0; i < syncedLyrics.length; i++) {

@@ -23,6 +23,7 @@
     progressAnalysis: null,
     analyses: {},
     autoAnalyzeSongs: true,
+    karaokeMode: false,
     analysisPending: false,
     analysisPendingProgress: 0,
     analysisPendingSince: 0
@@ -131,6 +132,9 @@
             updateAnalysisPendingUi();
           }
           break;
+        case 'karaokeModeChanged':
+          applyKaraokeMode(data.enabled === true);
+          break;
         case 'refresh':
           refreshStates();
           break;
@@ -223,9 +227,21 @@
     updateAnalysisPendingUi();
   }
 
+  function applyKaraokeMode(enabled) {
+    var changed = state.karaokeMode !== !!enabled;
+    state.karaokeMode = !!enabled;
+    if (global.SongRequestKaraoke) global.SongRequestKaraoke.setEnabled(!!enabled);
+    if (changed && state.karaokeMode) {
+      // Re-request lyrics so the host can attach word timings derived from the
+      // now-current analysis (the initial lyrics may have arrived before it).
+      request('requestLyrics').catch(function () { });
+    }
+  }
+
   function refreshStates() {
     request('getSettings').then(function (cfg) {
       state.autoAnalyzeSongs = !cfg || cfg.autoAnalyzeSongs !== false;
+      applyKaraokeMode(cfg && cfg.karaokeMode === true);
       if (state.autoAnalyzeSongs && state.currentSongPath && !state.progressAnalysis) {
         startAnalysisPending();
       } else if (!state.autoAnalyzeSongs) {

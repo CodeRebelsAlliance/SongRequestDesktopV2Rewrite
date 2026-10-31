@@ -380,7 +380,7 @@ Live events include:
 | `requests.updated` | A fetch of the send-in list completed. Re-read `/api/v1/requests` or send a command. |
 | `queue.updated` | Queue or playlist queue changed. Payload contains both queues. |
 | `player.progress` | Playback progress (throttled to one per second), including audio-quality and lyrics metadata. |
-| `lyricsUpdate` | Lyrics for the current track were resolved, including the provider (`Embedded`, `LRC File`, `LRCLIB` or `YouTube captions`). |
+| `lyricsUpdate` | Lyrics for the current track were resolved, including the provider (`Embedded`, `LRC File`, `LRCLIB` or `YouTube captions`), chapter markers and, when available, inferred karaoke word timings and long-pause ranges. |
 | `nowPlayingUpdate` | The track changed (forwarded from the app engine). |
 | `queueUpdate` | Raw queue update forwarded from the web UI bridge. |
 | `downloadProgress` | Request download progress (`videoId`, `stage`, `progress`). |

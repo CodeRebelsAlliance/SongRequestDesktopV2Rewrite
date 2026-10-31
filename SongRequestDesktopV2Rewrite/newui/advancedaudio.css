@@ -473,6 +473,72 @@
 .lyrics-line[data-part="intro"], .lyrics-line[data-part="outro"],
 .mm-line[data-part="intro"], .mm-line[data-part="outro"] { border-left-color: rgba(154, 154, 164, .30); }
 
+/* ── Karaoke mode: word-by-word lyrics + pause progress ───────── */
+.karaoke-word {
+  color: inherit;
+  transition: color .08s linear;
+}
+.karaoke-word.is-sung { color: #d8ccff; }
+.karaoke-word.is-active {
+  color: transparent;
+  background-image: linear-gradient(90deg,
+    #ffffff 0 var(--karaoke-progress, 0%),
+    rgba(255, 255, 255, .52) var(--karaoke-progress, 0%) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.mm-line .karaoke-word.is-sung { color: var(--mm-primary, #d0bcff); }
+.mm-line .karaoke-word.is-active {
+  background-image: linear-gradient(90deg,
+    #ffffff 0 var(--karaoke-progress, 0%),
+    rgba(255, 255, 255, .52) var(--karaoke-progress, 0%) 100%);
+}
+
+.karaoke-pause {
+  width: min(560px, 92%);
+  margin: 14px auto;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(208, 188, 255, .20);
+  background: rgba(208, 188, 255, .07);
+  box-sizing: border-box;
+}
+.karaoke-pause[hidden] { display: none !important; }
+.karaoke-pause-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+.karaoke-pause-label {
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #cbb7f5;
+}
+.karaoke-pause-label i { margin-right: 5px; }
+.karaoke-pause-time {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, .70);
+  font-variant-numeric: tabular-nums;
+}
+.karaoke-pause-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .10);
+  overflow: hidden;
+}
+.karaoke-pause-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8b7bff, #d0bcff);
+  transition: width .12s linear;
+}
+
 .ad-toast {
   position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
   z-index: 13000; background: #2f2f36; color: #fff; border: 1px solid #50505a;

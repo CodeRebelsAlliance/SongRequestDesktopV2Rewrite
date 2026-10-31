@@ -301,6 +301,9 @@
     presLyrics.innerHTML = '';
     if (lyricsProvider) lyricsProvider.textContent = '';
     presChapters = data.chapters || [];
+    if (window.SongRequestKaraoke) {
+      window.SongRequestKaraoke.setEnabled(data.karaokeMode === true);
+    }
 
     var fragment = document.createDocumentFragment();
     fragment.appendChild(createSpacer());
@@ -323,6 +326,9 @@
         div.textContent = item.text || '';
         div.dataset.index = i;
         div.dataset.time = item.time;
+        if (window.SongRequestKaraoke && data.karaoke && data.karaoke.lines && data.karaoke.lines[i]) {
+          window.SongRequestKaraoke.renderLine(div, data.karaoke.lines[i]);
+        }
         fragment.appendChild(div);
         lines.push(div);
       });
@@ -344,6 +350,11 @@
 
     if (data.provider && lyricsProvider) {
       lyricsProvider.textContent = 'Source: ' + data.provider;
+    }
+
+    if (window.SongRequestKaraoke) {
+      if (data.karaoke) window.SongRequestKaraoke.attachPauses(presLyrics, data.karaoke.pauses);
+      window.SongRequestKaraoke.update(presLyrics, lastCurrentTime || 0);
     }
 
     updateLyricFontSizes();
@@ -529,6 +540,7 @@
     if (!lines.length) return;
 
     var adjustedTime = currentTime;
+    if (window.SongRequestKaraoke) window.SongRequestKaraoke.update(presLyrics, adjustedTime);
 
     if (hasSyncedLyrics && syncedLyrics.length > 0) {
       var domIndex = -1;
@@ -648,6 +660,8 @@
         } else if (name === 'songChaptersUpdate') {
           presChapters = data.parts || [];
           decoratePresentationChapters();
+        } else if (name === 'karaokeModeChanged') {
+          if (window.SongRequestKaraoke) window.SongRequestKaraoke.setEnabled(data.enabled === true);
         } else if (name === 'presentationSettings') {
           applyLyricsSettings(data);
         } else if (name === 'presentationQueueUpdate') {

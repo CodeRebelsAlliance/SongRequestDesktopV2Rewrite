@@ -860,6 +860,10 @@
     lyrics.active = -1;
     setLyricsSource(data && data.provider ? data.provider : '');
 
+    if (window.SongRequestKaraoke) {
+      window.SongRequestKaraoke.setEnabled(data && data.karaokeMode === true);
+    }
+
     if (!lyrics.synced.length && !lyrics.plain.length) {
       lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-music"></i><span>No lyrics available</span></div>';
       return;
@@ -880,6 +884,18 @@
 
     lyricsEl.innerHTML = html;
     applyLyricsFontScale();
+
+    if (window.SongRequestKaraoke) {
+      if (data && data.karaoke && data.karaoke.lines) {
+        for (var k = 0; k < data.karaoke.lines.length; k++) {
+          var lineEl = lyricsEl.querySelector('.mm-line[data-index="' + k + '"]');
+          if (lineEl) window.SongRequestKaraoke.renderLine(lineEl, data.karaoke.lines[k]);
+        }
+      }
+      if (data && data.karaoke) window.SongRequestKaraoke.attachPauses(lyricsEl, data.karaoke.pauses);
+      window.SongRequestKaraoke.update(lyricsEl, now.time || 0);
+    }
+
     if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.decorateLyrics();
     if (lyricsOpen) highlightLyrics(now.time);
   }
@@ -888,6 +904,7 @@
     if (!lyrics.synced.length || !lyricsOpen) return;
 
     var adjustedTime = time + lyrics.syncOffset;
+    if (window.SongRequestKaraoke) window.SongRequestKaraoke.update(lyricsEl, adjustedTime);
     var index = -1;
     for (var i = 0; i < lyrics.synced.length; i++) {
       if (lyrics.synced[i].time <= adjustedTime) index = i; else break;
@@ -1491,6 +1508,8 @@
             '<input id="mm-menu-normalize" type="checkbox"' + (cfg && cfg.normalizeVolume ? ' checked' : '') + '></div>' +
           '<div class="mm-sheet-row"><div class="mm-sheet-label">Auto-analyze songs<div class="mm-sheet-sub">BPM, chapters &amp; drops on the progress bar</div></div>' +
             '<input id="mm-menu-auto-analyze" type="checkbox"' + ((!cfg || cfg.autoAnalyzeSongs !== false) ? ' checked' : '') + '></div>' +
+          '<div class="mm-sheet-row"><div class="mm-sheet-label">Karaoke mode<div class="mm-sheet-sub">Word-by-word lyrics and pause bars</div></div>' +
+            '<input id="mm-menu-karaoke" type="checkbox"' + (cfg && cfg.karaokeMode ? ' checked' : '') + '></div>' +
           '<h3>Audio output</h3>' +
           '<div class="mm-sheet-row"><select id="mm-menu-device">' + deviceOptions + '</select></div>' +
           '<h3>Sound</h3>' +
@@ -1530,6 +1549,12 @@
     if (autoAnalyze) autoAnalyze.addEventListener('change', function () {
       send('saveSettings', { settings: { autoAnalyzeSongs: this.checked } });
       if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.refresh();
+    });
+
+    var karaoke = $('mm-menu-karaoke');
+    if (karaoke) karaoke.addEventListener('change', function () {
+      send('saveSettings', { settings: { karaokeMode: this.checked } });
+      if (window.SongRequestKaraoke) window.SongRequestKaraoke.setEnabled(this.checked);
     });
 
     var device = $('mm-menu-device');
@@ -1598,6 +1623,7 @@
         '<div class="mm-sheet-row"><select id="mm-set-mode">' + modeOptions + '</select></div>' +
         '<h3>Playback</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-auto-analyze"' + (cfg.autoAnalyzeSongs !== false ? ' checked' : '') + '> Automatically analyze playing songs</label>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-karaoke"' + (cfg.karaokeMode === true ? ' checked' : '') + '> Karaoke mode (word-by-word lyrics and pause bars)</label>' +
         '<div class="mm-sheet-note" style="margin-top:4px">Shows BPM, song chapters and drops on the player progress bar from the cached analysis.</div>' +
         '<h3>Library analysis</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-library-analyze-add"' + (cfg.autoAnalyzeLibraryOnAdd !== false ? ' checked' : '') + '> Analyze new library songs automatically</label>' +
@@ -1718,6 +1744,7 @@
         bearerToken: $('mm-set-token').value,
         autoGrabCookies: $('mm-set-auto-yt').checked,
         autoAnalyzeSongs: $('mm-set-auto-analyze').checked,
+        karaokeMode: $('mm-set-karaoke').checked,
         autoAnalyzeLibraryOnAdd: $('mm-set-library-analyze-add').checked,
         autoAnalyzeLibraryOnAlgorithmUpdate: $('mm-set-library-analyze-version').checked,
         libraryAutoAddDownloads: $('mm-set-auto-add').checked,
