@@ -287,6 +287,47 @@ test('analysis cache carries an algorithm version', () => {
   assert.match(models, /AlgorithmVersion/);
 });
 
+test('car mode uses a music-only layout with a waiting screen', () => {
+  const page = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'MainPage.cs'), 'utf8');
+  const appHost = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'AppHost.cs'), 'utf8');
+  const js = read('mobilemusic.js');
+  const css = read('mobilemusic.css');
+  const manifest = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'Platforms', 'Android', 'AndroidManifest.xml'), 'utf8');
+  const carService = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'Platforms', 'Android', 'Car', 'CarMediaService.cs'), 'utf8');
+  const automotive = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'Platforms', 'Android', 'Resources', 'xml', 'automotive_app_desc.xml'), 'utf8');
+
+  assert.match(page, /EnableCarMode/);
+  assert.match(page, /EndCarWaiting/);
+  assert.match(page, /TabsForCar|_carMode/);
+  assert.match(page, /Waiting for SongRequest on your phone/);
+  assert.match(page, /StartupMode\.MusicPlayer/);
+  const tabsStart = page.indexOf('private IReadOnlyList<TabDef> TabsFor(');
+  const carStart = page.indexOf('if (_carMode)', tabsStart);
+  const carEnd = page.indexOf('return TabsForMode', carStart);
+  assert.ok(tabsStart >= 0 && carStart > tabsStart && carEnd > carStart, 'expected a car-mode tab branch');
+  assert.ok(!page.slice(carStart, carEnd).includes('stage'), 'car mode must not expose the stage tab');
+  assert.match(appHost, /ApplyCarMode/);
+  assert.match(appHost, /CarMediaBridge\.Register/);
+  assert.match(js, /carMode/);
+  assert.match(js, /data-car/);
+  assert.match(css, /data-car="1"/);
+  assert.match(manifest, /android\.hardware\.type\.automotive/);
+  assert.match(manifest, /CarMediaService/);
+  assert.match(manifest, /android\.media\.browse\.MediaBrowserService/);
+  assert.match(manifest, /com\.google\.android\.gms\.car\.application/);
+  assert.match(automotive, /<uses name="media"/);
+  assert.match(carService, /OnGetRoot/);
+  assert.match(carService, /OnLoadChildren/);
+  assert.match(carService, /Waiting for SongRequest/);
+  assert.match(carService, /CarMediaBridge/);
+  assert.match(carService, /SetAndroidAutoConnected\(true\)/);
+  assert.match(carService, /SetAndroidAutoConnected\(false\)/);
+  assert.match(carService, /ApplyCarMode\(\)/);
+  const shell = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'MobileShell.cs'), 'utf8');
+  assert.match(shell, /Host\.SetupComplete == true/);
+  assert.match(shell, /CarMediaBridge\.SetReady\(true\)/);
+});
+
 test('advanced audio is exposed through the local API and command catalogue', () => {
   const api = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'AppIntegrationServer.Api.cs'), 'utf8');
   const catalog = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'CommandCatalog.cs'), 'utf8');

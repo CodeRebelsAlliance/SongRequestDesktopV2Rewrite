@@ -1,10 +1,12 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Android.App;
 using Android.Content;
 using Android.Graphics;
 using Android.Media;
 using Android.Media.Session;
+using Android.OS;
 using SongRequestDesktopV2Rewrite;
 using AndroidMetadata = Android.Media.MediaMetadata;
 using CoreMetadata = SongRequestDesktopV2Rewrite.MediaMetadata;
@@ -215,5 +217,18 @@ internal sealed class AndroidSystemMediaSession : ISystemMediaSession
 
         public override void OnSeekTo(long pos)
             => _owner.SeekRequested?.Invoke(_owner, TimeSpan.FromMilliseconds(pos));
+
+        public override void OnPlayFromMediaId(string? mediaId, Bundle? extras)
+        {
+            if (!string.IsNullOrWhiteSpace(mediaId))
+                CarMediaBridge.PlayMediaId(mediaId);
+        }
+
+        public override void OnPlayFromSearch(string? query, Bundle? extras)
+        {
+            if (string.IsNullOrWhiteSpace(query)) return;
+            var match = CarMediaBridge.SearchFor(query).FirstOrDefault();
+            if (match != null) CarMediaBridge.PlayMediaId(match.Id);
+        }
     }
 }

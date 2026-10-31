@@ -125,18 +125,42 @@
     lastTime = Number(currentTime) || 0;
 
     var words = container.querySelectorAll('.karaoke-word');
+    var activeIndex = -1;
+    if (enabled) {
+      for (var a = 0; a < words.length; a++) {
+        var as = Number(words[a].dataset.start);
+        var ae = Number(words[a].dataset.end);
+        if (isFinite(as) && isFinite(ae) && lastTime >= as && lastTime < ae) {
+          activeIndex = a;
+          break;
+        }
+      }
+    }
+
+    var maxLift = container.id === 'mm-lyrics' ? 5.0 : 6.5;
     for (var i = 0; i < words.length; i++) {
       var word = words[i];
       var start = Number(word.dataset.start);
       var end = Number(word.dataset.end);
       var progress = 0;
       if (enabled && isFinite(start) && isFinite(end) && end > start) {
+        // The wipe spans exactly the word's sung duration, so long words fill
+        // slowly and short words fill quickly.
         progress = Math.max(0, Math.min(1, (lastTime - start) / (end - start)));
       }
       word.classList.toggle('is-sung', enabled && isFinite(end) && lastTime >= end);
       word.classList.toggle('is-active', enabled && isFinite(start) && isFinite(end) &&
         lastTime >= start && lastTime < end);
       word.style.setProperty('--karaoke-progress', Math.round(progress * 100) + '%');
+
+      // A smooth arc across neighbouring words instead of a single-word jump.
+      var distance = activeIndex >= 0 ? Math.abs(i - activeIndex) : 99;
+      var liftFactor = distance === 0 ? 1.0
+        : distance === 1 ? 0.58
+        : distance === 2 ? 0.24
+        : 0;
+      var lift = activeIndex >= 0 ? -maxLift * liftFactor : 0;
+      word.style.setProperty('--karaoke-lift', lift.toFixed(2) + 'px');
     }
 
     var pauses = container.querySelectorAll('.karaoke-pause');

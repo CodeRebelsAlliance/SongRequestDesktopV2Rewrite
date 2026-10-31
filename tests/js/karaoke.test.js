@@ -23,6 +23,10 @@ test('karaoke mode is available on desktop, mobile and presentation pages', () =
   assert.match(js, /is-sung/);
   assert.match(js, /is-active/);
   assert.match(js, /dataset\.text/);
+  assert.match(js, /\(lastTime - start\) \/ \(end - start\)/);
+  assert.match(js, /--karaoke-lift/);
+  assert.match(js, /liftFactor/);
+  assert.match(js, /distance === 1 \? 0\.58/);
   assert.match(js, /chooseLineForTime/);
   assert.match(js, /nextLineForTime/);
   assert.match(js, /gap \* 0\.5/);

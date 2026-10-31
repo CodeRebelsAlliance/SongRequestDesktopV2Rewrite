@@ -1328,3 +1328,46 @@ input[type="search"] {
   border-color: rgba(208, 188, 255, 0.35);
   color: var(--mm-primary);
 }
+
+/* ── Car / Android Auto layout (derived from the touch player) ───────────── */
+:root[data-car="1"] body { background: #0f0d13; }
+:root[data-car="1"] .mm-header { padding-top: max(12px, env(safe-area-inset-top)); }
+:root[data-car="1"] .mm-header h1,
+:root[data-car="1"] .mm-brand span { font-size: 24px; }
+:root[data-car="1"] .mm-icon-btn { width: 52px; height: 52px; font-size: 20px; }
+:root[data-car="1"] .mm-search { min-height: 54px; }
+:root[data-car="1"] .mm-search input { font-size: 18px; }
+:root[data-car="1"] .mm-list { gap: 4px; }
+:root[data-car="1"] .mm-song,
+:root[data-car="1"] .mm-card { min-height: 66px; }
+:root[data-car="1"] .mm-song-title,
+:root[data-car="1"] .mm-card-title { font-size: 17px; }
+:root[data-car="1"] .mm-player-top { min-height: 48px; }
+:root[data-car="1"] .mm-pill-btn { height: 40px; font-size: 14px; padding: 0 16px; }
+:root[data-car="1"] .mm-controls .mm-icon-btn { width: 58px; height: 58px; font-size: 24px; }
+:root[data-car="1"] .mm-play-btn { width: 68px; height: 68px; font-size: 25px; }
+:root[data-car="1"] .mm-seek { min-height: 36px; }
+:root[data-car="1"] #mm-seek::-webkit-slider-thumb { width: 22px; height: 22px; }
+:root[data-car="1"] .mm-sheet-action { min-height: 56px; font-size: 16px; }
+:root[data-car="1"] .mm-sheet-row { min-height: 54px; }
+:root[data-car="1"] .mm-sheet-label { font-size: 16px; }
+:root[data-car="1"] .mm-sheet-sub { font-size: 13px; }
+:root[data-car="1"] .mm-mini { min-height: 60px; }
+:root[data-car="1"] #mm-mini-title { font-size: 16px; }
+/* A car has no stage/presentation or sharing workflow. */
+:root[data-car="1"] .mm-sheet-action[data-menu="presentation"],
+:root[data-car="1"] .mm-sheet-action[data-menu="visualization"],
+:root[data-car="1"] .mm-sheet-action[data-menu="share"],
+:root[data-car="1"] .mm-sheet-action[data-menu="announcements"],
+:root[data-car="1"] #mm-view-share,
+:root[data-car="1"] .mm-home-youtube,
+:root[data-car="1"] .mm-detail-actions .mm-share,
+:root[data-car="1"] #mm-playlist-share {
+  display: none !important;
+}
+@media (orientation: landscape) and (min-width: 700px) {
+  :root[data-car="1"] .mm-home-scroller { grid-auto-columns: minmax(220px, 1fr); }
+  :root[data-car="1"] #mm-player-bg { opacity: .35; }
+  :root[data-car="1"] .mm-player .mm-hero { max-width: 560px; }
+  :root[data-car="1"] .mm-player-bottom { max-width: 760px; margin: 0 auto; width: 100%; }
+}

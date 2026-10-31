@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Microsoft.Maui.ApplicationModel;
 using SongRequestDesktopV2Rewrite;
 using SongRequestDesktopV2Rewrite.Integration;
@@ -89,6 +91,9 @@ public sealed class AppHost : IDisposable
 
         RemoteControlService.Instance.RegisterMusicEngine(Host.Music);
         AppBootstrap.Initialize();
+        RegisterCarMediaBridge();
+
+        if (CarModeState.IsCarMode) ApplyCarMode();
 
         // Optional local API + MCP server (off by default, see Settings).
         AppIntegrationServer.Instance.Initialize(Host, Interop);
@@ -134,6 +139,130 @@ public sealed class AppHost : IDisposable
         return Task.FromResult<Newtonsoft.Json.Linq.JToken?>(null);
     }
 
+    private string? _modeBeforeCar;
+
+    private void RegisterCarMediaBridge()
+    {
+        CarMediaBridge.Register(
+            browseLibrary: () =>
+            {
+                try
+                {
+                    return Interop.LibraryService.Data.Songs
+                        .Where(s => s.FileStatus == FileStatus.Present)
+                        .Select(LibraryEntry)
+                        .ToList();
+                }
+                catch { return new List<CarMediaEntry>(); }
+            },
+            browseQueue: () =>
+            {
+                try
+                {
+                    return Host.Music.Queue
+                        .Select((song, index) => new CarMediaEntry(
+                            "queue:" + index,
+                            song.Title,
+                            song.Artist,
+                            "",
+                            song.thumbnail as string,
+                            (long)song.Duration.TotalMilliseconds))
+                        .ToList();
+                }
+                catch { return new List<CarMediaEntry>(); }
+            },
+            search: query =>
+            {
+                try
+                {
+                    return Interop.LibraryService.Data.Search(query ?? string.Empty, 50)
+                        .Select(LibraryEntry)
+                        .ToList();
+                }
+                catch { return new List<CarMediaEntry>(); }
+            },
+            play: PlayCarMediaId);
+        CarMediaBridge.SetReady(Host.SetupComplete);
+    }
+
+    private static CarMediaEntry LibraryEntry(LibrarySong song) => new(
+        "library:" + song.Id,
+        song.Title,
+        song.Artist,
+        song.Album,
+        song.ThumbnailPath,
+        (long)song.Duration.TotalMilliseconds);
+
+    private bool PlayCarMediaId(string mediaId)
+    {
+        if (string.IsNullOrWhiteSpace(mediaId)) return false;
+
+        if (mediaId.StartsWith("library:", StringComparison.Ordinal))
+        {
+            var id = mediaId["library:".Length..];
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                try
+                {
+                    var lib = Interop.LibraryService.Data.FindSong(id);
+                    if (lib == null || !File.Exists(lib.FilePath)) return;
+                    var song = new Song(lib.Title, lib.Artist, lib.ThumbnailPath, lib.Duration, lib.FilePath);
+                    Host.Music.ClearQueue();
+                    Host.Music.Queue.Add(song);
+                    Host.Music.ComputeQueueTimings();
+                    Host.Music.PlaySong(song);
+                }
+                catch { }
+            });
+            return true;
+        }
+
+        if (mediaId.StartsWith("queue:", StringComparison.Ordinal) &&
+            int.TryParse(mediaId["queue:".Length..], out int index))
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                try
+                {
+                    while (index-- > 0 && Host.Music.Queue.Count > 1)
+                        Host.Music.RemoveQueueItem(0);
+                    if (Host.Music.Queue.Count > 0) Host.Music.PlaySong(Host.Music.Queue[0]);
+                }
+                catch { }
+            });
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Android car mode / Android Auto connection: switch to the music-only
+    /// layout and remember the previous mode for when the car disconnects.
+    /// </summary>
+    public void ApplyCarMode()
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(ApplyCarMode);
+            return;
+        }
+
+        if (CarModeState.IsCarMode)
+        {
+            _modeBeforeCar ??= ConfigService.Instance.Current?.OperatingMode ?? "SongRequests";
+            ConfigService.Instance.Update(c => c.OperatingMode = StartupMode.MusicPlayer.ToString());
+            _page.EnableCarMode();
+        }
+        else if (_modeBeforeCar != null)
+        {
+            var previous = _modeBeforeCar;
+            _modeBeforeCar = null;
+            ConfigService.Instance.Update(c => c.OperatingMode = previous);
+            _page.DisableCarMode(previous);
+        }
+    }
+
     private void OnHostMessage(string file, string message)
     {
         try
@@ -165,7 +294,7 @@ public sealed class AppHost : IDisposable
         switch (method)
         {
             case "mobileReady":
-                result = new { tab = _page.CurrentTabKey, mode = _page.Mode };
+                result = new { tab = _page.CurrentTabKey, mode = _page.Mode, car = _page.IsCarMode };
                 break;
 
             case "mobileOpenPlayer":

@@ -188,6 +188,12 @@ plan and the milestone state live in
 [`docs/MOBILE-APP-PLAN.md`](docs/MOBILE-APP-PLAN.md), the build/test commands and
 device checklists in [`docs/MOBILE-TESTING.md`](docs/MOBILE-TESTING.md).
 
+Car screens use a **music-only car layout** derived from the touch player: Home,
+Library and Player tabs, larger controls, search, queue and no Stage/Presentation
+or sharing tools. The Android host detects car UI mode and switches the operating
+mode to Music Player; native navigation stays behind a waiting screen until the
+normal startup flow on the phone is complete.
+
 ## Advanced audio
 
 The player (desktop and mobile) shares the same three audio tools:

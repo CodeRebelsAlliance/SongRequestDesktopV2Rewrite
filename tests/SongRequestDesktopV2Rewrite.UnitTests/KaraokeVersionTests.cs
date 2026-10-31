@@ -26,7 +26,7 @@ public class KaraokeVersionTests
             var decoded = ReadWav(output);
             var (centerOut, sideOut) = Centers(decoded);
 
-            Assert.True(centerOut < centerIn * 0.60,
+            Assert.True(centerOut < centerIn * 0.25,
                 $"centered vocal should drop (in {centerIn:F4}, out {centerOut:F4})");
             Assert.True(sideOut > 0.03, $"side content should remain (out {sideOut:F4})");
             Assert.NotEmpty(progress);

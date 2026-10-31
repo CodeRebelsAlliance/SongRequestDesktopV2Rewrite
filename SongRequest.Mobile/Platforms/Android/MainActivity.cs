@@ -88,8 +88,33 @@ public class MainActivity : MauiAppCompatActivity
     {
         base.OnCreate(savedInstanceState);
 
+        UpdateCarMode();
+
         // The notification permission is requested when playback first starts
         // (see AndroidPlatform.RequestNotificationPermissionOnce), so startup is
         // never blocked by a system dialog.
+    }
+
+    public override void OnConfigurationChanged(Android.Content.Res.Configuration newConfig)
+    {
+        base.OnConfigurationChanged(newConfig);
+        UpdateCarMode();
+    }
+
+    private void UpdateCarMode()
+    {
+        try
+        {
+            var configuration = Resources?.Configuration;
+            int mode = configuration == null ? 0 : (int)configuration.UiMode;
+            bool car = (mode & (int)Android.Content.Res.UiMode.TypeMask) ==
+                       (int)Android.Content.Res.UiMode.TypeCar;
+            CarModeState.SetUiMode(car);
+            AppHost.Current?.ApplyCarMode();
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"car mode detection failed: {ex.Message}");
+        }
     }
 }

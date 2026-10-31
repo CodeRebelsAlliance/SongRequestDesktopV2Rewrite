@@ -149,7 +149,7 @@ public static class KaraokeLyrics
 
             // Snap to a real attack transient if one is close enough.
             double snapped = ideal;
-            double bestDistance = Math.Max(0.20, total / Math.Max(4, tokens.Count) * 0.45);
+            double bestDistance = Math.Max(0.14, total / Math.Max(4, tokens.Count) * 0.32);
             foreach (double peak in peaks)
             {
                 double distance = Math.Abs(peak - ideal);
@@ -219,19 +219,31 @@ public static class KaraokeLyrics
         var timeline = analysis?.Timeline;
         if (timeline == null || timeline.Count < 3) return peaks;
 
-        double threshold = timeline
-            .Where(f => f.Time >= start && f.Time <= end)
-            .Select(f => f.Novelty)
-            .DefaultIfEmpty(0)
-            .Average() * 1.15;
+        var strengths = new double[timeline.Count];
+        double total = 0;
+        int count = 0;
+        for (int i = 1; i < timeline.Count; i++)
+        {
+            var frame = timeline[i];
+            if (frame.Time <= start || frame.Time >= end) continue;
 
+            // Vocal attacks show up both as spectral novelty and as a fast rise
+            // in short-term energy. Combining them catches consonants/syllable
+            // starts that a flux-only detector misses.
+            double rise = Math.Max(0, frame.RmsDb - timeline[i - 1].RmsDb);
+            strengths[i] = frame.Novelty + rise * 0.05;
+            total += strengths[i];
+            count++;
+        }
+        if (count == 0) return peaks;
+
+        double threshold = total / count * 1.08;
         for (int i = 1; i < timeline.Count - 1; i++)
         {
             var frame = timeline[i];
             if (frame.Time <= start || frame.Time >= end) continue;
-            if (frame.Novelty >= threshold &&
-                frame.Novelty >= timeline[i - 1].Novelty &&
-                frame.Novelty >= timeline[i + 1].Novelty)
+            if (strengths[i] < threshold) continue;
+            if (strengths[i] >= strengths[i - 1] && strengths[i] >= strengths[i + 1])
                 peaks.Add(frame.Time);
         }
         return peaks;

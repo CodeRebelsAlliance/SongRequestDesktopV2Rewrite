@@ -301,6 +301,7 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Karaoke UI | J | shared module renders word spans, sung/active states and animated pause bars; pages load it and expose the persisted toggle |
 | Vocal remover | U | stereo centre-channel suppression lowers a centred vocal and keeps side content; output is a playable WAV |
 | Karaoke versions | U | generation links/versions the file, reuses current results, deletes on song removal, and playback waits for the prepared path |
+| Car / car-screen layout | J/C# | car mode exposes Home/Library/Player only, hides stage/share tools, switches to MusicPlayer mode and shows a native waiting screen before startup completes |
 | Auto-analysis setting | U | persisted through `saveSettings`/`getSettings`; cached/auto results are pushed for the current track |
 | Analysis cache | U | fresh results are reused, persisted and re-loaded; `force` re-analyses; algorithm-version mismatch invalidates; deleting a library song deletes its analysis |
 | Library pre-analysis | U | background pass analyzes missing songs, reports progress, skips current analyses, and stops/queues safely |

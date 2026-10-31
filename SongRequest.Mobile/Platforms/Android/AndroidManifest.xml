@@ -4,6 +4,17 @@
 	     it (the user still confirms in the system installer). -->
 	<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 	<application android:allowBackup="true" android:icon="@mipmap/appicon" android:roundIcon="@mipmap/appicon_round" android:supportsRtl="true" android:networkSecurityConfig="@xml/network_security_config">
+		<!-- Android Auto / car media browser: library, search, queue and the shared
+		     MediaSession transport. -->
+		<service
+			android:name="net.bycra.songrequest.CarMediaService"
+			android:exported="true"
+			android:foregroundServiceType="mediaPlayback">
+			<intent-filter>
+				<action android:name="android.media.browse.MediaBrowserService" />
+			</intent-filter>
+		</service>
+		<meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
 		<provider
 			android:name="androidx.core.content.FileProvider"
 			android:authorities="${applicationId}.updates"
@@ -26,6 +37,9 @@
 	     the app stays installable on devices without them. -->
 	<uses-feature android:name="android.software.midi" android:required="false" />
 	<uses-feature android:name="android.hardware.usb.host" android:required="false" />
+	<!-- Car-optimized music layout: optional, so normal phones still install.
+	     The Android host switches to the music-only shell when UiMode is car. -->
+	<uses-feature android:name="android.hardware.type.automotive" android:required="false" />
 	<!-- Bluetooth LE MIDI: the system MIDI service owns the connection, the app
 	     needs this to talk to it (Android 12+). -->
 	<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />

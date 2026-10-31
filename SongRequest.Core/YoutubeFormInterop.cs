@@ -3134,7 +3134,11 @@ public class YoutubeFormInterop
 
             var version = await _karaoke.EnsureAsync(
                 source, song.Title, song.Artist, force: false, cancellationToken).ConfigureAwait(false);
-            return version?.KaraokePath;
+            if (version != null) return version.KaraokePath;
+
+            // If regeneration failed, an older linked karaoke file is still a
+            // better fallback than silently playing the original vocal track.
+            return _karaoke.Get(source)?.KaraokePath;
         }
         catch { return null; }
     }

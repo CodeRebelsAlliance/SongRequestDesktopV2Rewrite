@@ -1194,6 +1194,10 @@
       case 'mobileThemeColors':
         if (window.SongRequestTheme) window.SongRequestTheme.apply(data, 'mm', '#1d1b20', '#26232c');
         break;
+
+      case 'carMode':
+        document.documentElement.setAttribute('data-car', data && data.enabled ? '1' : '0');
+        break;
     }
   }
 
@@ -2291,6 +2295,7 @@
   lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-music"></i><span>No lyrics available</span></div>';
 
   request('mobileReady').then(function (ready) {
+    if (ready && ready.car) document.documentElement.setAttribute('data-car', '1');
     setTab((ready && ready.tab) || 'home');
   }).catch(function () {
     setTab('home');

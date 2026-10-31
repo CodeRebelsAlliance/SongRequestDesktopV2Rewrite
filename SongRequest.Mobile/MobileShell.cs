@@ -133,8 +133,11 @@ public sealed class MobileShell : IUiShell
     /// </summary>
     public void SetOperatingMode(StartupMode mode)
     {
+        if (AppHost.Current?.Host.SetupComplete == true)
+            CarMediaBridge.SetReady(true);
         _page.SetNavigationVisible(true);
         _page.ConfigureMode(mode);
+        _page.EndCarWaiting();
     }
 
     /// <summary>Quits the app (the web UI's Quit buttons).</summary>

@@ -69,6 +69,8 @@ public sealed class MainPage : ContentPage
     private Color _labelColor = ActiveLabel;
     private string? _themePrimary;
     private string? _themeSecondary;
+    private bool _carMode;
+    private readonly Grid _carWaiting;
 
     /// <summary>Raised for every message a page sends to the host (page file, raw JSON).</summary>
     public event Action<string, string>? HostMessageReceived;
@@ -101,6 +103,47 @@ public sealed class MainPage : ContentPage
         _tabBar.BackgroundColor = SurfaceContainer;
         _tabBar.HeightRequest = 80;
 
+        _carWaiting = new Grid
+        {
+            BackgroundColor = Color.FromArgb("#121212"),
+            IsVisible = false,
+            Children =
+            {
+                new VerticalStackLayout
+                {
+                    Spacing = 14,
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center,
+                    Children =
+                    {
+                        new ActivityIndicator
+                        {
+                            IsRunning = true,
+                            Color = Color.FromArgb("#D0BCFF"),
+                            WidthRequest = 42,
+                            HeightRequest = 42,
+                        },
+                        new Label
+                        {
+                            Text = "Waiting for SongRequest on your phone…",
+                            TextColor = Color.FromArgb("#ECE7F0"),
+                            FontSize = 20,
+                            HorizontalTextAlignment = TextAlignment.Center,
+                        },
+                        new Label
+                        {
+                            Text = "The music player will appear here when loading is complete.",
+                            TextColor = Color.FromArgb("#A9A4B3"),
+                            FontSize = 14,
+                            HorizontalTextAlignment = TextAlignment.Center,
+                        }
+                    }
+                }
+            }
+        };
+        _carWaiting.SetValue(Grid.RowSpanProperty, 2);
+        root.Add(_carWaiting, 0, 0);
+
         // The tabs are rebuilt from the operating mode; this shows the default
         // (request) shell until the startup flow reports the chosen mode.
         ConfigureMode(StartupMode.SongRequests);
@@ -126,14 +169,20 @@ public sealed class MainPage : ContentPage
     /// </summary>
     public void ConfigureMode(StartupMode mode)
     {
+        ConfigureMode(mode, force: false);
+    }
+
+    public void ConfigureMode(StartupMode mode, bool force)
+    {
         if (!MainThread.IsMainThread)
         {
-            MainThread.BeginInvokeOnMainThread(() => ConfigureMode(mode));
+            MainThread.BeginInvokeOnMainThread(() => ConfigureMode(mode, force));
             return;
         }
 
+        if (_carMode) mode = StartupMode.MusicPlayer;
         var name = mode.ToString();
-        if (string.Equals(name, _mode, StringComparison.Ordinal) && _tabs.Count > 0) return;
+        if (!force && string.Equals(name, _mode, StringComparison.Ordinal) && _tabs.Count > 0) return;
 
         _mode = name;
         var defs = TabsFor(mode);
@@ -161,7 +210,81 @@ public sealed class MainPage : ContentPage
     }
 
     /// <summary>
-    /// True once for the startup flow: the mode was just applied and its first tab
+    /// Switches the shell into the car-optimized music-only layout: Home,
+    /// Library and Player, no Stage/Presentation tabs. The native navigation stays
+    /// hidden behind a waiting screen until the normal startup flow finishes.
+    /// </summary>
+    public void EnableCarMode()
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(EnableCarMode);
+            return;
+        }
+
+        _carMode = true;
+        var alreadyReady = _navigationVisible;
+        _carWaiting.IsVisible = !alreadyReady;
+        if (!alreadyReady) SetNavigationVisible(false);
+        ConfigureMode(StartupMode.MusicPlayer, force: true);
+        if (alreadyReady)
+        {
+            _carWaiting.IsVisible = false;
+            SetNavigationVisible(true);
+        }
+        BroadcastCarMode(true);
+    }
+
+    /// <summary>Leaves car mode and rebuilds the normal mobile navigation.</summary>
+    public void DisableCarMode(string? previousMode = null)
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(() => DisableCarMode(previousMode));
+            return;
+        }
+
+        _carMode = false;
+        _carWaiting.IsVisible = false;
+        SetNavigationVisible(true);
+        var mode = Enum.TryParse<StartupMode>(previousMode, out var parsed)
+            ? parsed
+            : StartupMode.SongRequests;
+        ConfigureMode(mode, force: true);
+        BroadcastCarMode(false);
+    }
+
+    /// <summary>Called when the startup flow completes: the car may show the player.</summary>
+    public void EndCarWaiting()
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(EndCarWaiting);
+            return;
+        }
+
+        if (!_carMode) return;
+        _carWaiting.IsVisible = false;
+        SetNavigationVisible(true);
+    }
+
+    public bool IsCarMode => _carMode;
+
+    private void BroadcastCarMode(bool enabled)
+    {
+        try
+        {
+            var json = "{\"type\":\"event\",\"eventName\":\"carMode\",\"data\":{\"enabled\":" +
+                       (enabled ? "true" : "false") + "}}";
+            foreach (var view in _views.Values)
+            {
+                try { view.SendRawMessage(json); } catch { }
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>True once for the startup flow: the mode was just applied and its first tab
     /// is already the right screen.
     /// </summary>
     public bool ConsumeInitialPlayerOpen()
@@ -379,7 +502,22 @@ public sealed class MainPage : ContentPage
 
     // ── Tab bar ─────────────────────────────────────────────────────────────
 
-    private static IReadOnlyList<TabDef> TabsFor(StartupMode mode) => mode switch
+    private IReadOnlyList<TabDef> TabsFor(StartupMode mode)
+    {
+        if (_carMode)
+        {
+            return new[]
+            {
+                new TabDef("home", "Home", MobileMusicFile, "\uf015"),
+                new TabDef("library", "Library", MobileMusicFile, "\uf51f"),
+                new TabDef("player", "Player", MobileMusicFile, "\uf025"),
+            };
+        }
+
+        return TabsForMode(mode);
+    }
+
+    private static IReadOnlyList<TabDef> TabsForMode(StartupMode mode) => mode switch
     {
         StartupMode.MusicPlayer => new[]
         {
@@ -531,6 +669,15 @@ public sealed class MainPage : ContentPage
         // refresh simply ignore the event.
         try { view.SendRawMessage("{\"type\":\"event\",\"eventName\":\"refresh\"}"); }
         catch { }
+
+        if (_carMode)
+        {
+            try
+            {
+                view.SendRawMessage("{\"type\":\"event\",\"eventName\":\"carMode\",\"data\":{\"enabled\":true}}");
+            }
+            catch { }
+        }
 
         // A page created after the last song started still needs the current palette.
         if (_themePrimary != null)
