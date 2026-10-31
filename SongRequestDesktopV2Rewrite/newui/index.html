@@ -588,6 +588,27 @@
             <label class="settings-checkbox"><input type="checkbox" id="s-library-recommendations" /> Enable recommendation engine</label>
           </div>
           <div class="settings-card">
+            <div class="settings-card-title">Song Analysis</div>
+            <div class="settings-hint">Pre-analyze the library in the background for BPM, chapters, drops and quality. Analysis is cached per song and yields while music is playing.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-library-auto-analyze-add" /> Analyze new library songs automatically</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-library-auto-analyze-version" /> Re-analyze automatically after algorithm updates</label>
+            <div id="s-library-analysis-progress" style="display:none;margin-top:10px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:10px">
+                <span id="s-library-analysis-status" style="font-size:12px;color:#aaa">Idle</span>
+                <span id="s-library-analysis-pct" style="font-size:12px;color:#888;font-family:Consolas,monospace">0%</span>
+              </div>
+              <div style="height:6px;background:#1a1a1a;border-radius:3px;overflow:hidden">
+                <div id="s-library-analysis-bar" style="height:100%;width:0%;background:#c084fc;border-radius:3px;transition:width 0.25s ease"></div>
+              </div>
+              <div id="s-library-analysis-current" class="settings-hint" style="margin-top:5px"></div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+              <button id="s-library-analysis-start" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-play"></i> Analyze Library</button>
+              <button id="s-library-analysis-stop" class="top-btn" style="display:none;width:auto;padding:8px 14px;font-size:13px"><i class="fas fa-stop"></i> Stop</button>
+            </div>
+          </div>
+
+          <div class="settings-card">
             <div class="settings-card-title">Library Status</div>
             <div class="settings-hint">Current state of your library. Trigger a scan manually from here.</div>
             <div id="s-library-stats" class="settings-hint" style="color:#aaa;font-size:13px;margin-bottom:6px">

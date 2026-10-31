@@ -18,6 +18,12 @@ namespace SongRequestDesktopV2Rewrite;
 /// </summary>
 public sealed class SongAnalyzer
 {
+    /// <summary>
+    /// Bump whenever analysis/chapter/BPM/drop logic changes. Cached analyses with
+    /// an older value are treated as stale and can be re-generated automatically.
+    /// </summary>
+    public const string CurrentAlgorithmVersion = "3.0";
+
     private const int FftSize = 1024;
     private const int HopSize = 512;
     private const int MaxTimelinePoints = 900;
@@ -48,7 +54,8 @@ public sealed class SongAnalyzer
             Artist = string.IsNullOrWhiteSpace(artist) ? "Unknown" : artist,
             FileSizeBytes = info.Length,
             FileModifiedUtc = info.LastWriteTimeUtc,
-            Fingerprint = $"{info.Length}:{info.LastWriteTimeUtc.Ticks}"
+            Fingerprint = $"{info.Length}:{info.LastWriteTimeUtc.Ticks}",
+            AlgorithmVersion = CurrentAlgorithmVersion
         };
 
         Report(path, 0.02, "Opening audio");
@@ -1088,6 +1095,8 @@ public sealed class SongAnalyzer
         }
 
         var refined = new List<PartSegment>();
+        double medianPartEnergy = Percentile(
+            analysis.Parts.Select(p => p.EnergyDb).DefaultIfEmpty(-30).ToList(), 0.5);
         foreach (var part in analysis.Parts)
         {
             double partDuration = part.EndSeconds - part.StartSeconds;
@@ -1110,7 +1119,7 @@ public sealed class SongAnalyzer
                 {
                     if (coverage >= 0.45)
                     {
-                        segment.Type = "chorus";
+                        segment.Type = segment.RmsDb >= medianPartEnergy - 0.8 ? "chorus" : "verse";
                         segment.Confidence = Math.Max(segment.Confidence, 0.72);
                     }
                     else if (part.Type == "chorus" && coverage < 0.10 && partDuration > 30)
@@ -1143,8 +1152,11 @@ public sealed class SongAnalyzer
                 double coverage = RepeatedCoverage(start, end, repeatedSpans);
                 if (IsFlexiblePart(part.Type))
                 {
-                    segment.Type = coverage >= 0.30 ? "chorus" : "verse";
-                    segment.Confidence = coverage >= 0.30 ? 0.75 : 0.55;
+                    bool repeatedLyrics = coverage >= 0.30;
+                    segment.Type = repeatedLyrics && segment.RmsDb >= medianPartEnergy - 0.8
+                        ? "chorus"
+                        : "verse";
+                    segment.Confidence = repeatedLyrics ? 0.75 : 0.55;
                 }
 
                 refined.Add(segment);

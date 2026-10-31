@@ -67,11 +67,47 @@ public sealed class SongAnalysisService
             var info = new FileInfo(path);
             if (!info.Exists) return null;
             if (cached.FileSizeBytes == info.Length &&
-                cached.FileModifiedUtc == info.LastWriteTimeUtc)
+                cached.FileModifiedUtc == info.LastWriteTimeUtc &&
+                string.Equals(cached.AlgorithmVersion, SongAnalyzer.CurrentAlgorithmVersion, StringComparison.Ordinal))
                 return cached;
         }
         catch { }
         return null;
+    }
+
+    /// <summary>True when a cached analysis exists but was produced by an older algorithm.</summary>
+    public bool IsOutdated(string path)
+    {
+        var cached = GetCached(path);
+        return cached != null &&
+               !string.Equals(cached.AlgorithmVersion, SongAnalyzer.CurrentAlgorithmVersion, StringComparison.Ordinal);
+    }
+
+    /// <summary>Deletes one cached analysis (library song deletion / clear cache).</summary>
+    public bool DeleteAnalysis(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        EnsureLoaded();
+        var key = Normalize(path);
+        lock (_sync)
+        {
+            if (!_cache.Remove(key)) return false;
+            SaveLocked();
+        }
+        return true;
+    }
+
+    /// <summary>Deletes every cached analysis.</summary>
+    public int ClearAll()
+    {
+        EnsureLoaded();
+        lock (_sync)
+        {
+            int count = _cache.Count;
+            _cache.Clear();
+            SaveLocked();
+            return count;
+        }
     }
 
     public async Task<SongAnalysis> AnalyzeAsync(
@@ -172,6 +208,16 @@ public sealed class SongAnalysisService
             EnsureLoaded();
             lock (_sync)
             {
+                // Lyrics may have arrived while the decoder was running. Apply
+                // them now so the very first playback gets the same refined
+                // chapters as the cached second playback.
+                if (!analysis.LyricsUsedForParts &&
+                    _pendingLyrics.TryGetValue(Normalize(path), out var lateLyrics) &&
+                    lateLyrics.Count >= 4)
+                {
+                    try { SongAnalyzer.RefinePartsWithLyrics(analysis, lateLyrics); } catch { }
+                }
+
                 _cache[Normalize(path)] = analysis;
                 DeleteStaleCacheEntriesLocked();
                 SaveLocked();

@@ -222,7 +222,15 @@ internal static class OpenApiDocument
         };
         paths["/api/v1/analysis/cache"] = new JObject
         {
-            ["get"] = Op("List every cached song analysis", "Advanced Audio", null, null)
+            ["get"] = Op("List every cached song analysis", "Advanced Audio", null, null),
+            ["delete"] = Op("Delete every cached song analysis", "Advanced Audio", null, null)
+        };
+
+        paths["/api/v1/library/analysis"] = new JObject
+        {
+            ["get"] = Op("Read background library analysis progress", "Advanced Audio", null, null),
+            ["post"] = Op("Start background library analysis", "Advanced Audio", null, Body(("force", "boolean"))),
+            ["delete"] = Op("Stop background library analysis", "Advanced Audio", null, null)
         };
 
         paths["/api/v1/queue"] = new JObject

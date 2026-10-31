@@ -254,6 +254,39 @@ test('timed lyrics refine chapters but YouTube captions are excluded', () => {
   assert.match(interop, /Provider == LyricsProvider\.YouTubeCaptions/);
 });
 
+test('library pre-analysis has controls, progress and auto toggles', () => {
+  const desktopHtml = read('index.html');
+  const desktopJs = read('app.js');
+  const mobileJs = read('mobilemusic.js');
+  const config = fs.readFileSync(path.join(root, 'SongRequest.Core', 'ConfigService.cs'), 'utf8');
+
+  assert.match(config, /AutoAnalyzeLibraryOnAdd/);
+  assert.match(config, /AutoAnalyzeLibraryOnAlgorithmUpdate/);
+  for (const id of ['s-library-analysis-start', 's-library-analysis-stop', 's-library-analysis-progress', 's-library-auto-analyze-add', 's-library-auto-analyze-version']) {
+    assert.ok(desktopHtml.includes(`id="${id}"`), `missing desktop control #${id}`);
+  }
+  assert.match(desktopJs, /libraryAnalysisProgress/);
+  assert.match(desktopJs, /startLibraryAnalysis/);
+  assert.match(desktopJs, /stopLibraryAnalysis/);
+  assert.match(mobileJs, /mm-library-analysis-start/);
+  assert.match(mobileJs, /mm-library-analysis-stop/);
+  assert.match(mobileJs, /startLibraryAnalysis/);
+  assert.match(mobileJs, /updateLibraryAnalysisUi/);
+  assert.match(mobileJs, /mm-set-library-analyze-add/);
+});
+
+test('analysis cache carries an algorithm version', () => {
+  const analyzer = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'SongAnalyzer.cs'), 'utf8');
+  const service = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'SongAnalysisService.cs'), 'utf8');
+  const models = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'SongAnalysisModels.cs'), 'utf8');
+
+  assert.match(analyzer, /CurrentAlgorithmVersion/);
+  assert.match(service, /AlgorithmVersion/);
+  assert.match(service, /IsOutdated/);
+  assert.match(service, /DeleteAnalysis/);
+  assert.match(models, /AlgorithmVersion/);
+});
+
 test('advanced audio is exposed through the local API and command catalogue', () => {
   const api = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'AppIntegrationServer.Api.cs'), 'utf8');
   const catalog = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'CommandCatalog.cs'), 'utf8');

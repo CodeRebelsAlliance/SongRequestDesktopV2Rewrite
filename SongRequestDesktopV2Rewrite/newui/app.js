@@ -115,6 +115,7 @@
     }
     else if (eventName === 'libraryScanProgress') onLibraryScanProgress(data);
     else if (eventName === 'libraryScanCompleted') onLibraryScanCompleted(data);
+    else if (eventName === 'libraryAnalysisProgress') onLibraryAnalysisProgress(data);
     else if (eventName === 'downloadProgress') onDownloadProgress(data);
     else if (eventName === 'updateProgress') onUpdateProgress(data);
     else if (eventName === 'midiInput') onMidiInput(data);
@@ -435,6 +436,8 @@
       document.getElementById('s-operating-mode').value = cfg.operatingMode || 'SongRequests';
       document.getElementById('s-library-remove-missing').checked = cfg.libraryRemoveMissingOnScan ?? false;
       document.getElementById('s-library-recommendations').checked = cfg.libraryRecommendationsEnabled ?? true;
+      document.getElementById('s-library-auto-analyze-add').checked = cfg.autoAnalyzeLibraryOnAdd !== false;
+      document.getElementById('s-library-auto-analyze-version').checked = cfg.autoAnalyzeLibraryOnAlgorithmUpdate !== false;
       document.getElementById('s-log-playback').checked = cfg.logPlayback ?? false;
       document.getElementById('s-autostart').checked = cfg.autoStart ?? false;
       document.getElementById('s-start-minimized').checked = cfg.startMinimized ?? false;
@@ -488,6 +491,7 @@
 
       statusEl.textContent = 'Loaded.'; loadData();
       loadLibraryStats();
+      loadLibraryAnalysisStatus();
     } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
   }
 
@@ -559,6 +563,8 @@
         presentationFullscreen: document.getElementById('s-fullscreen').checked,
         normalizeVolume: document.getElementById('s-normalize-volume').checked,
         autoAnalyzeSongs: document.getElementById('s-auto-analyze').checked,
+        autoAnalyzeLibraryOnAdd: document.getElementById('s-library-auto-analyze-add').checked,
+        autoAnalyzeLibraryOnAlgorithmUpdate: document.getElementById('s-library-auto-analyze-version').checked,
         useCaptionLyricsFallback: document.getElementById('s-caption-fallback').checked,
         enableAnnouncements: document.getElementById('s-enable-announcements').checked,
         autoEnqueue: document.getElementById('s-autopilot').checked,
@@ -1431,6 +1437,72 @@
     document.getElementById('s-library-scan-btn').innerHTML = '<i class="fas fa-sync-alt"></i> Scan Library';
     this.style.display = 'none';
     document.getElementById('s-library-scan-progress').style.display = 'none';
+  });
+
+  // ── Background library analysis ────────────────────────────
+  function onLibraryAnalysisProgress(data) {
+    if (!data) return;
+    var wrap = document.getElementById('s-library-analysis-progress');
+    var bar = document.getElementById('s-library-analysis-bar');
+    var pctEl = document.getElementById('s-library-analysis-pct');
+    var statusEl = document.getElementById('s-library-analysis-status');
+    var currentEl = document.getElementById('s-library-analysis-current');
+    var start = document.getElementById('s-library-analysis-start');
+    var stop = document.getElementById('s-library-analysis-stop');
+    if (!wrap || !bar || !pctEl) return;
+
+    var running = !!data.isRunning;
+    var total = data.total || 0;
+    var completed = data.completed || 0;
+    var pct = total > 0 ? Math.round(completed / total * 100) : Math.round((data.progress || 0) * 100);
+    if (running && data.currentSongProgress > 0 && total > 0) {
+      pct = Math.min(99, Math.round((completed + data.currentSongProgress) / total * 100));
+    }
+
+    wrap.style.display = running || data.status === 'completed' || data.status === 'stopped' ? '' : 'none';
+    bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    pctEl.textContent = pct + '%';
+
+    var statusText = running
+      ? (data.pausedForPlayback ? 'Paused while music is playing' : 'Analyzing library…')
+      : data.status === 'completed' ? 'Analysis complete'
+      : data.status === 'stopped' ? 'Analysis stopped'
+      : 'Idle';
+    statusEl.textContent = statusText;
+    currentEl.textContent = running && data.currentSong
+      ? data.currentSong + ' · ' + completed + '/' + total + ' analyzed'
+      : data.analyzed != null
+        ? completed + '/' + total + ' · ' + (data.analyzed || 0) + ' analyzed, ' + (data.failed || 0) + ' failed, ' + (data.skipped || 0) + ' skipped'
+        : '';
+
+    if (start) {
+      start.disabled = running;
+      start.innerHTML = running
+        ? '<i class="fas fa-spinner fa-pulse"></i> Analyzing…'
+        : '<i class="fas fa-play"></i> Analyze Library';
+    }
+    if (stop) stop.style.display = running ? '' : 'none';
+  }
+
+  async function loadLibraryAnalysisStatus() {
+    try {
+      var status = await send('getLibraryAnalysisStatus');
+      if (status && !status.error) onLibraryAnalysisProgress(status);
+    } catch (_) { }
+  }
+
+  var analysisStartBtn = document.getElementById('s-library-analysis-start');
+  if (analysisStartBtn) analysisStartBtn.addEventListener('click', async function() {
+    var result = await send('startLibraryAnalysis', { force: false });
+    if (result && result.error) toast(result.error, 'error');
+    else { toast('Library analysis started', 'info'); onLibraryAnalysisProgress(result); }
+  });
+
+  var analysisStopBtn = document.getElementById('s-library-analysis-stop');
+  if (analysisStopBtn) analysisStopBtn.addEventListener('click', async function() {
+    var result = await send('stopLibraryAnalysis');
+    if (result && result.error) toast(result.error, 'error');
+    else { toast('Stopping library analysis…', 'info'); onLibraryAnalysisProgress(result); }
   });
 
   async function loadLibraryStats() {

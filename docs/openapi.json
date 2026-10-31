@@ -3248,6 +3248,17 @@
             "description": "OK"
           }
         }
+      },
+      "delete": {
+        "summary": "Delete every cached song analysis",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/v1/analysis/{key}": {
@@ -3265,6 +3276,55 @@
               "type": "string"
             }
           }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/library/analysis": {
+      "get": {
+        "summary": "Read background library analysis progress",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "summary": "Start background library analysis",
+        "tags": [
+          "Advanced Audio"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "force": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Stop background library analysis",
+        "tags": [
+          "Advanced Audio"
         ],
         "responses": {
           "200": {

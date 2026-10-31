@@ -298,7 +298,9 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Lyric-informed parts | U | repeated/unique timed lyric phrases split a 48 s “chorus” into verse/chorus chapters; YouTube captions are excluded |
 | Chapter lyrics UI | J | desktop/mobile/presentation lyrics receive colour-coded chapter labels and per-line chapter data; timed lines carry their timestamps |
 | Auto-analysis setting | U | persisted through `saveSettings`/`getSettings`; cached/auto results are pushed for the current track |
-| Analysis cache | U | fresh results are reused, persisted and re-loaded; `force` re-analyses |
+| Analysis cache | U | fresh results are reused, persisted and re-loaded; `force` re-analyses; algorithm-version mismatch invalidates; deleting a library song deletes its analysis |
+| Library pre-analysis | U | background pass analyzes missing songs, reports progress, skips current analyses, and stops/queues safely |
+| Library analysis UI | J | desktop Settings→Library and mobile player settings offer start/stop, progress, auto-add and algorithm-update toggles |
 | Command/API surface | U | `analyzeSong`/`getSongAnalysis` through `ExecuteCommandAsync`; HTTP equalizer, sleep-timer and analysis routes |
 | Advanced-audio UI | J | desktop/mobile pages load the panel; equalizer graph/bands/presets; analysis timeline + quality radar; sleep pill in the player top bar; mobile menu entry points |
 | Chapters / BPM UI | J | interactive part/drop markers on desktop + mobile progress bars; BPM badge next to the quality pill; auto-analysis setting on desktop and mobile |

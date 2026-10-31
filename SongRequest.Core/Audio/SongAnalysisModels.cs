@@ -79,7 +79,7 @@ public sealed class SongAnalysis
     public long FileSizeBytes { get; set; }
     public DateTime FileModifiedUtc { get; set; }
     public DateTime AnalyzedUtc { get; set; } = DateTime.UtcNow;
-    public string AlgorithmVersion { get; set; } = "1.0";
+    public string AlgorithmVersion { get; set; } = "0.0";
 
     public double DurationSeconds { get; set; }
     public double Bpm { get; set; }

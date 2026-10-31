@@ -589,8 +589,7 @@ internal sealed class StageServer : IDisposable
         try
         {
             var path = AppPaths.ResolvePortablePath(song.songPath);
-            var analysis = SongAnalysisService.Instance.GetFresh(path) ??
-                           SongAnalysisService.Instance.GetCached(path);
+            var analysis = SongAnalysisService.Instance.GetFresh(path);
             if (analysis?.Parts != null)
             {
                 chapters = analysis.Parts.Select(part => (object)new

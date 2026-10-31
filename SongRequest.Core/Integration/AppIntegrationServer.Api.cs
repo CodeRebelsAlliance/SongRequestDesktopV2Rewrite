@@ -172,6 +172,8 @@ public sealed partial class AppIntegrationServer
                 return await CommandResponseAsync("analyzeSong", ReadJsonBody(request), request);
             if (PathEquals(request.Path, "/api/v1/analysis/cache") && IsGet(request))
                 return await CommandResponseAsync("getSongAnalysisCache", new JObject(), request);
+            if (PathEquals(request.Path, "/api/v1/analysis/cache") && IsDelete(request))
+                return await CommandResponseAsync("clearSongAnalysisCache", new JObject(), request);
             if (request.Path.StartsWith("/api/v1/analysis/", StringComparison.OrdinalIgnoreCase) && IsGet(request))
             {
                 var key = Uri.UnescapeDataString(request.Path["/api/v1/analysis/".Length..]);
@@ -184,6 +186,12 @@ public sealed partial class AppIntegrationServer
                 return await CommandResponseAsync("getLibraryStats", new JObject(), request);
             if (PathEquals(request.Path, "/api/v1/library/status"))
                 return await CommandResponseAsync("getLibraryStatus", new JObject(), request);
+            if (PathEquals(request.Path, "/api/v1/library/analysis") && IsGet(request))
+                return await CommandResponseAsync("getLibraryAnalysisStatus", new JObject(), request);
+            if (PathEquals(request.Path, "/api/v1/library/analysis") && IsPost(request))
+                return await CommandResponseAsync("startLibraryAnalysis", ReadJsonBody(request), request);
+            if (PathEquals(request.Path, "/api/v1/library/analysis") && IsDelete(request))
+                return await CommandResponseAsync("stopLibraryAnalysis", new JObject(), request);
             if (PathEquals(request.Path, "/api/v1/library/scan") && IsPost(request))
                 return await CommandResponseAsync("scanLibrary", new JObject(), request);
             if (PathEquals(request.Path, "/api/v1/library/scan") && IsDelete(request))

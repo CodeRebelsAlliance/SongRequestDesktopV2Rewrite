@@ -159,6 +159,9 @@ public class YoutubeFormInterop
     // Advanced audio: song analysis cache + event subscriptions for the sleep
     // timer and equalizer.
     private readonly SongAnalysisService _analysis = SongAnalysisService.Instance;
+    private readonly LibraryAnalysisService _libraryAnalysis;
+
+    public LibraryAnalysisService LibraryAnalysis => _libraryAnalysis;
 
     // Announcement engine (lazily created; kept alive across window open/close)
     private AnnouncementEngine? _announcement;
@@ -205,6 +208,33 @@ public class YoutubeFormInterop
         _ytForm.EventSink = SendEvent;
         _ytForm.SongDownloaded = TryAutoAddDownloadedSong;
         _libraryService = new LibraryService();
+        _libraryAnalysis = new LibraryAnalysisService(_libraryService, _analysis)
+        {
+            PlaybackActive = () => _ytForm.Music.IsPlaying
+        };
+        _libraryService.SongAdded += song =>
+        {
+            try
+            {
+                if (ConfigService.Instance.Current?.AutoAnalyzeLibraryOnAdd == true)
+                    _libraryAnalysis.QueueSong(song);
+            }
+            catch { }
+        };
+        _libraryService.SongRemoved += song => _libraryAnalysis.RemoveSong(song);
+        _libraryAnalysis.ProgressChanged += progress =>
+        {
+            var json = CamelCase(progress);
+            if (json == null) return;
+            try { SendEvent("libraryAnalysisProgress", json); } catch { }
+            try { MusicPlayerSendEvent("libraryAnalysisProgress", json); } catch { }
+        };
+        try
+        {
+            if (ConfigService.Instance.Current?.AutoAnalyzeLibraryOnAlgorithmUpdate == true)
+                _libraryAnalysis.StartIfOutdated();
+        }
+        catch { }
 
         // Marshal host operations through the host (WPF dispatcher today; headless host later).
         RunOnUi = ytForm.RunOnUi;
@@ -808,7 +838,13 @@ public class YoutubeFormInterop
                     return;
                 }
                 case "getSongAnalysisCache":
-                    SendResponse(id, CamelCase(new { analyses = _analysis.Cached }));
+                    SendResponse(id, CamelCase(new
+                    {
+                        analyses = _analysis.Cached
+                            .Where(a => string.Equals(a.AlgorithmVersion, SongAnalyzer.CurrentAlgorithmVersion,
+                                StringComparison.Ordinal))
+                            .ToList()
+                    }));
                     return;
             }
 
@@ -1028,6 +1064,20 @@ public class YoutubeFormInterop
                     break;
                 case "getLibraryStats":
                     result = GetLibraryStats();
+                    break;
+                case "getLibraryAnalysisStatus":
+                    result = CamelCase(_libraryAnalysis.GetStatus())!;
+                    break;
+                case "startLibraryAnalysis":
+                    _libraryAnalysis.Start(msg["force"]?.ToObject<bool>() ?? false);
+                    result = CamelCase(_libraryAnalysis.GetStatus())!;
+                    break;
+                case "stopLibraryAnalysis":
+                    _libraryAnalysis.Stop();
+                    result = CamelCase(_libraryAnalysis.GetStatus())!;
+                    break;
+                case "clearSongAnalysisCache":
+                    result = new { success = true, removed = _analysis.ClearAll() };
                     break;
                 case "getPlayHistory":
                     result = GetPlayHistory(msg);
@@ -2885,17 +2935,19 @@ public class YoutubeFormInterop
     {
         var target = ResolveAnalysisTarget(msg);
         if (target == null) return null;
-        return _analysis.GetFresh(target.Value.Path) ?? _analysis.GetCached(target.Value.Path);
+        // Stale algorithm versions are deliberately treated as missing so the
+        // auto/library analyzer regenerates them.
+        return _analysis.GetFresh(target.Value.Path);
     }
 
-    /// <summary>Chapters for a song when a cached analysis exists, for lyric pages.</summary>
+    /// <summary>Chapters for a song when a current cached analysis exists, for lyric pages.</summary>
     private IReadOnlyList<SongPart>? ChaptersForSong(Song? song)
     {
         try
         {
             if (song == null || string.IsNullOrWhiteSpace(song.songPath)) return null;
             var path = AppPaths.ResolvePortablePath(song.songPath);
-            var analysis = _analysis.GetFresh(path) ?? _analysis.GetCached(path);
+            var analysis = _analysis.GetFresh(path);
             return analysis?.Parts is { Count: > 0 } parts ? parts : null;
         }
         catch { return null; }
@@ -3009,7 +3061,9 @@ public class YoutubeFormInterop
                 parts = analysis.Parts,
                 timeline = analysis.Timeline,
                 analysisPath = analysis.AnalysisPath,
-                analyzedUtc = analysis.AnalyzedUtc
+                analyzedUtc = analysis.AnalyzedUtc,
+                algorithmVersion = analysis.AlgorithmVersion,
+                lyricsUsedForParts = analysis.LyricsUsedForParts
             };
         }
         catch (Exception ex)
@@ -3076,6 +3130,8 @@ public class YoutubeFormInterop
             autoGrabCookies = cfg.AutoGrabCookies,
             systemMediaIntegration = cfg.SystemMediaIntegration,
             autoAnalyzeSongs = cfg.AutoAnalyzeSongs,
+            autoAnalyzeLibraryOnAdd = cfg.AutoAnalyzeLibraryOnAdd,
+            autoAnalyzeLibraryOnAlgorithmUpdate = cfg.AutoAnalyzeLibraryOnAlgorithmUpdate,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
             systemMediaActive = SystemMediaActive,
@@ -3422,6 +3478,8 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("globalKeyboardShortcuts", out var gks)) cfg.GlobalKeyboardShortcuts = gks.ToObject<bool>();
                 if (settings.TryGetValue("systemMediaIntegration", out var smi)) cfg.SystemMediaIntegration = smi.ToObject<bool>();
                 if (settings.TryGetValue("autoAnalyzeSongs", out var aas)) cfg.AutoAnalyzeSongs = aas.ToObject<bool>();
+                if (settings.TryGetValue("autoAnalyzeLibraryOnAdd", out var aala)) cfg.AutoAnalyzeLibraryOnAdd = aala.ToObject<bool>();
+                if (settings.TryGetValue("autoAnalyzeLibraryOnAlgorithmUpdate", out var aalau)) cfg.AutoAnalyzeLibraryOnAlgorithmUpdate = aalau.ToObject<bool>();
                 if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
 
                 // Local API / MCP servers. ApplyConfig is called after the update;
@@ -3451,6 +3509,12 @@ public class YoutubeFormInterop
                 _ytForm.Music.Queue.FirstOrDefault() is { } playing)
             {
                 SendOrStartSongAnalysis(playing);
+            }
+
+            if (settings.TryGetValue("autoAnalyzeLibraryOnAlgorithmUpdate", out var updateLibrary) &&
+                updateLibrary.ToObject<bool>())
+            {
+                try { _libraryAnalysis.StartIfOutdated(); } catch { }
             }
 
             // Re-register global hotkeys if the toggle changed.
@@ -4488,16 +4552,22 @@ public class YoutubeFormInterop
 
         string? filePath = null;
         string? thumbPath = null;
+        LibrarySong? removedSong = null;
         lock (_libraryService.Data)
         {
             var song = _libraryService.Data.FindSong(songId);
             if (song == null) return new { error = "Song not found" };
             filePath = song.FilePath;
             thumbPath = song.ThumbnailPath;
+            removedSong = song;
             _libraryService.Data.Songs.Remove(song);
         }
 
         _libraryService.Save();
+        if (removedSong != null)
+        {
+            try { _libraryService.NotifySongRemoved(removedSong); } catch { }
+        }
 
         if (!stillInSentIn)
         {

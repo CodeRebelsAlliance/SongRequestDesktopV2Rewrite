@@ -216,6 +216,10 @@ public class IntegrationServerTests
             Assert.Equal(HttpStatusCode.OK, analysisResponse.StatusCode);
             Assert.NotNull(JObject.Parse(await analysisResponse.Content.ReadAsStringAsync())["analyses"]);
 
+            var libraryAnalysisResponse = await SendAsync(http, HttpMethod.Get, apiBase + "/api/v1/library/analysis", "api-secret");
+            Assert.Equal(HttpStatusCode.OK, libraryAnalysisResponse.StatusCode);
+            Assert.NotNull(JObject.Parse(await libraryAnalysisResponse.Content.ReadAsStringAsync())["total"]);
+
             // Song search works without the companion server for the library source.
             var songsResponse = await SendAsync(http, HttpMethod.Get,
                 apiBase + "/api/v1/songs?source=library&limit=5", "api-secret");

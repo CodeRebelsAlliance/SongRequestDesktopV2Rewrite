@@ -51,6 +51,8 @@ namespace SongRequestDesktopV2Rewrite
         private bool _autoGrabCookies = false;
         private bool _systemMediaIntegration = true;
         private bool _autoAnalyzeSongs = true;
+        private bool _autoAnalyzeLibraryOnAdd = true;
+        private bool _autoAnalyzeLibraryOnAlgorithmUpdate = true;
 
         // Local integration servers (HTTP/WebSocket API and MCP). Both are off by
         // default and bind to loopback only until the user explicitly changes it.
@@ -361,6 +363,23 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _autoAnalyzeSongs;
             set => SetField(ref _autoAnalyzeSongs, value);
+        }
+
+        /// <summary>Analyze a library song automatically when it is imported/downloaded.</summary>
+        public bool AutoAnalyzeLibraryOnAdd
+        {
+            get => _autoAnalyzeLibraryOnAdd;
+            set => SetField(ref _autoAnalyzeLibraryOnAdd, value);
+        }
+
+        /// <summary>
+        /// When a newer analysis algorithm is shipped, re-analyze library songs whose
+        /// cached result came from an older version.
+        /// </summary>
+        public bool AutoAnalyzeLibraryOnAlgorithmUpdate
+        {
+            get => _autoAnalyzeLibraryOnAlgorithmUpdate;
+            set => SetField(ref _autoAnalyzeLibraryOnAlgorithmUpdate, value);
         }
 
         /// <summary>

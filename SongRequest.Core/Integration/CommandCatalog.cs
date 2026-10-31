@@ -247,6 +247,10 @@ public static class CommandCatalog
         Add("getSongAnalysis", "Advanced Audio", "Read a cached BPM/loudness/drop analysis for a song.", new[] { "songId", "songPath", "title", "artist" });
         Add("analyzeSong", "Advanced Audio", "Analyse a song's BPM, loudness, quality and drops (may take a few seconds).", new[] { "songId", "songPath", "force", "title", "artist" });
         Add("getSongAnalysisCache", "Advanced Audio", "List every cached song analysis.", null);
+        Add("getLibraryAnalysisStatus", "Advanced Audio", "Read library pre-analysis progress/state.", null);
+        Add("startLibraryAnalysis", "Advanced Audio", "Start background analysis of the whole library.", new[] { "force" });
+        Add("stopLibraryAnalysis", "Advanced Audio", "Stop background library analysis.", null);
+        Add("clearSongAnalysisCache", "Advanced Audio", "Delete every cached song analysis.", null, true);
 
         return list
             .GroupBy(c => c.Name, StringComparer.Ordinal)

@@ -217,6 +217,11 @@ The player (desktop and mobile) shares the same three audio tools:
   desktop progress bar and the mobile player seek bar, and the detected BPM is
   shown next to the quality badge. A spinner/progress badge shows while the
   automatic analysis is running.
+- **Library pre-analysis** in Settings → Library (or the mobile player settings
+  sheet): start/stop a background pass over the whole library, monitor progress,
+  and optionally analyze new songs automatically or re-analyze when the analysis
+  algorithm changes. Results are cached per song with an algorithm version;
+  deleting a library song also deletes its analysis.
 
 All three are exposed through the command dispatcher (and therefore the HTTP
 API, WebSocket events and MCP) — see

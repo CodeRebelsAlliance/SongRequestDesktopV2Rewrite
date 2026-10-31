@@ -28,6 +28,15 @@ namespace SongRequestDesktopV2Rewrite
         /// <summary>Raised with progress updates during scan (0..1).</summary>
         public event Action<double, string>? ScanProgress;
 
+        /// <summary>Raised when a song is added by a scan or an import.</summary>
+        public event Action<LibrarySong>? SongAdded;
+
+        /// <summary>Raised when a song is removed from the library.</summary>
+        public event Action<LibrarySong>? SongRemoved;
+
+        /// <summary>Lets the owner notify analysis/indexing services about a removal.</summary>
+        public void NotifySongRemoved(LibrarySong song) => SongRemoved?.Invoke(song);
+
         public LibraryService()
         {
             EnsureFolders();
@@ -513,7 +522,12 @@ namespace SongRequestDesktopV2Rewrite
                 // Remove missing if configured
                 if (_data.Config.RemoveMissingOnScan)
                 {
+                    var removedMissing = _data.Songs.Where(s => s.FileStatus == FileStatus.Missing).ToList();
                     _data.Songs.RemoveAll(s => s.FileStatus == FileStatus.Missing);
+                    foreach (var removed in removedMissing)
+                    {
+                        try { SongRemoved?.Invoke(removed); } catch { }
+                    }
                 }
             }
 
@@ -596,6 +610,7 @@ namespace SongRequestDesktopV2Rewrite
                             hashIndex[hash] = song;
                             added = true;
                             result.SongsAdded++;
+                            try { SongAdded?.Invoke(song); } catch { }
                         }
                     }
 
@@ -765,6 +780,7 @@ namespace SongRequestDesktopV2Rewrite
             }
 
             Save();
+            try { SongAdded?.Invoke(song); } catch { }
             return song;
         }
 

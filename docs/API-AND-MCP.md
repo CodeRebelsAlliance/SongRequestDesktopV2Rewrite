@@ -208,7 +208,11 @@ the badges in the music player UI.
 | `POST` | `/api/v1/sleep-timer/options` | Change `fadeOutSeconds` / `playLastSongToEnd` while running. |
 | `GET` | `/api/v1/analysis?songId=...` | Cached BPM/loudness/quality/drop analysis (or `?songPath=...`). |
 | `POST` | `/api/v1/analysis` | Run analysis for `{ "songId": "..." }` or `{ "songPath": "..." }`; pass `force: true` to re-analyse. |
-| `GET` | `/api/v1/analysis/cache` | All cached analyses. |
+| `GET` | `/api/v1/analysis/cache` | All cached analyses (current algorithm version). |
+| `DELETE` | `/api/v1/analysis/cache` | Delete every cached analysis. |
+| `GET` | `/api/v1/library/analysis` | Background library-analysis state/progress. |
+| `POST` | `/api/v1/library/analysis` | Start pre-analysis of the library (`{ "force": false }`). |
+| `DELETE` | `/api/v1/library/analysis` | Stop the running library analysis. |
 | `GET` | `/api/v1/analysis/{key}` | One cached analysis by the `key` returned from a POST. |
 
 The analysis result contains `bpm`, `bpmConfidence`, `beatOffsetSeconds`,
@@ -218,7 +222,9 @@ The analysis result contains `bpm`, `bpmConfidence`, `beatOffsetSeconds`,
 pre-chorus, chorus, bridge, outro with `startSeconds`/`endSeconds`, label and
 confidence), a per-window `timeline` (RMS/peak/low/mid/high energy and novelty)
 and the decoder `analysisPath`. `lyricsUsedForParts` indicates that timed
-non-caption lyrics refined the chapters. Analysis runs in the background; progress
+non-caption lyrics refined the chapters. Each cached result also carries
+`algorithmVersion`; stale versions are ignored and regenerated according to the
+library auto-analysis settings. Analysis runs in the background; progress
 arrives as the `songAnalysisProgress` WebSocket event, and a finished run emits
 `songAnalysisUpdate`. With `AutoAnalyzeSongs` enabled the app analyses each track
 as it starts and pushes the cached result automatically.
@@ -388,6 +394,7 @@ Live events include:
 | `sleepTimerUpdate` | Sleep-timer countdown, fade and finishing-track state. |
 | `equalizerUpdate` | Equalizer enabled flag, pre-amp or band curve changed. |
 | `songAnalysisProgress` / `songAnalysisUpdate` | Background analysis progress and the finished BPM/loudness/drop result. |
+| `libraryAnalysisProgress` | Full-library pre-analysis progress (`total`, `completed`, `analyzed`, `failed`, `currentSong`, `status`). |
 | `updateProgress`, `toolProgress` | Self-update and tool-download progress. |
 
 Example browser client:

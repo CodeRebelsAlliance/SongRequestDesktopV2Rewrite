@@ -1170,6 +1170,10 @@
         finishImport(data);
         break;
 
+      case 'libraryAnalysisProgress':
+        updateLibraryAnalysisUi(data);
+        break;
+
       case 'mobileThemeColors':
         if (window.SongRequestTheme) window.SongRequestTheme.apply(data, 'mm', '#1d1b20', '#26232c');
         break;
@@ -1595,6 +1599,18 @@
         '<h3>Playback</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-auto-analyze"' + (cfg.autoAnalyzeSongs !== false ? ' checked' : '') + '> Automatically analyze playing songs</label>' +
         '<div class="mm-sheet-note" style="margin-top:4px">Shows BPM, song chapters and drops on the player progress bar from the cached analysis.</div>' +
+        '<h3>Library analysis</h3>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-library-analyze-add"' + (cfg.autoAnalyzeLibraryOnAdd !== false ? ' checked' : '') + '> Analyze new library songs automatically</label>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-library-analyze-version"' + (cfg.autoAnalyzeLibraryOnAlgorithmUpdate !== false ? ' checked' : '') + '> Re-analyze after algorithm updates</label>' +
+        '<div id="mm-library-analysis-progress" class="mm-import-progress" hidden>' +
+          '<div class="mm-import-head"><span id="mm-library-analysis-status">Idle</span><span id="mm-library-analysis-pct">0%</span></div>' +
+          '<div class="mm-import-track"><div id="mm-library-analysis-fill"></div></div>' +
+          '<div id="mm-library-analysis-current" class="mm-sheet-note" style="margin-top:6px"></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+          '<button id="mm-library-analysis-start" class="mm-btn"><i class="fas fa-play"></i> Analyze library</button>' +
+          '<button id="mm-library-analysis-stop" class="mm-btn mm-danger" hidden><i class="fas fa-stop"></i> Stop</button>' +
+        '</div>' +
         '<h3>Server</h3>' +
         '<input id="mm-set-address" class="mm-sheet-input" placeholder="http://127.0.0.1:5000" value="' + esc(cfg.address || '') + '">' +
         '<input id="mm-set-token" class="mm-sheet-input" type="password" placeholder="Bearer token" value="' + esc(cfg.bearerToken || '') + '" style="margin-top:8px">' +
@@ -1628,6 +1644,45 @@
     }).catch(function (error) { toast(error.message, 'error'); });
   }
 
+  function updateLibraryAnalysisUi(data) {
+    if (!data) return;
+    var wrap = $('mm-library-analysis-progress');
+    var fill = $('mm-library-analysis-fill');
+    var status = $('mm-library-analysis-status');
+    var pct = $('mm-library-analysis-pct');
+    var current = $('mm-library-analysis-current');
+    var start = $('mm-library-analysis-start');
+    var stop = $('mm-library-analysis-stop');
+    if (!wrap || !fill) return;
+
+    var running = !!data.isRunning;
+    var total = data.total || 0;
+    var completed = data.completed || 0;
+    var percent = total > 0 ? Math.round(completed / total * 100) : Math.round((data.progress || 0) * 100);
+    if (running && data.currentSongProgress > 0 && total > 0) {
+      percent = Math.min(99, Math.round((completed + data.currentSongProgress) / total * 100));
+    }
+
+    wrap.hidden = !(running || data.status === 'completed' || data.status === 'stopped');
+    fill.style.width = Math.max(0, Math.min(100, percent)) + '%';
+    if (pct) pct.textContent = percent + '%';
+    if (status) {
+      status.textContent = running
+        ? (data.pausedForPlayback ? 'Paused while music plays' : 'Analyzing library…')
+        : data.status === 'completed' ? 'Analysis complete'
+        : data.status === 'stopped' ? 'Analysis stopped'
+        : 'Idle';
+    }
+    if (current) {
+      current.textContent = running && data.currentSong
+        ? data.currentSong + ' · ' + completed + '/' + total
+        : completed + '/' + total + ' · ' + (data.analyzed || 0) + ' analyzed, ' +
+          (data.failed || 0) + ' failed, ' + (data.skipped || 0) + ' skipped';
+    }
+    if (start) start.hidden = running;
+    if (stop) stop.hidden = !running;
+  }
+
   function wireSettingsSheet() {
     var mode = $('mm-set-mode');
     if (mode) mode.addEventListener('change', function () {
@@ -1636,6 +1691,26 @@
       toast('Operating mode: ' + this.options[this.selectedIndex].text, 'success');
     });
 
+    var analysisStart = $('mm-library-analysis-start');
+    if (analysisStart) analysisStart.addEventListener('click', function () {
+      request('startLibraryAnalysis', { force: false }).then(function (result) {
+        if (result && result.error) toast(result.error, 'error');
+        else { updateLibraryAnalysisUi(result); toast('Library analysis started', 'success'); }
+      }).catch(function (error) { toast(error.message, 'error'); });
+    });
+
+    var analysisStop = $('mm-library-analysis-stop');
+    if (analysisStop) analysisStop.addEventListener('click', function () {
+      request('stopLibraryAnalysis').then(function (result) {
+        if (result && result.error) toast(result.error, 'error');
+        else { updateLibraryAnalysisUi(result); toast('Stopping analysis…', 'info'); }
+      }).catch(function (error) { toast(error.message, 'error'); });
+    });
+
+    request('getLibraryAnalysisStatus').then(function (status) {
+      if (status && !status.error) updateLibraryAnalysisUi(status);
+    }).catch(function () { });
+
     var save = $('mm-settings-save');
     if (save) save.addEventListener('click', function () {
       var settings = {
@@ -1643,6 +1718,8 @@
         bearerToken: $('mm-set-token').value,
         autoGrabCookies: $('mm-set-auto-yt').checked,
         autoAnalyzeSongs: $('mm-set-auto-analyze').checked,
+        autoAnalyzeLibraryOnAdd: $('mm-set-library-analyze-add').checked,
+        autoAnalyzeLibraryOnAlgorithmUpdate: $('mm-set-library-analyze-version').checked,
         libraryAutoAddDownloads: $('mm-set-auto-add').checked,
         apiEnabled: $('mm-set-api-enabled').checked,
         apiBindAddress: $('mm-set-api-bind').value.trim() || '127.0.0.1',
