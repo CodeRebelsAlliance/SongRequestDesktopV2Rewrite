@@ -15,7 +15,7 @@ namespace SongRequestDesktopV2Rewrite;
 /// </summary>
 public static class VocalRemover
 {
-    public const string AlgorithmVersion = "2.0";
+    public const string AlgorithmVersion = "2.1";
 
     public static void Process(
         string inputPath,
@@ -268,15 +268,20 @@ public static class VocalRemover
             double band = VocalRangeWeight(hz);
             double tonal = TonalWeight(magnitude, k, bins);
             double sideRatio = sideMag / (centerMag + sideMag + 1e-12);
+            double dominance = centerMag / (centerMag + sideMag + 1e-12);
 
+            // Strongly attenuate centered, in-phase vocal material while leaving
+            // side-panned instruments and the bass range intact. Coherence is the
+            // primary cue; center dominance keeps partly-panned vocals in the mask.
             double m = band *
-                       Math.Pow(coherence, 1.20) *
-                       (0.70 + 0.30 * tonal) *
-                       (1.0 - 0.42 * transientStrength);
+                       Math.Pow(coherence, 0.75) *
+                       Math.Clamp(0.35 + 0.65 * dominance, 0, 1) *
+                       (0.82 + 0.18 * tonal) *
+                       (1.0 - 0.28 * transientStrength);
 
             // Side-heavy content is instrumental even if it happens to be centered.
-            m *= Math.Clamp(0.72 + sideRatio * 0.28, 0, 1);
-            m = Math.Clamp(m, 0, 1);
+            m *= Math.Clamp(0.94 + sideRatio * 0.06, 0, 1);
+            m = Math.Clamp(m * 1.04, 0, 0.995);
             mask[k] = m;
             if (k > 0 && k < windowSize / 2) mask[windowSize - k] = m;
         }

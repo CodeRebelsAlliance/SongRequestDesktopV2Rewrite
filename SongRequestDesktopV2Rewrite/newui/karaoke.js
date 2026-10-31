@@ -31,6 +31,7 @@
       span.className = 'karaoke-word';
       span.dataset.start = word.start;
       span.dataset.end = word.end;
+      span.dataset.text = word.text || '';
       span.textContent = word.text || '';
       element.appendChild(span);
       if (i < line.words.length - 1) element.appendChild(doc().createTextNode(' '));

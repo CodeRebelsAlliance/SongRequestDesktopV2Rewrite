@@ -615,16 +615,20 @@ body {
 .lyrics-line[data-part="bridge"] { border-left-color: rgba(45, 212, 191, .38); }
 
 /* Karaoke mode: word-by-word lyrics + pause progress. */
-.karaoke-word { color: inherit; transition: color .08s linear; }
-.karaoke-word.is-sung { color: #d8ccff; }
-.karaoke-word.is-active {
-  color: transparent;
-  background-image: linear-gradient(90deg,
-    #ffffff 0 var(--karaoke-progress, 0%),
-    rgba(255, 255, 255, .52) var(--karaoke-progress, 0%) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
+.karaoke-word {
+  position: relative; display: inline-block; color: inherit; white-space: pre;
+  transition: color .12s linear, transform .12s ease;
 }
+.karaoke-word::after {
+  content: attr(data-text); position: absolute; left: 0; top: 0; white-space: pre;
+  color: #ffffff; pointer-events: none;
+  clip-path: inset(0 calc(100% - var(--karaoke-progress, 0%)) 0 0);
+  -webkit-clip-path: inset(0 calc(100% - var(--karaoke-progress, 0%)) 0 0);
+  transition: clip-path .08s linear, -webkit-clip-path .08s linear;
+}
+.karaoke-word.is-sung { color: #d8ccff; }
+.karaoke-word.is-sung::after { color: #d8ccff; }
+.karaoke-word.is-active { transform: translateY(-1px); }
 .karaoke-pause {
   width: min(620px, 92%);
   margin: 18px auto;
