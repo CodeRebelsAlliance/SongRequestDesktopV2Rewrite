@@ -21,6 +21,7 @@ public interface IAiVocalSeparator
         string inputPath,
         string outputPath,
         string modelPath,
+        int instrumentalStemIndex,
         int threads,
         Action<double, string>? progress,
         CancellationToken cancellationToken);
@@ -48,12 +49,16 @@ public static class AiVocalSeparationFactory
 /// <summary>Version metadata for AI-separated karaoke files.</summary>
 public static class AiVocalRemover
 {
-    /// <summary>Bump when the AI preprocessing/postprocessing changes.</summary>
-    public const string AlgorithmVersion = "3.0";
+    /// <summary>
+    /// Bump when the AI preprocessing/postprocessing changes. 3.1 corrects the
+    /// per-model instrumental stem selection (3.0 could save the vocal stem for
+    /// models whose instrumental is stem 0).
+    /// </summary>
+    public const string AlgorithmVersion = "3.1";
 
-    /// <summary>The stored karaoke version for a specific model.</summary>
-    public static string VersionFor(string modelId) =>
-        AlgorithmVersion + "-ai:" + modelId;
+    /// <summary>The stored karaoke version for a specific model/stem mapping.</summary>
+    public static string VersionFor(string modelId, int instrumentalStemIndex) =>
+        AlgorithmVersion + "-ai:" + modelId + ":s" + instrumentalStemIndex;
 }
 
 /// <summary>
@@ -76,6 +81,7 @@ public sealed class SherpaAiVocalSeparator : IAiVocalSeparator
         string inputPath,
         string outputPath,
         string modelPath,
+        int instrumentalStemIndex,
         int threads,
         Action<double, string>? progress,
         CancellationToken cancellationToken)
@@ -111,11 +117,15 @@ public sealed class SherpaAiVocalSeparator : IAiVocalSeparator
             cancellationToken.ThrowIfCancellationRequested();
             if (output.NumStems < 2)
                 throw new InvalidOperationException("The AI model did not return vocal and instrumental stems.");
+            if (instrumentalStemIndex < 0 || instrumentalStemIndex >= output.NumStems)
+                throw new InvalidOperationException(
+                    $"The AI model does not expose instrumental stem {instrumentalStemIndex}.");
 
             progress?.Invoke(0.90, "Writing instrumental stem");
             if (File.Exists(tempPath)) File.Delete(tempPath);
-            // Stem 0 is vocals, stem 1 is the accompaniment/instrumental.
-            if (!output.SaveStemToWaveFile(1, tempPath))
+            // The stem order is model-specific; the catalog stores the verified
+            // instrumental index for every model.
+            if (!output.SaveStemToWaveFile(instrumentalStemIndex, tempPath))
                 throw new IOException("Could not write the AI instrumental stem.");
 
             cancellationToken.ThrowIfCancellationRequested();

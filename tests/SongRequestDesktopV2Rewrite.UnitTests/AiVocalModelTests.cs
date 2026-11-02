@@ -22,7 +22,14 @@ public class AiVocalModelTests
             Assert.InRange(model.PerformanceRating, 1, 5);
             Assert.Contains("Quality", model.RatingLabel);
             Assert.Contains("Speed", model.RatingLabel);
+            Assert.InRange(model.InstrumentalStemIndex, 0, 1);
         });
+
+        Assert.Equal(0, AiVocalModelCatalog.Find("uvr-kara-2")!.InstrumentalStemIndex);
+        Assert.Equal(1, AiVocalModelCatalog.Find("uvr-kara-fast")!.InstrumentalStemIndex);
+        Assert.Equal(0, AiVocalModelCatalog.Find("uvr-inst-hq-3")!.InstrumentalStemIndex);
+        Assert.Equal(1, AiVocalModelCatalog.Find("uvr-general")!.InstrumentalStemIndex);
+        Assert.Equal(1, AiVocalModelCatalog.Find("uvr-voc-ft")!.InstrumentalStemIndex);
 
         Assert.NotNull(AiVocalModelCatalog.Find(AiVocalModelCatalog.DefaultId));
         Assert.Null(AiVocalModelCatalog.Find("does-not-exist"));
@@ -88,8 +95,8 @@ public class AiVocalModelTests
     [Fact]
     public void VersionFor_IncludesTheModelId()
     {
-        Assert.Equal("3.0-ai:uvr-kara-2", AiVocalRemover.VersionFor("uvr-kara-2"));
-        Assert.NotEqual(VocalRemover.AlgorithmVersion, AiVocalRemover.VersionFor("uvr-kara-2"));
+        Assert.Equal("3.1-ai:uvr-kara-2:s0", AiVocalRemover.VersionFor("uvr-kara-2", 0));
+        Assert.NotEqual(VocalRemover.AlgorithmVersion, AiVocalRemover.VersionFor("uvr-kara-2", 0));
     }
 
     [Fact]
@@ -101,6 +108,7 @@ public class AiVocalModelTests
         var model = AiVocalModelCatalog.Default;
         var modelPath = Path.Combine(dir, model.FileName);
         File.WriteAllText(modelPath, "model");
+        var fake = new FakeAiSeparator();
 
         var service = new KaraokeVersionService(
             Path.Combine(dir, "index.json"),
@@ -118,17 +126,19 @@ public class AiVocalModelTests
                 Path = modelPath,
                 InstalledBytes = new FileInfo(modelPath).Length
             },
-            AiBackendProvider = () => new FakeAiSeparator()
+            AiBackendProvider = () => fake
         };
 
         var generated = await service.EnsureAsync(source, "Song", "Artist");
 
         Assert.NotNull(generated);
-        Assert.Equal(AiVocalRemover.VersionFor(model.Id), generated!.Version);
+        Assert.Equal(AiVocalRemover.VersionFor(model.Id, model.InstrumentalStemIndex), generated!.Version);
         Assert.Equal("ai", generated.Separator);
         Assert.Equal(model.Id, generated.ModelId);
         Assert.Equal(model.Name, generated.ModelName);
         Assert.Equal(model.SizeBytes, generated.ModelSizeBytes);
+        Assert.Equal(model.InstrumentalStemIndex, generated.InstrumentalStemIndex);
+        Assert.Equal(model.InstrumentalStemIndex, fake.LastStemIndex);
         Assert.True(generated.GenerationSeconds >= 0);
         Assert.False(generated.FallbackFromAi);
         Assert.NotNull(service.GetCurrent(source));
@@ -202,10 +212,13 @@ public class AiVocalModelTests
         public bool IsSupported => true;
         public string BackendName => "fake-ai";
 
+        public int LastStemIndex { get; private set; } = -1;
+
         public void SeparateInstrumental(
-            string inputPath, string outputPath, string modelPath, int threads,
-            Action<double, string>? progress, CancellationToken cancellationToken)
+            string inputPath, string outputPath, string modelPath, int instrumentalStemIndex,
+            int threads, Action<double, string>? progress, CancellationToken cancellationToken)
         {
+            LastStemIndex = instrumentalStemIndex;
             File.WriteAllText(outputPath, "instrumental");
             progress?.Invoke(1.0, "done");
         }
@@ -217,8 +230,8 @@ public class AiVocalModelTests
         public string BackendName => "failing-ai";
 
         public void SeparateInstrumental(
-            string inputPath, string outputPath, string modelPath, int threads,
-            Action<double, string>? progress, CancellationToken cancellationToken)
+            string inputPath, string outputPath, string modelPath, int instrumentalStemIndex,
+            int threads, Action<double, string>? progress, CancellationToken cancellationToken)
             => throw new InvalidOperationException("fake AI failure");
     }
 

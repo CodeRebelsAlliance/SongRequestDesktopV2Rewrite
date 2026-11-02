@@ -143,7 +143,8 @@ test('enhanced AI vocal removal is a settings-managed local model feature', () =
   assert.match(core, /DownloadUrl/);
   assert.match(separator, /SherpaAiVocalSeparator/);
   assert.match(separator, /OfflineSourceSeparation/);
-  assert.match(separator, /SaveStemToWaveFile\(1/);
+  assert.match(separator, /SaveStemToWaveFile\(instrumentalStemIndex/);
+  assert.match(separator, /instrumentalStemIndex/);
   assert.match(service, /AiVocalRemover\.VersionFor/);
   assert.match(service, /FallbackFromAi/);
   assert.match(service, /ModelId/);

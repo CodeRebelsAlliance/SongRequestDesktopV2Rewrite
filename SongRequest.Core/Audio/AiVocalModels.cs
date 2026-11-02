@@ -26,7 +26,8 @@ public sealed record AiVocalModel(
     int QualityRating,
     int PerformanceRating,
     string License,
-    bool Recommended)
+    bool Recommended,
+    int InstrumentalStemIndex)
 {
     public string SizeLabel => AiVocalModelManager.FormatBytes(SizeBytes);
     public string QualityLabel => QualityRating + "/5";
@@ -45,6 +46,9 @@ public static class AiVocalModelCatalog
     private const string ReleaseBase =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/";
 
+    // NOTE: UVR models do not share a stem order. InstrumentalStemIndex was
+    // measured for each listed model (Karaoke 2 uses stem 0, Karaoke Fast uses
+    // stem 1, etc.). Always verify a new model before adding it here.
     public static IReadOnlyList<AiVocalModel> All { get; } = new[]
     {
         new AiVocalModel(
@@ -56,7 +60,7 @@ public static class AiVocalModelCatalog
             52_787_030,
             4, 3,
             "UVR / MDX-Net model card",
-            Recommended: true),
+            Recommended: true, InstrumentalStemIndex: 0),
         new AiVocalModel(
             "uvr-kara-fast",
             "UVR MDX-Net Karaoke Fast",
@@ -66,7 +70,7 @@ public static class AiVocalModelCatalog
             29_704_738,
             3, 5,
             "UVR / MDX-Net model card",
-            Recommended: false),
+            Recommended: false, InstrumentalStemIndex: 1),
         new AiVocalModel(
             "uvr-inst-hq-3",
             "UVR MDX-Net Inst HQ 3",
@@ -76,7 +80,7 @@ public static class AiVocalModelCatalog
             66_759_522,
             5, 2,
             "UVR / MDX-Net model card",
-            Recommended: false),
+            Recommended: false, InstrumentalStemIndex: 0),
         new AiVocalModel(
             "uvr-general",
             "UVR MDX-Net 9482",
@@ -86,7 +90,7 @@ public static class AiVocalModelCatalog
             29_704_738,
             3, 4,
             "UVR / MDX-Net model card",
-            Recommended: false),
+            Recommended: false, InstrumentalStemIndex: 1),
         new AiVocalModel(
             "uvr-voc-ft",
             "UVR MDX-Net Voc FT",
@@ -96,7 +100,7 @@ public static class AiVocalModelCatalog
             66_762_795,
             4, 2,
             "UVR / MDX-Net model card",
-            Recommended: false)
+            Recommended: false, InstrumentalStemIndex: 1)
     };
 
     public static AiVocalModel? Find(string? id)

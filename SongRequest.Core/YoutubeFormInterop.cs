@@ -904,6 +904,7 @@ public class YoutubeFormInterop
                             separator = version.Separator,
                             modelId = version.ModelId,
                             modelName = version.ModelName,
+                            instrumentalStemIndex = version.InstrumentalStemIndex,
                             fallbackFromAi = version.FallbackFromAi,
                             generationSeconds = version.GenerationSeconds,
                             createdUtc = version.CreatedUtc

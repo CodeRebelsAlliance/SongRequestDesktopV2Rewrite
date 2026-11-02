@@ -30,6 +30,7 @@ public sealed class KaraokeVersion
     public string ModelName { get; set; } = "";
     public string ModelVersion { get; set; } = "";
     public long ModelSizeBytes { get; set; }
+    public int InstrumentalStemIndex { get; set; } = -1;
 
     /// <summary>Wall-clock time spent generating this file (AI models can be slow).</summary>
     public double GenerationSeconds { get; set; }
@@ -93,7 +94,8 @@ public sealed class KaraokeVersionService
         get
         {
             if (TryResolveAiModel(out var aiModel))
-                return AiVocalRemover.VersionFor(aiModel.Model.Id);
+                return AiVocalRemover.VersionFor(
+                    aiModel.Model.Id, aiModel.Model.InstrumentalStemIndex);
             return VocalRemover.AlgorithmVersion;
         }
     }
@@ -261,7 +263,9 @@ public sealed class KaraokeVersionService
                             "AI vocal separation · " + aiModel.Model.Name);
                         int threads = Math.Clamp(Environment.ProcessorCount - 1, 1, 4);
                         backend.SeparateInstrumental(
-                            sourcePath, karaokePath, aiModel.Path!, threads, callback, cancellationToken);
+                            sourcePath, karaokePath, aiModel.Path!,
+                            aiModel.Model.InstrumentalStemIndex,
+                            threads, callback, cancellationToken);
                         usedAi = true;
                     }
                     catch (OperationCanceledException)
@@ -287,7 +291,8 @@ public sealed class KaraokeVersionService
                 Title = title,
                 Artist = artist,
                 Version = usedAi
-                    ? AiVocalRemover.VersionFor(aiModel!.Model.Id)
+                    ? AiVocalRemover.VersionFor(
+                        aiModel!.Model.Id, aiModel.Model.InstrumentalStemIndex)
                     : VocalRemover.AlgorithmVersion,
                 SourceSize = info.Length,
                 SourceModifiedUtc = info.LastWriteTimeUtc,
@@ -297,6 +302,7 @@ public sealed class KaraokeVersionService
                 ModelName = usedAi ? aiModel!.Model.Name : "",
                 ModelVersion = usedAi ? AiVocalRemover.AlgorithmVersion : "",
                 ModelSizeBytes = usedAi ? aiModel!.Model.SizeBytes : 0,
+                InstrumentalStemIndex = usedAi ? aiModel!.Model.InstrumentalStemIndex : -1,
                 GenerationSeconds = Math.Round(stopwatch.Elapsed.TotalSeconds, 2),
                 FallbackFromAi = !usedAi && aiError != null,
                 FallbackModelId = !usedAi && aiError != null

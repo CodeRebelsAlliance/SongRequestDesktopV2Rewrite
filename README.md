@@ -243,11 +243,13 @@ The player (desktop and mobile) shares the same three audio tools:
   downloads a local UVR/MDX-Net model (28–64 MB) and runs it through the bundled
   sherpa-onnx runtime to separate vocals before generating a karaoke version.
   Settings list every model with its download size, quality rating and
-  performance/speed rating, and let you download/delete models. AI-separated
-  versions carry the model id/name/size in their metadata and a distinct
-  algorithm version, so enabling AI, changing models or reinstalling a model
-  regenerates the affected songs. If the AI model or runtime is unavailable, the
-  built-in spectral separator is used and the fallback is recorded.
+  performance/speed rating, and let you download/delete models. Every catalog
+  entry stores the model's verified instrumental stem index (UVR models do not
+  share a stem order). AI-separated versions carry the model id/name/size and
+  stem index in their metadata and a distinct algorithm version, so enabling AI,
+  changing models, reinstalling a model or correcting a stem mapping regenerates
+  the affected songs. If the AI model or runtime is unavailable, the built-in
+  spectral separator is used and the fallback is recorded.
 - **On-device karaoke versions**: generate instrumental mixes from stereo songs
   (spectral center-channel suppression with bass preservation) on request, or
   automatically when “Play karaoke versions” is enabled. Files are versioned and
