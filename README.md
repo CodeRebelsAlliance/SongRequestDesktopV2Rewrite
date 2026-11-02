@@ -233,11 +233,21 @@ The player (desktop and mobile) shares the same three audio tools:
   algorithm changes. Results are cached per song with an algorithm version;
   deleting a library song also deletes its analysis.
 - **Karaoke mode** (Settings → General on desktop, player Options/settings on
-  mobile): infers word-level timing from timed lyrics plus the song’s novelty
-  timeline, animates each lyric word as it is sung, and shows an animated
-  countdown/progress bar in long instrumental pauses only while that pause is
-  playing. The same renderer is used by the desktop player, mobile player and
-  presentation/TV page.
+  mobile): infers syllable-level timing from timed lyrics plus the song’s
+  novelty/energy timeline, snaps line and syllable boundaries onto vocal attacks,
+  animates each syllable for its own sung duration, and keeps the lift wave
+  inside the active lyric line. Long instrumental pauses show only a large
+  countdown/progress bar while that pause is playing. The same renderer is used
+  by the desktop player, mobile player and presentation/TV page.
+- **Enhanced vocal removal (AI)**: an optional, off-by-default setting that
+  downloads a local UVR/MDX-Net model (28–64 MB) and runs it through the bundled
+  sherpa-onnx runtime to separate vocals before generating a karaoke version.
+  Settings list every model with its download size, quality rating and
+  performance/speed rating, and let you download/delete models. AI-separated
+  versions carry the model id/name/size in their metadata and a distinct
+  algorithm version, so enabling AI, changing models or reinstalling a model
+  regenerates the affected songs. If the AI model or runtime is unavailable, the
+  built-in spectral separator is used and the fallback is recorded.
 - **On-device karaoke versions**: generate instrumental mixes from stereo songs
   (spectral center-channel suppression with bass preservation) on request, or
   automatically when “Play karaoke versions” is enabled. Files are versioned and

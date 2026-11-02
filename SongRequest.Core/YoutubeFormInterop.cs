@@ -901,6 +901,11 @@ public class YoutubeFormInterop
                             sourcePath = version.SourcePath,
                             karaokePath = version.KaraokePath,
                             version = version.Version,
+                            separator = version.Separator,
+                            modelId = version.ModelId,
+                            modelName = version.ModelName,
+                            fallbackFromAi = version.FallbackFromAi,
+                            generationSeconds = version.GenerationSeconds,
                             createdUtc = version.CreatedUtc
                         });
                     return;
@@ -1052,6 +1057,18 @@ public class YoutubeFormInterop
                 case "dismissToolPrompt":
                     ConfigService.Instance.Update(c => c.ToolPromptDismissed = true);
                     result = new { success = true };
+                    break;
+                case "getAiVocalModels":
+                    result = GetAiVocalModelStatus();
+                    break;
+                case "downloadAiVocalModel":
+                    result = StartAiVocalModelDownload(msg);
+                    break;
+                case "deleteAiVocalModel":
+                    result = DeleteAiVocalModel(msg);
+                    break;
+                case "selectAiVocalModel":
+                    result = SelectAiVocalModel(msg);
                     break;
                 case "signIn":
                 {
@@ -3083,6 +3100,13 @@ public class YoutubeFormInterop
                     start = word.Start,
                     end = word.End,
                     text = word.Text
+                }).ToList(),
+                syllables = line.Syllables.Select(syllable => new
+                {
+                    start = syllable.Start,
+                    end = syllable.End,
+                    text = syllable.Text,
+                    wordIndex = syllable.WordIndex
                 }).ToList()
             }).ToList(),
             pauses = karaoke.Pauses.Select(pause => new
@@ -3301,6 +3325,8 @@ public class YoutubeFormInterop
             autoAnalyzeLibraryOnAlgorithmUpdate = cfg.AutoAnalyzeLibraryOnAlgorithmUpdate,
             karaokeMode = cfg.KaraokeMode,
             playKaraokeVersions = cfg.PlayKaraokeVersions,
+            enhancedVocalRemoval = cfg.EnhancedVocalRemoval,
+            aiVocalModelId = cfg.AiVocalModelId,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
             systemMediaActive = SystemMediaActive,
@@ -3651,6 +3677,8 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("autoAnalyzeLibraryOnAlgorithmUpdate", out var aalau)) cfg.AutoAnalyzeLibraryOnAlgorithmUpdate = aalau.ToObject<bool>();
                 if (settings.TryGetValue("karaokeMode", out var karaoke)) cfg.KaraokeMode = karaoke.ToObject<bool>();
                 if (settings.TryGetValue("playKaraokeVersions", out var playKaraoke)) cfg.PlayKaraokeVersions = playKaraoke.ToObject<bool>();
+                if (settings.TryGetValue("enhancedVocalRemoval", out var enhancedVocal)) cfg.EnhancedVocalRemoval = enhancedVocal.ToObject<bool>();
+                if (settings.TryGetValue("aiVocalModelId", out var aiVocalModel)) cfg.AiVocalModelId = aiVocalModel.ToString();
                 if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
 
                 // Local API / MCP servers. ApplyConfig is called after the update;
@@ -3686,6 +3714,16 @@ public class YoutubeFormInterop
                 updateLibrary.ToObject<bool>())
             {
                 try { _libraryAnalysis.StartIfOutdated(); } catch { }
+            }
+
+            if (settings.ContainsKey("enhancedVocalRemoval") &&
+                settings["enhancedVocalRemoval"]?.ToObject<bool>() == true)
+            {
+                KaraokeVersionService.Instance.ClearAiFallbacks();
+            }
+            if (settings.TryGetValue("aiVocalModelId", out var aiModelSetting))
+            {
+                KaraokeVersionService.Instance.ClearAiFallbacks(aiModelSetting.ToString());
             }
 
             if (settings.ContainsKey("karaokeMode"))
@@ -4022,7 +4060,122 @@ public class YoutubeFormInterop
         {
             return new { error = ex.Message };
         }
-    }    private async Task<object> GrabCookiesAsync(JObject msg)
+    }
+
+    private object GetAiVocalModelStatus()
+    {
+        var statuses = AiVocalModelManager.Instance.GetStatus();
+        var cfg = ConfigService.Instance.Current;
+        return new
+        {
+            supported = AiVocalSeparationFactory.IsSupported,
+            backend = AiVocalSeparationFactory.BackendName,
+            enabled = cfg?.EnhancedVocalRemoval == true,
+            selectedModelId = cfg?.AiVocalModelId ?? AiVocalModelCatalog.DefaultId,
+            directory = AiVocalModelManager.Instance.Directory,
+            installedBytes = AiVocalModelManager.Instance.InstalledBytes,
+            models = statuses.Select(s => new
+            {
+                id = s.Model.Id,
+                name = s.Model.Name,
+                description = s.Model.Description,
+                fileName = s.Model.FileName,
+                url = s.Model.DownloadUrl,
+                sizeBytes = s.Model.SizeBytes,
+                sizeLabel = s.Model.SizeLabel,
+                qualityRating = s.Model.QualityRating,
+                performanceRating = s.Model.PerformanceRating,
+                qualityLabel = s.Model.QualityLabel,
+                performanceLabel = s.Model.PerformanceLabel,
+                ratingLabel = s.Model.RatingLabel,
+                license = s.Model.License,
+                recommended = s.Model.Recommended,
+                installed = s.Installed,
+                path = s.Path ?? "",
+                installedBytes = s.InstalledBytes,
+                installedUtc = s.InstalledUtc,
+                sha256 = s.Sha256 ?? ""
+            }).ToList()
+        };
+    }
+
+    private object StartAiVocalModelDownload(JObject msg)
+    {
+        var modelId = msg["modelId"]?.ToString();
+        if (AiVocalModelCatalog.Find(modelId) == null)
+            return new { error = "Unknown AI vocal model" };
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                bool ok = await AiVocalModelManager.Instance.InstallAsync(
+                    modelId!,
+                    p =>
+                    {
+                        var data = new
+                        {
+                            modelId = p.ModelId,
+                            stage = p.Stage,
+                            percent = p.Percent,
+                            message = p.Message
+                        };
+                        SendEvent("aiModelProgress", data);
+                        MusicPlayerSendEvent("aiModelProgress", data);
+                    }).ConfigureAwait(false);
+
+                if (ok)
+                    KaraokeVersionService.Instance.ClearAiFallbacks(modelId);
+
+                var status = GetAiVocalModelStatus();
+                SendEvent("aiModelStatus", status);
+                MusicPlayerSendEvent("aiModelStatus", status);
+            }
+            catch (Exception ex)
+            {
+                var error = new
+                {
+                    modelId = modelId ?? "",
+                    stage = "error",
+                    percent = 0.0,
+                    message = ex.Message
+                };
+                SendEvent("aiModelProgress", error);
+                MusicPlayerSendEvent("aiModelProgress", error);
+            }
+        });
+
+        return new { success = true, started = true };
+    }
+
+    private object DeleteAiVocalModel(JObject msg)
+    {
+        var modelId = msg["modelId"]?.ToString();
+        if (AiVocalModelCatalog.Find(modelId) == null)
+            return new { error = "Unknown AI vocal model" };
+
+        bool deleted = AiVocalModelManager.Instance.Delete(modelId);
+        var status = GetAiVocalModelStatus();
+        SendEvent("aiModelStatus", status);
+        MusicPlayerSendEvent("aiModelStatus", status);
+        return new { success = deleted, status };
+    }
+
+    private object SelectAiVocalModel(JObject msg)
+    {
+        var modelId = msg["modelId"]?.ToString();
+        if (AiVocalModelCatalog.Find(modelId) == null)
+            return new { error = "Unknown AI vocal model" };
+
+        ConfigService.Instance.Update(c => c.AiVocalModelId = modelId!);
+        KaraokeVersionService.Instance.ClearAiFallbacks(modelId);
+        var status = GetAiVocalModelStatus();
+        SendEvent("aiModelStatus", status);
+        MusicPlayerSendEvent("aiModelStatus", status);
+        return status;
+    }
+
+    private async Task<object> GrabCookiesAsync(JObject msg)
     {
         var browser = msg["browser"]?.ToString() ?? "";
         if (string.IsNullOrWhiteSpace(browser)) return new { error = "No browser specified" };

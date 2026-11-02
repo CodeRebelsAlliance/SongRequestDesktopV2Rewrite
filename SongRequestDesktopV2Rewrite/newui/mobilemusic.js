@@ -142,7 +142,7 @@
   var playlists = [];
   var recentAt = 0;
 
-  var lyrics = { synced: [], plain: [], active: -1, syncOffset: 0, fontScale: 1, hidden: false };
+  var lyrics = { synced: [], plain: [], active: -1, syncOffset: 0, fontScale: 1, hidden: false, karaokeTimes: [] };
   var lastColors = '';
 
   // ── Element refs ─────────────────────────────────────────
@@ -960,6 +960,13 @@
     lyricsEl.innerHTML = '';
     lyrics.synced = (data && data.syncedLyrics) || [];
     lyrics.plain = (data && data.plainLyrics) || [];
+    lyrics.karaokeTimes = [];
+    if (data && data.karaoke && data.karaoke.lines) {
+      for (var kt = 0; kt < data.karaoke.lines.length; kt++) {
+        var karaokeTime = Number(data.karaoke.lines[kt].time);
+        lyrics.karaokeTimes[kt] = isFinite(karaokeTime) ? karaokeTime : null;
+      }
+    }
     lyrics.active = -1;
     setLyricsSource(data && data.provider ? data.provider : '');
 
@@ -1010,7 +1017,13 @@
     if (window.SongRequestKaraoke) window.SongRequestKaraoke.update(lyricsEl, adjustedTime);
     var index = -1;
     for (var i = 0; i < lyrics.synced.length; i++) {
-      if (lyrics.synced[i].time <= adjustedTime) index = i; else break;
+      var lineTime = lyrics.karaokeTimes[i];
+      if (lineTime == null || !isFinite(lineTime)) lineTime = lyrics.synced[i].time;
+      if (lineTime <= adjustedTime) {
+        // Empty timed markers must not steal the highlight from the line that is
+        // still being sung (the pause bar covers the gap instead).
+        if (String(lyrics.synced[i].text || '').trim()) index = i;
+      } else break;
     }
 
     if (index === lyrics.active) return;
@@ -1262,6 +1275,14 @@
 
       case 'queueThumbnails':
         applyQueueThumbnails(data && data.items);
+        break;
+
+      case 'aiModelProgress':
+        onMobileAiModelProgress(data);
+        break;
+
+      case 'aiModelStatus':
+        applyMobileAiModelStatus(data);
         break;
 
       case 'lyricsUpdate':
@@ -1618,7 +1639,7 @@
             '<input id="mm-menu-normalize" type="checkbox"' + (cfg && cfg.normalizeVolume ? ' checked' : '') + '></div>' +
           '<div class="mm-sheet-row"><div class="mm-sheet-label">Auto-analyze songs<div class="mm-sheet-sub">BPM, chapters &amp; drops on the progress bar</div></div>' +
             '<input id="mm-menu-auto-analyze" type="checkbox"' + ((!cfg || cfg.autoAnalyzeSongs !== false) ? ' checked' : '') + '></div>' +
-          '<div class="mm-sheet-row"><div class="mm-sheet-label">Karaoke mode<div class="mm-sheet-sub">Word-by-word lyrics and pause bars</div></div>' +
+          '<div class="mm-sheet-row"><div class="mm-sheet-label">Karaoke mode<div class="mm-sheet-sub">Syllable-by-syllable lyrics and pause bars</div></div>' +
             '<input id="mm-menu-karaoke" type="checkbox"' + (cfg && cfg.karaokeMode ? ' checked' : '') + '></div>' +
           '<div class="mm-sheet-row"><div class="mm-sheet-label">Play karaoke versions<div class="mm-sheet-sub">Generate and play instrumental tracks</div></div>' +
             '<input id="mm-menu-play-karaoke" type="checkbox"' + (cfg && cfg.playKaraokeVersions ? ' checked' : '') + '></div>' +
@@ -1728,6 +1749,8 @@
     return '<option value="' + value + '"' + (value === selected ? ' selected' : '') + '>' + label + '</option>';
   }
 
+  var mobileAiStatus = null;
+
   function openSettingsSheet() {
     request('getSettings').then(function (cfg) {
       cfg = cfg || {};
@@ -1741,8 +1764,19 @@
         '<div class="mm-sheet-row"><select id="mm-set-mode">' + modeOptions + '</select></div>' +
         '<h3>Playback</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-auto-analyze"' + (cfg.autoAnalyzeSongs !== false ? ' checked' : '') + '> Automatically analyze playing songs</label>' +
-        '<label class="mm-check"><input type="checkbox" id="mm-set-karaoke"' + (cfg.karaokeMode === true ? ' checked' : '') + '> Karaoke mode (word-by-word lyrics and pause bars)</label>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-karaoke"' + (cfg.karaokeMode === true ? ' checked' : '') + '> Karaoke mode (syllable-by-syllable lyrics and pause bars)</label>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-play-karaoke"' + (cfg.playKaraokeVersions === true ? ' checked' : '') + '> Play karaoke (instrumental) versions of songs</label>' +
+        '<h3>Enhanced vocal removal (AI)</h3>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-ai-vocal"' + (cfg.enhancedVocalRemoval === true ? ' checked' : '') + '> Use a local AI model for karaoke vocal separation</label>' +
+        '<div id="mm-ai-engine" class="mm-sheet-note">Checking models…</div>' +
+        '<select id="mm-set-ai-model" class="mm-sheet-input"></select>' +
+        '<div id="mm-ai-model-info" class="mm-sheet-note"></div>' +
+        '<div class="mm-sheet-note">AI separation uses more memory and time than the built-in separator; the fast model is best on older devices.</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
+          '<button id="mm-ai-download" class="mm-btn"><i class="fas fa-download"></i> Download model</button>' +
+          '<button id="mm-ai-delete" class="mm-btn mm-danger">Delete model</button>' +
+        '</div>' +
+        '<div id="mm-ai-progress" class="mm-sheet-note"></div>' +
         '<div class="mm-sheet-note" style="margin-top:4px">Shows BPM, song chapters and drops on the player progress bar from the cached analysis.</div>' +
         '<h3>Library analysis</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-library-analyze-add"' + (cfg.autoAnalyzeLibraryOnAdd !== false ? ' checked' : '') + '> Analyze new library songs automatically</label>' +
@@ -1786,6 +1820,7 @@
         '<button id="mm-settings-save" class="mm-btn mm-share-primary" style="width:100%;margin-top:16px">Save</button>'
       );
       wireSettingsSheet();
+      refreshMobileAiModels();
     }).catch(function (error) { toast(error.message, 'error'); });
   }
 
@@ -1828,6 +1863,97 @@
     if (stop) stop.hidden = !running;
   }
 
+  function refreshMobileAiModels() {
+    request('getAiVocalModels').then(function (status) {
+      applyMobileAiModelStatus(status);
+    }).catch(function () {
+      var engine = $('mm-ai-engine');
+      if (engine) engine.textContent = 'Could not read AI model status.';
+    });
+  }
+
+  function applyMobileAiModelStatus(status) {
+    if (!status || !status.models) return;
+    mobileAiStatus = status;
+
+    var toggle = $('mm-set-ai-vocal');
+    var engine = $('mm-ai-engine');
+    var select = $('mm-set-ai-model');
+    var info = $('mm-ai-model-info');
+    var download = $('mm-ai-download');
+    var remove = $('mm-ai-delete');
+    if (!select || !info) return;
+
+    var supported = status.supported !== false;
+    if (engine) {
+      engine.textContent = supported
+        ? 'Engine ready · ' + (status.backend || 'local AI') +
+          (status.installedBytes ? ' · ' + (status.installedBytes / (1024 * 1024)).toFixed(1) + ' MB installed' : ' · no models installed')
+        : 'Local AI vocal separation is not available on this platform. The built-in separator is used.';
+      engine.style.color = supported ? '' : '#e08080';
+    }
+    if (toggle) toggle.disabled = !supported;
+    if (download) download.disabled = !supported;
+
+    select.innerHTML = status.models.map(function (m) {
+      return '<option value="' + esc(m.id) + '">' + esc(m.name) + ' · ' + esc(m.sizeLabel) + '</option>';
+    }).join('');
+    var wanted = status.selectedModelId || (status.models[0] && status.models[0].id) || '';
+    var chosen = status.models.find(function (m) { return m.id === wanted; }) || status.models[0];
+    if (chosen) select.value = chosen.id;
+
+    function updateInfo() {
+      var model = status.models.find(function (m) { return m.id === select.value; }) || chosen;
+      if (!model) { info.textContent = ''; return; }
+      info.textContent = model.description + ' · ' + model.ratingLabel +
+        ' · License: ' + model.license +
+        (model.installed ? ' · Installed' : ' · Not installed');
+      if (remove) remove.disabled = !supported || !model.installed;
+    }
+    select.onchange = updateInfo;
+    updateInfo();
+
+    if (download && !download.dataset.bound) {
+      download.dataset.bound = '1';
+      download.onclick = function () {
+        var id = select.value;
+        if (!id) return;
+        var progress = $('mm-ai-progress');
+        if (progress) progress.textContent = 'Starting download…';
+        request('downloadAiVocalModel', { modelId: id }).then(function (r) {
+          if (r && r.error && progress) progress.textContent = 'Error: ' + r.error;
+        }).catch(function (e) {
+          if (progress) progress.textContent = 'Error: ' + e.message;
+        });
+      };
+    }
+
+    if (remove && !remove.dataset.bound) {
+      remove.dataset.bound = '1';
+      remove.onclick = function () {
+        var id = select.value;
+        var current = mobileAiStatus || status;
+        var model = current.models.find(function (m) { return m.id === id; });
+        if (!id || !model || !model.installed) return;
+        request('deleteAiVocalModel', { modelId: id }).then(function (r) {
+          if (r && r.error) toast('Delete failed: ' + r.error, 'error');
+          else toast('AI model deleted', 'success');
+          refreshMobileAiModels();
+        }).catch(function (e) { toast('Delete failed: ' + e.message, 'error'); });
+      };
+    }
+  }
+
+  function onMobileAiModelProgress(data) {
+    if (!data) return;
+    var progress = $('mm-ai-progress');
+    if (progress) {
+      var pct = data.percent ? ' ' + Math.round(data.percent) + '%' : '';
+      progress.textContent = (data.message || data.stage || '') + pct;
+    }
+    if (data.stage === 'done' || data.stage === 'error') refreshMobileAiModels();
+  }
+
   function wireSettingsSheet() {
     var mode = $('mm-set-mode');
     if (mode) mode.addEventListener('change', function () {
@@ -1865,6 +1991,8 @@
         autoAnalyzeSongs: $('mm-set-auto-analyze').checked,
         karaokeMode: $('mm-set-karaoke').checked,
         playKaraokeVersions: $('mm-set-play-karaoke').checked,
+        enhancedVocalRemoval: $('mm-set-ai-vocal').checked,
+        aiVocalModelId: $('mm-set-ai-model').value || 'uvr-kara-2',
         autoAnalyzeLibraryOnAdd: $('mm-set-library-analyze-add').checked,
         autoAnalyzeLibraryOnAlgorithmUpdate: $('mm-set-library-analyze-version').checked,
         libraryAutoAddDownloads: $('mm-set-auto-add').checked,

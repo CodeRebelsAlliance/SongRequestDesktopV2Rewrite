@@ -618,7 +618,7 @@ body {
 .karaoke-word {
   position: relative; display: inline-block; color: inherit; white-space: pre;
   transform: translateY(var(--karaoke-lift, 0px));
-  transition: color .18s linear, transform .24s cubic-bezier(.22, .61, .36, 1);
+  transition: color var(--karaoke-color-time, .12s) linear, transform var(--karaoke-lift-time, .16s) cubic-bezier(.22, .61, .36, 1);
   will-change: transform;
   backface-visibility: hidden;
 }
@@ -627,23 +627,33 @@ body {
   color: #ffffff; pointer-events: none;
   clip-path: inset(0 calc(100% - var(--karaoke-progress, 0%)) 0 0);
   -webkit-clip-path: inset(0 calc(100% - var(--karaoke-progress, 0%)) 0 0);
-  transition: clip-path .10s linear, -webkit-clip-path .10s linear;
+  transition: clip-path var(--karaoke-smooth, .08s) linear, -webkit-clip-path var(--karaoke-smooth, .08s) linear;
 }
 .karaoke-word.is-sung { color: #d8ccff; }
 .karaoke-word.is-sung::after { color: #d8ccff; }
 .karaoke-pause {
-  width: min(620px, 92%);
-  margin: 18px auto;
-  padding: 12px 18px;
-  border-radius: 14px;
-  border: 1px solid rgba(208, 188, 255, .22);
-  background: rgba(208, 188, 255, .08);
+  width: min(860px, 94%);
+  margin: 22px auto;
+  padding: 0;
+  border: 0;
+  background: none;
   box-sizing: border-box;
 }
 .karaoke-pause[hidden] { display: none !important; }
-.karaoke-pause-copy { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 8px; }
-.karaoke-pause-label { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #cbb7f5; }
+.karaoke-pause-track {
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+  overflow: hidden;
+}
+.karaoke-pause-fill {
+  width: 0; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, #8b7bff, #d0bcff);
+  box-shadow: 0 0 26px rgba(208,188,255,.55);
+  transition: width .12s linear;
+}
+.karaoke-pause-caption { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 8px; padding: 0 2px; }
+.karaoke-pause-label { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #cbb7f5; opacity: .78; }
 .karaoke-pause-label i { margin-right: 6px; }
 .karaoke-pause-time { font-size: 12px; font-weight: 700; color: rgba(255,255,255,.7); font-variant-numeric: tabular-nums; }
-.karaoke-pause-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,.10); overflow: hidden; }
-.karaoke-pause-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8b7bff, #d0bcff); transition: width .12s linear; }

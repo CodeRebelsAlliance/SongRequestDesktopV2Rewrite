@@ -57,6 +57,9 @@ public class KaraokeVersionTests
             Assert.NotNull(first);
             Assert.True(File.Exists(first!.KaraokePath));
             Assert.Equal(VocalRemover.AlgorithmVersion, first.Version);
+            Assert.Equal("spectral", first.Separator);
+            Assert.Equal("", first.ModelId);
+            Assert.False(first.FallbackFromAi);
             Assert.False(service.NeedsGeneration(sourcePath));
             Assert.NotNull(service.GetCurrent(sourcePath));
 

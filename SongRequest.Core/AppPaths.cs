@@ -43,6 +43,12 @@ public static class AppPaths
     /// <summary>Index linking source songs to generated karaoke versions.</summary>
     public static string KaraokeIndexPath => Path.Combine(AppDataDir, "karaoke-versions.json");
 
+    /// <summary>Local AI vocal-separation models (large, non-roaming data).</summary>
+    public static string AiModelsPath => Path.Combine(LocalAppDataDir, "ai-models");
+
+    /// <summary>Metadata for downloaded AI vocal-separation models.</summary>
+    public static string AiModelsIndexPath => Path.Combine(AppDataDir, "ai-models.json");
+
     /// <summary>
     /// The pre-announcement chime. Ships next to the desktop executable; on mobile
     /// the host materialises it from the app package into the data root, which is

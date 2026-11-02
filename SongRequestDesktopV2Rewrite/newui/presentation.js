@@ -21,6 +21,7 @@
 
   // State
   var syncedLyrics = [];
+  var karaokeLineTimes = [];
   var plainLyricLines = [];
   var presChapters = [];
   var hasSyncedLyrics = false;
@@ -312,6 +313,13 @@
 
     if (data.syncedLyrics && data.syncedLyrics.length > 0) {
       syncedLyrics = data.syncedLyrics;
+      karaokeLineTimes = [];
+      if (data.karaoke && data.karaoke.lines) {
+        for (var kt = 0; kt < data.karaoke.lines.length; kt++) {
+          var karaokeTime = Number(data.karaoke.lines[kt].time);
+          karaokeLineTimes[kt] = isFinite(karaokeTime) ? karaokeTime : null;
+        }
+      }
       hasSyncedLyrics = true;
       var prevTime = -999;
       data.syncedLyrics.forEach(function(item, i) {
@@ -543,9 +551,13 @@
     if (hasSyncedLyrics && syncedLyrics.length > 0) {
       var domIndex = -1;
       for (var i = syncedLyrics.length - 1; i >= 0; i--) {
-        if (syncedLyrics[i].time <= adjustedTime + 0.1) {
-          domIndex = i;
-          break;
+        var lineTime = karaokeLineTimes[i];
+        if (lineTime == null || !isFinite(lineTime)) lineTime = syncedLyrics[i].time;
+        if (lineTime <= adjustedTime + 0.1) {
+          if (String(syncedLyrics[i].text || '').trim()) {
+            domIndex = i;
+            break;
+          }
         }
       }
 

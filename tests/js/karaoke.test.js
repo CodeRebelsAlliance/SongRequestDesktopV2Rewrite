@@ -18,21 +18,34 @@ test('karaoke mode is available on desktop, mobile and presentation pages', () =
   const js = read('karaoke.js');
   assert.match(js, /renderLine/);
   assert.match(js, /karaoke-word/);
+  assert.match(js, /karaoke-syllable/);
+  assert.match(js, /line\.syllables/);
   assert.match(js, /attachPauses/);
   assert.match(js, /karaoke-pause-fill/);
+  assert.match(js, /karaoke-pause-caption/);
   assert.match(js, /is-sung/);
   assert.match(js, /is-active/);
   assert.match(js, /dataset\.text/);
+  assert.match(js, /dataset\.karaokeStart/);
+  assert.match(js, /dataset\.karaokeEnd/);
   assert.match(js, /\(lastTime - start\) \/ \(end - start\)/);
   assert.match(js, /--karaoke-lift/);
+  assert.match(js, /--karaoke-smooth/);
+  assert.match(js, /--karaoke-lift-time/);
+  assert.match(js, /--karaoke-color-time/);
   assert.match(js, /liftFactor/);
+  assert.match(js, /lineActive/);
   assert.match(js, /distance === 1 \? 0\.58/);
   assert.match(js, /chooseLineForTime/);
   assert.match(js, /nextLineForTime/);
   assert.match(js, /gap \* 0\.5/);
   const css = read('advancedaudio.css');
   assert.match(css, /clip-path:\s*inset\(0 calc\(100% - var\(--karaoke-progress/);
+  assert.match(css, /var\(--karaoke-smooth/);
   assert.match(css, /\.karaoke-word::after/);
+  assert.match(css, /\.karaoke-pause-track\s*\{[^}]*height:\s*12px/s);
+  assert.match(css, /\.karaoke-pause\s*\{[^}]*background:\s*none/s);
+  assert.doesNotMatch(css, /\.karaoke-pause-copy/);
 });
 
 test('karaoke toggle is exposed in settings and persisted', () => {
@@ -83,11 +96,14 @@ test('karaoke timings are generated in the core from analysis and timed lyrics',
   const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
 
   assert.match(core, /KaraokeLyricsData/);
+  assert.match(core, /KaraokeSyllable/);
+  assert.match(core, /Syllabify/);
   assert.match(core, /NoveltyPeaks/);
   assert.match(core, /EstimateSyllables/);
   assert.match(core, /MinPauseSeconds/);
   assert.match(analyzer, /Parts/);
   assert.match(interop, /BuildKaraokePayload/);
+  assert.match(interop, /syllables = line\.Syllables/);
   assert.match(interop, /karaokeMode/);
 });
 
@@ -102,4 +118,46 @@ test('lyrics renderers attach word spans and pause bars', () => {
     assert.match(js, /attachPauses/);
     assert.match(js, /\.update\(/);
   }
+  assert.match(desktop, /karaokeLineTimes/);
+  assert.match(mobile, /karaokeTimes/);
+  assert.match(presentation, /karaokeLineTimes/);
+});
+
+test('enhanced AI vocal removal is a settings-managed local model feature', () => {
+  const root = path.join(__dirname, '..', '..');
+  const core = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'AiVocalModels.cs'), 'utf8');
+  const separator = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'AiVocalSeparation.cs'), 'utf8');
+  const service = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Audio', 'KaraokeVersionService.cs'), 'utf8');
+  const config = fs.readFileSync(path.join(root, 'SongRequest.Core', 'ConfigService.cs'), 'utf8');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  const catalog = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'CommandCatalog.cs'), 'utf8');
+  const desktop = read('index.html');
+  const desktopJs = read('app.js');
+  const mobile = read('mobilemusic.js');
+
+  assert.match(core, /AiVocalModelCatalog/);
+  assert.match(core, /AiVocalModelManager/);
+  assert.match(core, /QualityRating/);
+  assert.match(core, /PerformanceRating/);
+  assert.match(core, /UVR_MDXNET_KARA_2/);
+  assert.match(core, /DownloadUrl/);
+  assert.match(separator, /SherpaAiVocalSeparator/);
+  assert.match(separator, /OfflineSourceSeparation/);
+  assert.match(separator, /SaveStemToWaveFile\(1/);
+  assert.match(service, /AiVocalRemover\.VersionFor/);
+  assert.match(service, /FallbackFromAi/);
+  assert.match(service, /ModelId/);
+  assert.match(config, /EnhancedVocalRemoval/);
+  assert.match(config, /AiVocalModelId/);
+  assert.match(interop, /getAiVocalModels/);
+  assert.match(interop, /downloadAiVocalModel/);
+  assert.match(interop, /aiModelProgress/);
+  assert.match(catalog, /getAiVocalModels/);
+  assert.match(desktop, /s-ai-vocal-removal/);
+  assert.match(desktop, /s-ai-vocal-model/);
+  assert.match(desktopJs, /enhancedVocalRemoval/);
+  assert.match(desktopJs, /getAiVocalModels/);
+  assert.match(mobile, /mm-set-ai-vocal/);
+  assert.match(mobile, /mm-set-ai-model/);
+  assert.match(mobile, /getAiVocalModels/);
 });

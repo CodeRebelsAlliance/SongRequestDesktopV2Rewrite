@@ -321,7 +321,7 @@
             <label class="settings-checkbox"><input type="checkbox" id="s-fullscreen" /> Open presentation in fullscreen mode</label>
             <label class="settings-checkbox"><input type="checkbox" id="s-normalize-volume" /> Normalize volume between tracks</label>
             <label class="settings-checkbox"><input type="checkbox" id="s-auto-analyze" /> Automatically analyze playing songs (BPM, chapters &amp; drops on the progress bar)</label>
-            <label class="settings-checkbox"><input type="checkbox" id="s-karaoke-mode" /> Karaoke mode (word-by-word lyrics and animated pause bars)</label>
+            <label class="settings-checkbox"><input type="checkbox" id="s-karaoke-mode" /> Karaoke mode (syllable-by-syllable lyrics and pause bars)</label>
             <label class="settings-checkbox"><input type="checkbox" id="s-play-karaoke" /> Play karaoke (instrumental) versions of songs</label>
             <label class="settings-checkbox"><input type="checkbox" id="s-caption-fallback" /> Use YouTube captions as lyrics fallback</label>
             <label class="settings-checkbox"><input type="checkbox" id="s-enable-announcements" /> Enable announcements</label>
@@ -337,6 +337,24 @@
               </select>
               <div class="settings-hint">Which tab is selected by default when the Submit Song modal opens.</div>
             </div>
+          </div>
+          <div class="settings-card" id="s-card-ai-vocal">
+            <div class="settings-card-title">Enhanced Vocal Removal (AI)</div>
+            <div class="settings-hint">Off by default. Downloads a local AI model (UVR/MDX-Net) and uses it to remove vocals when generating karaoke versions. Everything runs on this device; no audio is uploaded. Models are 28–64 MB; AI separation uses more memory and time than the built-in separator, so the fast model is best on older devices.</div>
+            <label class="settings-checkbox"><input type="checkbox" id="s-ai-vocal-removal" /> Use a local AI model for karaoke vocal separation</label>
+            <div id="s-ai-vocal-engine" class="settings-hint"></div>
+            <div class="settings-field">
+              <label>AI model</label>
+              <select id="s-ai-vocal-model" class="settings-input"></select>
+              <div id="s-ai-vocal-model-info" class="settings-hint"></div>
+            </div>
+            <div id="s-ai-vocal-models" class="settings-hint" style="margin-top:8px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <button id="s-ai-vocal-download" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-download"></i> Download selected model</button>
+              <button id="s-ai-vocal-delete" class="action-btn warn" style="width:auto;padding:8px 16px;font-size:13px">Delete selected</button>
+              <button id="s-ai-vocal-refresh" class="top-btn" style="font-size:12px">Refresh</button>
+            </div>
+            <div id="s-ai-vocal-progress" class="settings-hint" style="color:#d0d0d0"></div>
           </div>
           <div class="settings-card" id="s-card-startup">
             <div class="settings-card-title">Startup &amp; Window</div>

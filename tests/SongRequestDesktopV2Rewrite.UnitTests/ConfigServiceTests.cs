@@ -23,6 +23,26 @@ public class ConfigServiceTests
     }
 
     [Fact]
+    public void AiVocalSettings_DefaultOffAndPersist()
+    {
+        var path = NewConfigPath();
+        var svc = new ConfigService(path);
+
+        Assert.False(svc.Current.EnhancedVocalRemoval);
+        Assert.Equal(AiVocalModelCatalog.DefaultId, svc.Current.AiVocalModelId);
+
+        svc.Update(c =>
+        {
+            c.EnhancedVocalRemoval = true;
+            c.AiVocalModelId = "uvr-kara-fast";
+        });
+
+        var reloaded = new ConfigService(path);
+        Assert.True(reloaded.Current.EnhancedVocalRemoval);
+        Assert.Equal("uvr-kara-fast", reloaded.Current.AiVocalModelId);
+    }
+
+    [Fact]
     public void Update_PersistsChange()
     {
         var path = NewConfigPath();

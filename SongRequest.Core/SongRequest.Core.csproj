@@ -30,6 +30,8 @@
     <PackageReference Include="YoutubeExplode.Converter" Version="6.6.2" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
+    <!-- Local AI vocal separation (UVR/MDX-Net models) for karaoke versions. -->
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="2.0.1" />
   </ItemGroup>
 
   <ItemGroup>

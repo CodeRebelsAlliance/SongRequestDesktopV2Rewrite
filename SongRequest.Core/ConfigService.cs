@@ -55,6 +55,8 @@ namespace SongRequestDesktopV2Rewrite
         private bool _autoAnalyzeLibraryOnAlgorithmUpdate = true;
         private bool _karaokeMode = false;
         private bool _playKaraokeVersions = false;
+        private bool _enhancedVocalRemoval = false;
+        private string _aiVocalModelId = AiVocalModelCatalog.DefaultId;
 
         // Local integration servers (HTTP/WebSocket API and MCP). Both are off by
         // default and bind to loopback only until the user explicitly changes it.
@@ -402,6 +404,26 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _playKaraokeVersions;
             set => SetField(ref _playKaraokeVersions, value);
+        }
+
+        /// <summary>
+        /// Use a downloaded local AI model (UVR/MDX-Net) instead of the built-in
+        /// spectral suppressor when generating karaoke versions. Off by default;
+        /// requires a model to be downloaded in Settings → Enhanced Vocal Removal.
+        /// </summary>
+        public bool EnhancedVocalRemoval
+        {
+            get => _enhancedVocalRemoval;
+            set => SetField(ref _enhancedVocalRemoval, value);
+        }
+
+        /// <summary>Catalog id of the local AI model used for vocal separation.</summary>
+        public string AiVocalModelId
+        {
+            get => _aiVocalModelId;
+            set => SetField(ref _aiVocalModelId, string.IsNullOrWhiteSpace(value)
+                ? AiVocalModelCatalog.DefaultId
+                : value);
         }
 
         /// <summary>

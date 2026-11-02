@@ -122,6 +122,8 @@
     else if (eventName === 'midiActivity') onMidiActivity(data);
     else if (eventName === 'toolProgress') onToolProgress(data);
     else if (eventName === 'toolStatus') onToolStatus(data);
+    else if (eventName === 'aiModelProgress') onAiModelProgress(data);
+    else if (eventName === 'aiModelStatus') applyAiModelStatus(data);
     else if (eventName === 'cookieBrowserChanged') selectAuthBrowser(data && data.browser);
   }
 
@@ -411,6 +413,9 @@
       document.getElementById('s-auto-analyze').checked = cfg.autoAnalyzeSongs ?? true;
       document.getElementById('s-karaoke-mode').checked = cfg.karaokeMode === true;
       document.getElementById('s-play-karaoke').checked = cfg.playKaraokeVersions === true;
+      document.getElementById('s-ai-vocal-removal').checked = cfg.enhancedVocalRemoval === true;
+      _aiSelectedModelId = cfg.aiVocalModelId || '';
+      refreshAiModels();
       document.getElementById('s-caption-fallback').checked = cfg.useCaptionLyricsFallback ?? false;
       document.getElementById('s-enable-announcements').checked = cfg.enableAnnouncements ?? false;
       document.getElementById('s-autopilot').checked = cfg.autoEnqueue ?? false;
@@ -567,6 +572,8 @@
         autoAnalyzeSongs: document.getElementById('s-auto-analyze').checked,
         karaokeMode: document.getElementById('s-karaoke-mode').checked,
         playKaraokeVersions: document.getElementById('s-play-karaoke').checked,
+        enhancedVocalRemoval: document.getElementById('s-ai-vocal-removal').checked,
+        aiVocalModelId: document.getElementById('s-ai-vocal-model').value || 'uvr-kara-2',
         autoAnalyzeLibraryOnAdd: document.getElementById('s-library-auto-analyze-add').checked,
         autoAnalyzeLibraryOnAlgorithmUpdate: document.getElementById('s-library-auto-analyze-version').checked,
         useCaptionLyricsFallback: document.getElementById('s-caption-fallback').checked,
@@ -1102,6 +1109,8 @@
   // ── External tools (FFmpeg / yt-dlp) ────────────────────────────────
   let _toolProgressEl = null;
   let _toolPromptSelection = null;
+  let _aiModelsStatus = null;
+  let _aiSelectedModelId = '';
 
   function applyToolStatus(status) {
     const set = (id, entry) => {
@@ -1215,6 +1224,136 @@
   };
 
   setTimeout(maybePromptTools, 1500);
+
+  // ── Local AI vocal-separation models ───────────────────────────────
+  function aiEscape(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function refreshAiModels() {
+    try {
+      const status = await send('getAiVocalModels');
+      applyAiModelStatus(status);
+    } catch (e) {
+      const info = document.getElementById('s-ai-vocal-model-info');
+      if (info) info.textContent = 'Could not read AI model status: ' + e.message;
+    }
+  }
+
+  function applyAiModelStatus(status) {
+    if (!status || !status.models) return;
+    _aiModelsStatus = status;
+
+    const toggle = document.getElementById('s-ai-vocal-removal');
+    const engine = document.getElementById('s-ai-vocal-engine');
+    const select = document.getElementById('s-ai-vocal-model');
+    const info = document.getElementById('s-ai-vocal-model-info');
+    const list = document.getElementById('s-ai-vocal-models');
+    const download = document.getElementById('s-ai-vocal-download');
+    const remove = document.getElementById('s-ai-vocal-delete');
+    if (!toggle || !select || !info || !list) return;
+
+    if (toggle && !toggle.dataset.touched) toggle.checked = status.enabled === true;
+    const supported = status.supported !== false;
+
+    if (engine) {
+      engine.textContent = supported
+        ? 'Engine ready · ' + (status.backend || 'local AI') +
+          ' · ' + (status.installedBytes ? (status.installedBytes / (1024 * 1024)).toFixed(1) + ' MB installed' : 'no models installed')
+        : 'Local AI vocal separation is not available on this platform. The built-in separator is used.';
+      engine.style.color = supported ? '#9a9a9a' : '#e08080';
+    }
+
+    select.innerHTML = status.models.map(function (m) {
+      return '<option value="' + aiEscape(m.id) + '">' + aiEscape(m.name) +
+        ' · ' + aiEscape(m.sizeLabel) + '</option>';
+    }).join('');
+
+    const wanted = _aiSelectedModelId || status.selectedModelId ||
+      (status.models[0] && status.models[0].id) || '';
+    const chosen = status.models.find(function (m) { return m.id === wanted; }) || status.models[0];
+    if (chosen) select.value = chosen.id;
+    if (toggle) toggle.disabled = !supported;
+    if (download) download.disabled = !supported;
+    if (remove) remove.disabled = !supported;
+
+    function updateInfo() {
+      const model = status.models.find(function (m) { return m.id === select.value; }) || chosen;
+      if (!model) { info.textContent = ''; return; }
+      _aiSelectedModelId = model.id;
+      info.textContent = model.description + ' · ' + model.ratingLabel +
+        ' · License: ' + model.license +
+        (model.installed ? ' · Installed' : ' · Not installed');
+      if (remove) remove.disabled = !supported || !model.installed;
+    }
+
+    select.onchange = updateInfo;
+    updateInfo();
+
+    list.innerHTML = status.models.map(function (m) {
+      return '<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0">' +
+        '<span>' + aiEscape(m.name) + (m.recommended ? ' <strong>(recommended)</strong>' : '') + '</span>' +
+        '<span style="color:' + (m.installed ? '#7ad07a' : '#9a9a9a') + '">' +
+          (m.installed ? 'Installed' : 'Not installed') + ' · ' +
+          aiEscape(m.sizeLabel) + ' · Q' + m.qualityRating + '/5 · S' + m.performanceRating + '/5' +
+        '</span></div>';
+    }).join('');
+
+    if (download && !download.dataset.bound) {
+      download.dataset.bound = '1';
+      download.onclick = async function () {
+        const id = select.value;
+        if (!id) return;
+        const progress = document.getElementById('s-ai-vocal-progress');
+        if (progress) progress.textContent = 'Starting download…';
+        try {
+          const r = await send('downloadAiVocalModel', { modelId: id });
+          if (r && r.error && progress) progress.textContent = 'Error: ' + r.error;
+        } catch (e) {
+          if (progress) progress.textContent = 'Error: ' + e.message;
+        }
+      };
+    }
+
+    if (remove && !remove.dataset.bound) {
+      remove.dataset.bound = '1';
+      remove.onclick = async function () {
+        const id = select.value;
+        const current = _aiModelsStatus || status;
+        const model = current.models.find(function (m) { return m.id === id; });
+        if (!id || !model || !model.installed) return;
+        try {
+          const r = await send('deleteAiVocalModel', { modelId: id });
+          if (r && r.error) toast('Delete failed: ' + r.error, 'error');
+          else toast('AI model deleted', 'success');
+          refreshAiModels();
+        } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+      };
+    }
+
+    const refresh = document.getElementById('s-ai-vocal-refresh');
+    if (refresh && !refresh.dataset.bound) {
+      refresh.dataset.bound = '1';
+      refresh.onclick = refreshAiModels;
+    }
+
+    if (toggle && !toggle.dataset.bound) {
+      toggle.dataset.bound = '1';
+      toggle.addEventListener('change', function () { toggle.dataset.touched = '1'; });
+    }
+  }
+
+  function onAiModelProgress(data) {
+    if (!data) return;
+    const progress = document.getElementById('s-ai-vocal-progress');
+    if (progress) {
+      const pct = data.percent ? ' ' + Math.round(data.percent) + '%' : '';
+      progress.textContent = (data.message || data.stage || '') + pct;
+    }
+    if (data.stage === 'done' || data.stage === 'error') refreshAiModels();
+  }
 
   // Console tools (Console tab)
   function consoleColorClass() {

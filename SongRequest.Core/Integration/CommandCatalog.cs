@@ -255,6 +255,10 @@ public static class CommandCatalog
         Add("getKaraokeVersion", "Karaoke", "Read the linked karaoke version for a song.", new[] { "songId", "songPath" });
         Add("getKaraokeVersions", "Karaoke", "List every linked karaoke version.", null);
         Add("deleteKaraokeVersion", "Karaoke", "Delete a linked karaoke version.", new[] { "songId", "songPath" }, true);
+        Add("getAiVocalModels", "Karaoke", "List local AI vocal-separation models and their install status, size, quality and speed ratings.", null);
+        Add("downloadAiVocalModel", "Karaoke", "Download a local AI vocal-separation model.", new[] { "modelId" });
+        Add("deleteAiVocalModel", "Karaoke", "Delete a downloaded local AI vocal-separation model.", new[] { "modelId" }, true);
+        Add("selectAiVocalModel", "Karaoke", "Select the local AI vocal-separation model used for karaoke generation.", new[] { "modelId" });
 
         return list
             .GroupBy(c => c.Name, StringComparer.Ordinal)

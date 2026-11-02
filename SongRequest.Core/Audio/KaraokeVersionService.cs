@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -22,6 +23,21 @@ public sealed class KaraokeVersion
     public DateTime SourceModifiedUtc { get; set; }
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public int SampleRate { get; set; }
+
+    /// <summary>"ai" when a local model produced the file, otherwise "spectral".</summary>
+    public string Separator { get; set; } = "spectral";
+    public string ModelId { get; set; } = "";
+    public string ModelName { get; set; } = "";
+    public string ModelVersion { get; set; } = "";
+    public long ModelSizeBytes { get; set; }
+
+    /// <summary>Wall-clock time spent generating this file (AI models can be slow).</summary>
+    public double GenerationSeconds { get; set; }
+
+    /// <summary>True when AI was requested but failed and the built-in separator was used.</summary>
+    public bool FallbackFromAi { get; set; }
+    public string FallbackModelId { get; set; } = "";
+    public string AiError { get; set; } = "";
 }
 
 /// <summary>Progress event for the karaoke-generation UI.</summary>
@@ -36,8 +52,10 @@ public sealed class KaraokeGenerationProgress
 
 /// <summary>
 /// Generates, versions and links on-device karaoke/instrumental files. A version
-/// number is stored with every entry; bumping <see cref="VocalRemover.AlgorithmVersion"/>
-/// makes old files stale and regenerates them when used.
+/// number is stored with every entry; the built-in separator uses
+/// <see cref="VocalRemover.AlgorithmVersion"/>, while AI-separated files use
+/// <see cref="AiVocalRemover.VersionFor"/>. Changing the separator, model or
+/// algorithm therefore makes old files stale and regenerates them when used.
 /// </summary>
 public sealed class KaraokeVersionService
 {
@@ -50,6 +68,12 @@ public sealed class KaraokeVersionService
     private readonly string _outputDirectory;
     private bool _loaded;
 
+    // Seams used by tests and hosts that provide an alternate AI backend.
+    internal Func<Config?>? ConfigAccessor { get; set; } = () => ConfigService.Instance.Current;
+    internal Func<AiVocalModelStatus?>? AiModelProvider { get; set; }
+    internal Func<IAiVocalSeparator?>? AiBackendProvider { get; set; } =
+        () => AiVocalSeparationFactory.TryCreate();
+
     public KaraokeVersionService(string? indexPath = null, string? outputDirectory = null)
     {
         _indexPath = indexPath ?? AppPaths.KaraokeIndexPath;
@@ -59,7 +83,48 @@ public sealed class KaraokeVersionService
     public event Action<KaraokeGenerationProgress>? Progress;
     public event Action<KaraokeVersion>? Generated;
 
-    public static string CurrentVersion => VocalRemover.AlgorithmVersion;
+    /// <summary>
+    /// The version that would be produced now. It includes the selected AI model
+    /// id, so enabling AI, changing models, or installing a model makes existing
+    /// versions stale and triggers regeneration.
+    /// </summary>
+    public string CurrentVersion
+    {
+        get
+        {
+            if (TryResolveAiModel(out var aiModel))
+                return AiVocalRemover.VersionFor(aiModel.Model.Id);
+            return VocalRemover.AlgorithmVersion;
+        }
+    }
+
+    /// <summary>The built-in separator's version, regardless of AI settings.</summary>
+    public static string SpectralVersion => VocalRemover.AlgorithmVersion;
+
+    private bool TryResolveAiModel(out AiVocalModelStatus status)
+    {
+        status = null!;
+        try
+        {
+            var cfg = ConfigAccessor?.Invoke();
+            if (cfg == null || !cfg.EnhancedVocalRemoval) return false;
+
+            if (AiModelProvider != null)
+            {
+                var provided = AiModelProvider();
+                if (provided is { Installed: true })
+                {
+                    status = provided;
+                    return true;
+                }
+                return false;
+            }
+
+            if (!AiVocalSeparationFactory.IsSupported) return false;
+            return AiVocalModelManager.Instance.TryGetInstalledModel(cfg.AiVocalModelId, out status);
+        }
+        catch { return false; }
+    }
 
     public string OutputDirectory => _outputDirectory;
 
@@ -85,7 +150,19 @@ public sealed class KaraokeVersionService
     {
         var entry = Get(sourcePath);
         if (entry == null) return null;
-        if (!string.Equals(entry.Version, CurrentVersion, StringComparison.Ordinal)) return null;
+
+        string expected = CurrentVersion;
+        if (!string.Equals(entry.Version, expected, StringComparison.Ordinal))
+        {
+            // A recorded AI fallback is accepted so a bad/unsupported model does
+            // not make every play wait for another failed (and slow) AI attempt.
+            // Deleting/reinstalling the model clears the fallback and retries.
+            bool acceptedFallback = entry.FallbackFromAi &&
+                                    string.Equals(entry.Version, VocalRemover.AlgorithmVersion, StringComparison.Ordinal) &&
+                                    string.Equals(entry.FallbackModelId, SelectedAiModelId(), StringComparison.Ordinal);
+            if (!acceptedFallback) return null;
+        }
+
         try
         {
             var info = new FileInfo(sourcePath);
@@ -96,6 +173,12 @@ public sealed class KaraokeVersionService
         }
         catch { return null; }
         return entry;
+    }
+
+    private string SelectedAiModelId()
+    {
+        try { return ConfigAccessor?.Invoke()?.AiVocalModelId ?? AiVocalModelCatalog.DefaultId; }
+        catch { return AiVocalModelCatalog.DefaultId; }
     }
 
     public bool NeedsGeneration(string sourcePath) => GetCurrent(sourcePath) == null;
@@ -158,10 +241,44 @@ public sealed class KaraokeVersionService
             Directory.CreateDirectory(_outputDirectory);
             string karaokePath = Path.Combine(_outputDirectory, FileNameFor(sourcePath));
             Report(sourcePath, title, 0.02, "Preparing karaoke version");
+            var stopwatch = Stopwatch.StartNew();
             Action<double, string> callback = (p, stage) =>
-                Report(sourcePath, title, 0.05 + p * 0.90, "Separating vocals");
+                Report(sourcePath, title, 0.05 + p * 0.90, stage);
 
-            VocalRemover.Process(sourcePath, karaokePath, callback, cancellationToken);
+            AiVocalModelStatus? aiModel = null;
+            bool usedAi = false;
+            string? aiError = null;
+
+            if (TryResolveAiModel(out var selectedAiModel))
+            {
+                var backend = AiBackendProvider?.Invoke();
+                if (backend != null)
+                {
+                    try
+                    {
+                        aiModel = selectedAiModel;
+                        Report(sourcePath, title, 0.04,
+                            "AI vocal separation · " + aiModel.Model.Name);
+                        int threads = Math.Clamp(Environment.ProcessorCount - 1, 1, 4);
+                        backend.SeparateInstrumental(
+                            sourcePath, karaokePath, aiModel.Path!, threads, callback, cancellationToken);
+                        usedAi = true;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        aiError = ex.Message;
+                        Report(sourcePath, title, 0.10,
+                            "AI separation failed; using built-in separator: " + ex.Message);
+                    }
+                }
+            }
+
+            if (!usedAi)
+                VocalRemover.Process(sourcePath, karaokePath, callback, cancellationToken);
 
             var entry = new KaraokeVersion
             {
@@ -169,10 +286,23 @@ public sealed class KaraokeVersionService
                 KaraokePath = karaokePath,
                 Title = title,
                 Artist = artist,
-                Version = CurrentVersion,
+                Version = usedAi
+                    ? AiVocalRemover.VersionFor(aiModel!.Model.Id)
+                    : VocalRemover.AlgorithmVersion,
                 SourceSize = info.Length,
                 SourceModifiedUtc = info.LastWriteTimeUtc,
-                CreatedUtc = DateTime.UtcNow
+                CreatedUtc = DateTime.UtcNow,
+                Separator = usedAi ? "ai" : "spectral",
+                ModelId = usedAi ? aiModel!.Model.Id : "",
+                ModelName = usedAi ? aiModel!.Model.Name : "",
+                ModelVersion = usedAi ? AiVocalRemover.AlgorithmVersion : "",
+                ModelSizeBytes = usedAi ? aiModel!.Model.SizeBytes : 0,
+                GenerationSeconds = Math.Round(stopwatch.Elapsed.TotalSeconds, 2),
+                FallbackFromAi = !usedAi && aiError != null,
+                FallbackModelId = !usedAi && aiError != null
+                    ? SelectedAiModelId()
+                    : "",
+                AiError = aiError ?? ""
             };
 
             EnsureLoaded();
@@ -226,6 +356,31 @@ public sealed class KaraokeVersionService
             foreach (var key in missing) _index.Remove(key);
             if (missing.Count > 0) SaveLocked();
             return missing.Count;
+        }
+    }
+
+    /// <summary>
+    /// Clears recorded AI fallbacks (after installing/reinstalling a model) so the
+    /// next play retries the enhanced separator.
+    /// </summary>
+    public int ClearAiFallbacks(string? modelId = null)
+    {
+        EnsureLoaded();
+        lock (_sync)
+        {
+            int cleared = 0;
+            foreach (var entry in _index.Values)
+            {
+                if (!entry.FallbackFromAi) continue;
+                if (!string.IsNullOrWhiteSpace(modelId) &&
+                    !string.Equals(entry.FallbackModelId, modelId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                entry.FallbackFromAi = false;
+                entry.AiError = "";
+                cleared++;
+            }
+            if (cleared > 0) SaveLocked();
+            return cleared;
         }
     }
 

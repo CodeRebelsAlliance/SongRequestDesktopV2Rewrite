@@ -38,6 +38,7 @@
   const lyricsWrapper = document.getElementById('lyrics-wrapper');
   const lyricsHiddenPlaceholder = document.getElementById('lyrics-hidden-placeholder');
   let syncedLyrics = [];
+  let karaokeLineTimes = [];
   let plainLyricLines = [];
   let hasSyncedLyrics = false;
   let totalTimeSecs = 0;
@@ -1077,6 +1078,7 @@
 
       // Reset lyrics for new song
       syncedLyrics = [];
+      karaokeLineTimes = [];
       plainLyricLines = [];
       hasSyncedLyrics = false;
       lastHighlightIndex = -1;
@@ -1513,6 +1515,7 @@
   function renderLyrics(data) {
     lyricsContainer.innerHTML = '';
     syncedLyrics = [];
+    karaokeLineTimes = [];
     plainLyricLines = [];
     hasSyncedLyrics = false;
 
@@ -1531,6 +1534,12 @@
     if (data.syncedLyrics && data.syncedLyrics.length > 0) {
       syncedLyrics = data.syncedLyrics;
       hasSyncedLyrics = true;
+      if (data.karaoke && data.karaoke.lines) {
+        for (var kt = 0; kt < data.karaoke.lines.length; kt++) {
+          var karaokeTime = Number(data.karaoke.lines[kt].time);
+          karaokeLineTimes[kt] = isFinite(karaokeTime) ? karaokeTime : null;
+        }
+      }
       for (var i = 0; i < data.syncedLyrics.length; i++) {
         var line = data.syncedLyrics[i];
         if (i > 0) {
@@ -1590,8 +1599,11 @@
     var index = -1;
     if (hasSyncedLyrics && syncedLyrics.length > 0) {
       for (var i = 0; i < syncedLyrics.length; i++) {
-        if (syncedLyrics[i].time <= adjustedTime) index = i;
-        else break;
+        var lineTime = karaokeLineTimes[i];
+        if (lineTime == null || !isFinite(lineTime)) lineTime = syncedLyrics[i].time;
+        if (lineTime <= adjustedTime) {
+          if (String(syncedLyrics[i].text || '').trim()) index = i;
+        } else break;
       }
     } else if (plainLyricLines.length > 0) {
       var total = totalTimeSecs || 1;
