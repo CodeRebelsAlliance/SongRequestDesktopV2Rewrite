@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SongRequest V2</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="ai.css">
 <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
   <link rel="stylesheet" href="mobile.css">
 </head>
@@ -338,8 +339,11 @@
               <div class="settings-hint">Which tab is selected by default when the Submit Song modal opens.</div>
             </div>
           </div>
-          <div class="settings-card" id="s-card-ai-vocal">
-            <div class="settings-card-title">Enhanced Vocal Removal (AI)</div>
+          <div class="settings-card ai-settings-card" id="s-card-ai-vocal">
+            <div class="ai-card-title-row">
+              <div class="settings-card-title">Enhanced Vocal Removal</div>
+              <span class="ai-badge"><i class="fas fa-wand-magic-sparkles"></i> AI</span>
+            </div>
             <div class="settings-hint">Off by default. Downloads a local AI model (UVR/MDX-Net) and uses it to remove vocals when generating karaoke versions. Everything runs on this device; no audio is uploaded. Models are 28–64 MB; AI separation uses more memory and time than the built-in separator, so the fast model is best on older devices.</div>
             <label class="settings-checkbox"><input type="checkbox" id="s-ai-vocal-removal" /> Use a local AI model for karaoke vocal separation</label>
             <div id="s-ai-vocal-engine" class="settings-hint"></div>
@@ -352,6 +356,7 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
               <button id="s-ai-vocal-download" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-download"></i> Download selected model</button>
               <button id="s-ai-vocal-delete" class="action-btn warn" style="width:auto;padding:8px 16px;font-size:13px">Delete selected</button>
+              <button id="s-ai-vocal-disclaimer" class="top-btn" style="font-size:12px">Read disclaimer</button>
               <button id="s-ai-vocal-refresh" class="top-btn" style="font-size:12px">Refresh</button>
             </div>
             <div id="s-ai-vocal-progress" class="settings-hint" style="color:#d0d0d0"></div>
@@ -731,6 +736,40 @@
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px">
       <button id="tool-prompt-skip" class="top-btn">Not now</button>
       <button id="tool-prompt-download" class="action-btn" style="width:auto;padding:8px 18px"><i class="fas fa-download"></i> Download</button>
+    </div>
+  </div>
+</div>
+<div id="ai-disclaimer-modal" class="modal-overlay ai-disclaimer-modal" style="display:none">
+  <div class="modal" style="width:620px;max-width:94vw">
+    <div class="modal-header">
+      <span><i class="fas fa-wand-magic-sparkles"></i> AI vocal removal — read before enabling</span>
+      <button class="modal-close" id="ai-disclaimer-close-x"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="ai-disclaimer-hero">
+        <span class="ai-badge"><i class="fas fa-wand-magic-sparkles"></i> AI</span>
+        <h3>Experimental feature</h3>
+      </div>
+      <div class="ai-disclaimer-text">
+        <p><strong>AI vocal removal is experimental, and results vary by song, mix and model.</strong></p>
+        <ul>
+          <li>Vocals may still be audible, or instruments may be removed by mistake.</li>
+          <li>The separation can introduce artifacts, hollow-sounding instruments or distorted vocals.</li>
+          <li>Always listen to the generated karaoke version before using it at a live event.</li>
+          <li>Models are downloaded from third-party sources and run locally on this device; no song audio is uploaded.</li>
+          <li>AI-separated versions are marked with a different algorithm/model version and may be regenerated when the model changes.</li>
+          <li>You are responsible for checking the result and for having the rights to use the source song.</li>
+        </ul>
+        <p>If you are unsure, leave AI vocal removal off and use the built-in separator.</p>
+      </div>
+      <label class="ai-disclaimer-accept">
+        <input type="checkbox" id="ai-disclaimer-accept" />
+        <span>I have read this and understand that AI vocal removal can be inaccurate and that I must check the result before use.</span>
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button id="ai-disclaimer-cancel" class="top-btn">Cancel</button>
+      <button id="ai-disclaimer-ok" class="action-btn" disabled>I understand — enable AI</button>
     </div>
   </div>
 </div>

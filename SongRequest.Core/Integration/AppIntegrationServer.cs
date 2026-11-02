@@ -59,6 +59,7 @@ public sealed partial class AppIntegrationServer : IDisposable
         "toolProgress",
         "aiModelProgress",
         "aiModelStatus",
+        "aiVocalModeChanged",
         "sleepTimerUpdate",
         "equalizerUpdate",
         "songAnalysisProgress",

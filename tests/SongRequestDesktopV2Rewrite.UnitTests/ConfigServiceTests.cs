@@ -29,16 +29,19 @@ public class ConfigServiceTests
         var svc = new ConfigService(path);
 
         Assert.False(svc.Current.EnhancedVocalRemoval);
+        Assert.False(svc.Current.AiDisclaimerAccepted);
         Assert.Equal(AiVocalModelCatalog.DefaultId, svc.Current.AiVocalModelId);
 
         svc.Update(c =>
         {
             c.EnhancedVocalRemoval = true;
             c.AiVocalModelId = "uvr-kara-fast";
+            c.AiDisclaimerAccepted = true;
         });
 
         var reloaded = new ConfigService(path);
         Assert.True(reloaded.Current.EnhancedVocalRemoval);
+        Assert.True(reloaded.Current.AiDisclaimerAccepted);
         Assert.Equal("uvr-kara-fast", reloaded.Current.AiVocalModelId);
     }
 

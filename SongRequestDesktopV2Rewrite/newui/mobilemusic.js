@@ -165,6 +165,7 @@
   var artEl = $('mm-art');
   var titleEl = $('mm-title');
   var artistEl = $('mm-artist');
+  var mmAiBadge = $('mm-ai-badge');
   var lyricsEl = $('mm-lyrics');
   var lyricsToggle = $('mm-lyrics-toggle');
   var lyricsSettingsToggle = $('mm-lyrics-settings-toggle');
@@ -175,6 +176,14 @@
   var seekEl = $('mm-seek');
   var curEl = $('mm-cur');
   var totalEl = $('mm-total');
+
+  function applyMobileAiBadge(active, modelName) {
+    if (!mmAiBadge) return;
+    mmAiBadge.hidden = !active;
+    mmAiBadge.title = active
+      ? 'AI vocal removal active' + (modelName ? ' · ' + modelName : '')
+      : 'AI vocal removal is not active';
+  }
 
   var miniEl = $('mm-mini');
   var miniArt = $('mm-mini-art');
@@ -1285,6 +1294,10 @@
         applyMobileAiModelStatus(data);
         break;
 
+      case 'aiVocalModeChanged':
+        applyMobileAiBadge(data && data.active === true, data && data.modelName);
+        break;
+
       case 'lyricsUpdate':
         onLyrics(data);
         break;
@@ -1750,10 +1763,12 @@
   }
 
   var mobileAiStatus = null;
+  var mobileAiDisclaimerAccepted = false;
 
   function openSettingsSheet() {
     request('getSettings').then(function (cfg) {
       cfg = cfg || {};
+      mobileAiDisclaimerAccepted = cfg.aiDisclaimerAccepted === true;
 
       var modeOptions = MODES.map(function (mode) {
         return option(mode[0], mode[1], cfg.operatingMode || 'SongRequests');
@@ -1766,7 +1781,8 @@
         '<label class="mm-check"><input type="checkbox" id="mm-set-auto-analyze"' + (cfg.autoAnalyzeSongs !== false ? ' checked' : '') + '> Automatically analyze playing songs</label>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-karaoke"' + (cfg.karaokeMode === true ? ' checked' : '') + '> Karaoke mode (syllable-by-syllable lyrics and pause bars)</label>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-play-karaoke"' + (cfg.playKaraokeVersions === true ? ' checked' : '') + '> Play karaoke (instrumental) versions of songs</label>' +
-        '<h3>Enhanced vocal removal (AI)</h3>' +
+        '<div class="mm-ai-settings" id="mm-ai-settings">' +
+        '<h3>Enhanced vocal removal <span class="ai-badge"><i class="fas fa-wand-magic-sparkles"></i> AI</span></h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-ai-vocal"' + (cfg.enhancedVocalRemoval === true ? ' checked' : '') + '> Use a local AI model for karaoke vocal separation</label>' +
         '<div id="mm-ai-engine" class="mm-sheet-note">Checking models…</div>' +
         '<select id="mm-set-ai-model" class="mm-sheet-input"></select>' +
@@ -1775,8 +1791,22 @@
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
           '<button id="mm-ai-download" class="mm-btn"><i class="fas fa-download"></i> Download model</button>' +
           '<button id="mm-ai-delete" class="mm-btn mm-danger">Delete model</button>' +
+          '<button id="mm-ai-disclaimer-open" class="mm-btn mm-quiet">Read disclaimer</button>' +
+        '</div>' +
+        '<div id="mm-ai-disclaimer" class="mm-ai-disclaimer" hidden>' +
+          '<p><strong>AI vocal removal is experimental, and results vary by song, mix and model.</strong></p>' +
+          '<ul>' +
+            '<li>Vocals may still be audible, or instruments may be removed by mistake.</li>' +
+            '<li>Separation can introduce artifacts, hollow instruments or distorted vocals.</li>' +
+            '<li>Always listen to the generated karaoke version before using it live.</li>' +
+            '<li>Models are downloaded from third-party sources and run locally; no song audio is uploaded.</li>' +
+            '<li>AI versions are versioned and may be regenerated when the model changes.</li>' +
+            '<li>You are responsible for checking the result and for having the rights to use the source song.</li>' +
+          '</ul>' +
+          '<label><input type="checkbox" id="mm-ai-disclaimer-accept"> I have read this and understand that AI vocal removal can be inaccurate and that I must check the result before use.</label>' +
         '</div>' +
         '<div id="mm-ai-progress" class="mm-sheet-note"></div>' +
+        '</div>' +
         '<div class="mm-sheet-note" style="margin-top:4px">Shows BPM, song chapters and drops on the player progress bar from the cached analysis.</div>' +
         '<h3>Library analysis</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-library-analyze-add"' + (cfg.autoAnalyzeLibraryOnAdd !== false ? ' checked' : '') + '> Analyze new library songs automatically</label>' +
@@ -1872,6 +1902,12 @@
     });
   }
 
+  function updateMobileAiActive() {
+    var section = $('mm-ai-settings');
+    var toggle = $('mm-set-ai-vocal');
+    if (section && toggle) section.classList.toggle('is-active', toggle.checked);
+  }
+
   function applyMobileAiModelStatus(status) {
     if (!status || !status.models) return;
     mobileAiStatus = status;
@@ -1942,6 +1978,7 @@
         }).catch(function (e) { toast('Delete failed: ' + e.message, 'error'); });
       };
     }
+    updateMobileAiActive();
   }
 
   function onMobileAiModelProgress(data) {
@@ -1982,8 +2019,41 @@
       if (status && !status.error) updateLibraryAnalysisUi(status);
     }).catch(function () { });
 
+    var aiToggle = $('mm-set-ai-vocal');
+    var aiDisclaimer = $('mm-ai-disclaimer');
+    var aiAccept = $('mm-ai-disclaimer-accept');
+    var aiOpen = $('mm-ai-disclaimer-open');
+    if (aiAccept) aiAccept.checked = mobileAiDisclaimerAccepted;
+    if (aiToggle && aiToggle.checked && !mobileAiDisclaimerAccepted) {
+      aiToggle.checked = false;
+      if (aiDisclaimer) aiDisclaimer.hidden = false;
+      toast('Accept the AI disclaimer to keep AI vocal removal enabled', 'info');
+    }
+    if (aiOpen) aiOpen.addEventListener('click', function () {
+      if (aiDisclaimer) aiDisclaimer.hidden = false;
+    });
+    if (aiToggle) aiToggle.addEventListener('change', function () {
+      if (this.checked && !mobileAiDisclaimerAccepted) {
+        this.checked = false;
+        if (aiDisclaimer) aiDisclaimer.hidden = false;
+        toast('Read and accept the AI disclaimer first', 'info');
+      }
+      updateMobileAiActive();
+    });
+    if (aiAccept) aiAccept.addEventListener('change', function () {
+      mobileAiDisclaimerAccepted = this.checked;
+      if (this.checked) toast('AI disclaimer accepted', 'success');
+    });
+    updateMobileAiActive();
+
     var save = $('mm-settings-save');
     if (save) save.addEventListener('click', function () {
+      var aiSaveToggle = $('mm-set-ai-vocal');
+      if (aiSaveToggle && aiSaveToggle.checked && !mobileAiDisclaimerAccepted) {
+        toast('Read and accept the AI disclaimer first', 'error');
+        if (aiDisclaimer) aiDisclaimer.hidden = false;
+        return;
+      }
       var settings = {
         address: $('mm-set-address').value.trim(),
         bearerToken: $('mm-set-token').value,
@@ -1993,6 +2063,7 @@
         playKaraokeVersions: $('mm-set-play-karaoke').checked,
         enhancedVocalRemoval: $('mm-set-ai-vocal').checked,
         aiVocalModelId: $('mm-set-ai-model').value || 'uvr-kara-2',
+        aiDisclaimerAccepted: mobileAiDisclaimerAccepted,
         autoAnalyzeLibraryOnAdd: $('mm-set-library-analyze-add').checked,
         autoAnalyzeLibraryOnAlgorithmUpdate: $('mm-set-library-analyze-version').checked,
         libraryAutoAddDownloads: $('mm-set-auto-add').checked,
@@ -2546,6 +2617,7 @@
       applyLyricsFontScale();
     }
     if (state.lyricsHidden != null) lyrics.hidden = !!state.lyricsHidden;
+    applyMobileAiBadge(state.aiVocalActive === true, state.aiVocalModelName || '');
   }).catch(function () { });
 
   loadHomeFeed(true);

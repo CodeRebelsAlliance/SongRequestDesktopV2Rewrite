@@ -643,7 +643,7 @@ public class YoutubeFormInterop
                             canControlInit = mp.CanControlVolume;
                             repeatInit = mp.RepeatEnabled;
                         }
-                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit, repeatEnabled = repeatInit, lyricsFontScale = (double)ConfigService.Instance.Current.LyricsFontScale, lyricsHidden = ConfigService.Instance.Current.LyricsHidden, sleepTimer = CamelCase(_ytForm.Music.SleepTimer.GetState()), equalizer = CamelCase(_ytForm.Music.Equalizer.GetState()) });
+                        SendResponse(id, new { success = true, volume = volInit, crossfade = cfInit, canControlVolume = canControlInit, repeatEnabled = repeatInit, lyricsFontScale = (double)ConfigService.Instance.Current.LyricsFontScale, lyricsHidden = ConfigService.Instance.Current.LyricsHidden, aiVocalActive = IsAiVocalActive(), aiVocalModelName = AiVocalModelName(), sleepTimer = CamelCase(_ytForm.Music.SleepTimer.GetState()), equalizer = CamelCase(_ytForm.Music.Equalizer.GetState()) });
                         SendCurrentNowPlayingToNewUI();
 
                         MusicPlayerSendEvent("musicPlayerConfig", new
@@ -3328,6 +3328,7 @@ public class YoutubeFormInterop
             playKaraokeVersions = cfg.PlayKaraokeVersions,
             enhancedVocalRemoval = cfg.EnhancedVocalRemoval,
             aiVocalModelId = cfg.AiVocalModelId,
+            aiDisclaimerAccepted = cfg.AiDisclaimerAccepted,
             systemMediaSupported = MediaSessionFactory.IsSupported,
             systemMediaBackend = MediaSessionFactory.SupportedBackendName,
             systemMediaActive = SystemMediaActive,
@@ -3680,6 +3681,7 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("playKaraokeVersions", out var playKaraoke)) cfg.PlayKaraokeVersions = playKaraoke.ToObject<bool>();
                 if (settings.TryGetValue("enhancedVocalRemoval", out var enhancedVocal)) cfg.EnhancedVocalRemoval = enhancedVocal.ToObject<bool>();
                 if (settings.TryGetValue("aiVocalModelId", out var aiVocalModel)) cfg.AiVocalModelId = aiVocalModel.ToString();
+                if (settings.TryGetValue("aiDisclaimerAccepted", out var aiDisclaimer)) cfg.AiDisclaimerAccepted = aiDisclaimer.ToObject<bool>();
                 if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
 
                 // Local API / MCP servers. ApplyConfig is called after the update;
@@ -3725,6 +3727,13 @@ public class YoutubeFormInterop
             if (settings.TryGetValue("aiVocalModelId", out var aiModelSetting))
             {
                 KaraokeVersionService.Instance.ClearAiFallbacks(aiModelSetting.ToString());
+            }
+
+            if (settings.ContainsKey("enhancedVocalRemoval") ||
+                settings.ContainsKey("aiVocalModelId") ||
+                settings.ContainsKey("aiDisclaimerAccepted"))
+            {
+                SendAiVocalModeChanged();
             }
 
             if (settings.ContainsKey("karaokeMode"))
@@ -4100,6 +4109,40 @@ public class YoutubeFormInterop
         };
     }
 
+    private bool IsAiVocalActive()
+    {
+        try
+        {
+            var cfg = ConfigService.Instance.Current;
+            if (cfg?.EnhancedVocalRemoval != true) return false;
+            if (cfg.AiDisclaimerAccepted != true) return false;
+            if (!AiVocalSeparationFactory.IsSupported) return false;
+            return AiVocalModelManager.Instance.TryGetInstalledModel(cfg.AiVocalModelId, out _);
+        }
+        catch { return false; }
+    }
+
+    private string AiVocalModelName()
+    {
+        try
+        {
+            var cfg = ConfigService.Instance.Current;
+            return AiVocalModelCatalog.Find(cfg?.AiVocalModelId)?.Name ?? "";
+        }
+        catch { return ""; }
+    }
+
+    private void SendAiVocalModeChanged()
+    {
+        var data = new
+        {
+            active = IsAiVocalActive(),
+            modelName = AiVocalModelName()
+        };
+        try { SendEvent("aiVocalModeChanged", data); } catch { }
+        try { MusicPlayerSendEvent("aiVocalModeChanged", data); } catch { }
+    }
+
     private object StartAiVocalModelDownload(JObject msg)
     {
         var modelId = msg["modelId"]?.ToString();
@@ -4131,6 +4174,7 @@ public class YoutubeFormInterop
                 var status = GetAiVocalModelStatus();
                 SendEvent("aiModelStatus", status);
                 MusicPlayerSendEvent("aiModelStatus", status);
+                if (ok) SendAiVocalModeChanged();
             }
             catch (Exception ex)
             {
@@ -4159,6 +4203,7 @@ public class YoutubeFormInterop
         var status = GetAiVocalModelStatus();
         SendEvent("aiModelStatus", status);
         MusicPlayerSendEvent("aiModelStatus", status);
+        SendAiVocalModeChanged();
         return new { success = deleted, status };
     }
 
@@ -4173,6 +4218,7 @@ public class YoutubeFormInterop
         var status = GetAiVocalModelStatus();
         SendEvent("aiModelStatus", status);
         MusicPlayerSendEvent("aiModelStatus", status);
+        SendAiVocalModeChanged();
         return status;
     }
 

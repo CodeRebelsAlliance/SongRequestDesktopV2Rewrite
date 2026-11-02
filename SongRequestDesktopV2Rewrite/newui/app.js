@@ -415,6 +415,18 @@
       document.getElementById('s-play-karaoke').checked = cfg.playKaraokeVersions === true;
       document.getElementById('s-ai-vocal-removal').checked = cfg.enhancedVocalRemoval === true;
       _aiSelectedModelId = cfg.aiVocalModelId || '';
+      _aiDisclaimerAccepted = cfg.aiDisclaimerAccepted === true;
+      if (cfg.enhancedVocalRemoval === true && !_aiDisclaimerAccepted) {
+        const aiToggle = document.getElementById('s-ai-vocal-removal');
+        if (aiToggle) {
+          aiToggle.checked = false;
+          aiToggle.dataset.touched = '1';
+        }
+        updateAiCardActive();
+        setTimeout(function () { openAiDisclaimer(true); }, 250);
+      } else {
+        updateAiCardActive();
+      }
       refreshAiModels();
       document.getElementById('s-caption-fallback').checked = cfg.useCaptionLyricsFallback ?? false;
       document.getElementById('s-enable-announcements').checked = cfg.enableAnnouncements ?? false;
@@ -561,6 +573,12 @@
   });
 
   async function saveSettings() {    const statusEl = document.getElementById('settings-status');
+    const aiToggle = document.getElementById('s-ai-vocal-removal');
+    if (aiToggle && aiToggle.checked && !_aiDisclaimerAccepted) {
+      statusEl.textContent = 'Please read and accept the AI disclaimer first.';
+      openAiDisclaimer(true);
+      return;
+    }
     statusEl.textContent = 'Saving...';
     try {
       const settings = {
@@ -574,6 +592,7 @@
         playKaraokeVersions: document.getElementById('s-play-karaoke').checked,
         enhancedVocalRemoval: document.getElementById('s-ai-vocal-removal').checked,
         aiVocalModelId: document.getElementById('s-ai-vocal-model').value || 'uvr-kara-2',
+        aiDisclaimerAccepted: _aiDisclaimerAccepted,
         autoAnalyzeLibraryOnAdd: document.getElementById('s-library-auto-analyze-add').checked,
         autoAnalyzeLibraryOnAlgorithmUpdate: document.getElementById('s-library-auto-analyze-version').checked,
         useCaptionLyricsFallback: document.getElementById('s-caption-fallback').checked,
@@ -1111,6 +1130,7 @@
   let _toolPromptSelection = null;
   let _aiModelsStatus = null;
   let _aiSelectedModelId = '';
+  let _aiDisclaimerAccepted = false;
 
   function applyToolStatus(status) {
     const set = (id, entry) => {
@@ -1226,6 +1246,41 @@
   setTimeout(maybePromptTools, 1500);
 
   // ── Local AI vocal-separation models ───────────────────────────────
+  function updateAiCardActive() {
+    const card = document.getElementById('s-card-ai-vocal');
+    const toggle = document.getElementById('s-ai-vocal-removal');
+    if (card && toggle) card.classList.toggle('is-active', toggle.checked);
+  }
+
+  function openAiDisclaimer(requireAcceptance) {
+    const modal = document.getElementById('ai-disclaimer-modal');
+    const accept = document.getElementById('ai-disclaimer-accept');
+    const ok = document.getElementById('ai-disclaimer-ok');
+    if (!modal || !accept || !ok) return;
+    modal.dataset.require = requireAcceptance ? '1' : '0';
+    accept.checked = _aiDisclaimerAccepted;
+    ok.disabled = !accept.checked;
+    modal.style.display = 'flex';
+    const text = modal.querySelector('.ai-disclaimer-text');
+    if (text) text.scrollTop = 0;
+  }
+
+  function closeAiDisclaimer() {
+    const modal = document.getElementById('ai-disclaimer-modal');
+    if (modal) {
+      if (modal.dataset.require === '1' && !_aiDisclaimerAccepted) {
+        const toggle = document.getElementById('s-ai-vocal-removal');
+        if (toggle) {
+          toggle.checked = false;
+          toggle.dataset.touched = '1';
+        }
+        updateAiCardActive();
+      }
+      modal.style.display = 'none';
+      modal.dataset.require = '';
+    }
+  }
+
   function aiEscape(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1341,9 +1396,50 @@
 
     if (toggle && !toggle.dataset.bound) {
       toggle.dataset.bound = '1';
-      toggle.addEventListener('change', function () { toggle.dataset.touched = '1'; });
+      toggle.addEventListener('change', function () {
+        toggle.dataset.touched = '1';
+        if (toggle.checked && !_aiDisclaimerAccepted) {
+          toggle.checked = false;
+          openAiDisclaimer(true);
+        }
+        updateAiCardActive();
+      });
     }
+
+    updateAiCardActive();
   }
+
+  (function bindAiDisclaimer() {
+    const modal = document.getElementById('ai-disclaimer-modal');
+    const accept = document.getElementById('ai-disclaimer-accept');
+    const ok = document.getElementById('ai-disclaimer-ok');
+    if (!modal || !accept || !ok) return;
+
+    accept.addEventListener('change', function () {
+      ok.disabled = !accept.checked;
+    });
+    ok.addEventListener('click', function () {
+      if (!accept.checked) return;
+      _aiDisclaimerAccepted = true;
+      const toggle = document.getElementById('s-ai-vocal-removal');
+      if (toggle) {
+        toggle.checked = true;
+        toggle.dataset.touched = '1';
+      }
+      updateAiCardActive();
+      closeAiDisclaimer();
+      const status = document.getElementById('settings-status');
+      if (status) status.textContent = 'AI disclaimer accepted — click Save to apply.';
+    });
+    document.getElementById('ai-disclaimer-cancel').onclick = closeAiDisclaimer;
+    document.getElementById('ai-disclaimer-close-x').onclick = closeAiDisclaimer;
+    modal.addEventListener('click', function (event) {
+      if (event.target === modal) closeAiDisclaimer();
+    });
+
+    const open = document.getElementById('s-ai-vocal-disclaimer');
+    if (open) open.onclick = function () { openAiDisclaimer(false); };
+  })();
 
   function onAiModelProgress(data) {
     if (!data) return;

@@ -57,6 +57,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _playKaraokeVersions = false;
         private bool _enhancedVocalRemoval = false;
         private string _aiVocalModelId = AiVocalModelCatalog.DefaultId;
+        private bool _aiDisclaimerAccepted = false;
 
         // Local integration servers (HTTP/WebSocket API and MCP). Both are off by
         // default and bind to loopback only until the user explicitly changes it.
@@ -424,6 +425,16 @@ namespace SongRequestDesktopV2Rewrite
             set => SetField(ref _aiVocalModelId, string.IsNullOrWhiteSpace(value)
                 ? AiVocalModelCatalog.DefaultId
                 : value);
+        }
+
+        /// <summary>
+        /// True once the user has read and accepted the experimental-AI disclaimer.
+        /// Required before enhanced vocal removal can be enabled.
+        /// </summary>
+        public bool AiDisclaimerAccepted
+        {
+            get => _aiDisclaimerAccepted;
+            set => SetField(ref _aiDisclaimerAccepted, value);
         }
 
         /// <summary>

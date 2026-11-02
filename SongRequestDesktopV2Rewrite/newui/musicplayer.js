@@ -31,6 +31,15 @@
   // Quality pill elements
   const colQuality = document.getElementById('player-bar-quality');
   const expQuality = document.getElementById('expanded-quality');
+  const expAiBadge = document.getElementById('expanded-ai-badge');
+
+  function applyAiBadge(active, modelName) {
+    if (!expAiBadge) return;
+    expAiBadge.hidden = !active;
+    expAiBadge.title = active
+      ? 'AI vocal removal active' + (modelName ? ' · ' + modelName : '')
+      : 'AI vocal removal is not active';
+  }
 
   // Lyrics
   const lyricsContainer = document.getElementById('expanded-lyrics');
@@ -1037,6 +1046,9 @@
         if (shareBtnEl) shareBtnEl.click();
         break;
       }
+      case 'aiVocalModeChanged':
+        applyAiBadge(data && data.active === true, data && data.modelName);
+        break;
       case 'musicPlayerConfig': {
         var annBtn = document.getElementById('btn-announcement');
         if (annBtn) annBtn.style.display = (data && data.enableAnnouncements === false) ? 'none' : '';
@@ -1433,6 +1445,8 @@
           const iconName = v == 0 ? 'fa-volume-mute' : 'fa-volume-up';
           volIcons.forEach(ic => { if (ic) ic.className = `fas ${iconName}`; });
         }
+        if (msg.aiVocalActive !== undefined)
+          applyAiBadge(msg.aiVocalActive === true, msg.aiVocalModelName || '');
         // Home tab content (playlists / recommendations / recent / new)
         loadHomeFeed(true);
         // Load persisted lyrics settings

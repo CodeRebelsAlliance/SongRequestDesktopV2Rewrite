@@ -110,6 +110,7 @@ public sealed class KaraokeVersionService
         {
             var cfg = ConfigAccessor?.Invoke();
             if (cfg == null || !cfg.EnhancedVocalRemoval) return false;
+            if (!cfg.AiDisclaimerAccepted) return false;
 
             if (AiModelProvider != null)
             {

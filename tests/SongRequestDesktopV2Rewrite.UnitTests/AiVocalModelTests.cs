@@ -117,7 +117,8 @@ public class AiVocalModelTests
             ConfigAccessor = () => new Config
             {
                 EnhancedVocalRemoval = true,
-                AiVocalModelId = model.Id
+                AiVocalModelId = model.Id,
+                AiDisclaimerAccepted = true
             },
             AiModelProvider = () => new AiVocalModelStatus
             {
@@ -153,6 +154,54 @@ public class AiVocalModelTests
     }
 
     [Fact]
+    public async Task Service_DoesNotUseAiUntilTheDisclaimerIsAccepted()
+    {
+        var dir = TestSupport.NewTempDir("ai-disclaimer");
+        var source = Path.Combine(dir, "song.wav");
+        File.WriteAllText(source, "source");
+        var model = AiVocalModelCatalog.Default;
+        var modelPath = Path.Combine(dir, model.FileName);
+        File.WriteAllText(modelPath, "model");
+        var fake = new FakeAiSeparator();
+
+        var previous = AudioSourceFactory.Provider;
+        AudioSourceFactory.Provider = _ => new FakeStereoSource();
+        try
+        {
+            var service = new KaraokeVersionService(
+                Path.Combine(dir, "index.json"),
+                Path.Combine(dir, "karaoke"))
+            {
+                ConfigAccessor = () => new Config
+                {
+                    EnhancedVocalRemoval = true,
+                    AiVocalModelId = model.Id,
+                    AiDisclaimerAccepted = false
+                },
+                AiModelProvider = () => new AiVocalModelStatus
+                {
+                    Model = model,
+                    Installed = true,
+                    Path = modelPath
+                },
+                AiBackendProvider = () => fake
+            };
+
+            var generated = await service.EnsureAsync(source, "Song", "Artist");
+
+            Assert.NotNull(generated);
+            Assert.Equal(VocalRemover.AlgorithmVersion, generated!.Version);
+            Assert.Equal("spectral", generated.Separator);
+            Assert.False(generated.FallbackFromAi);
+            Assert.Equal(-1, fake.LastStemIndex);
+        }
+        finally
+        {
+            AudioSourceFactory.Provider = previous;
+        }
+    }
+
+    [Fact]
     public async Task Service_RecordsFallbackWhenAiFails_AndRetriesAfterReset()
     {
         var dir = TestSupport.NewTempDir("ai-fallback");
@@ -173,7 +222,8 @@ public class AiVocalModelTests
                 ConfigAccessor = () => new Config
                 {
                     EnhancedVocalRemoval = true,
-                    AiVocalModelId = model.Id
+                    AiVocalModelId = model.Id,
+                    AiDisclaimerAccepted = true
                 },
                 AiModelProvider = () => new AiVocalModelStatus
                 {

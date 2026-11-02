@@ -303,6 +303,7 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Karaoke versions | U | generation links/versions the file, reuses current results, deletes on song removal, and playback waits for the prepared path |
 | AI vocal models | U | catalog exposes size/quality/performance ratings; downloads, verifies, lists and deletes models through an injectable downloader; setting defaults to off |
 | AI karaoke versions | U | AI metadata (model id/name/size, verified instrumental stem index) is stored with the version; changing/installing a model or correcting a stem mapping invalidates old files; a failed AI attempt records a spectral fallback and can be retried |
+| AI visual treatment | J | animated AI badge appears in the expanded desktop/mobile player only while AI is active; the AI settings card/section and disclaimer share the animated gradient; enabling AI requires accepting the experimental disclaimer |
 | Car / car-screen layout | J/C# | car mode exposes Playlists (default), Library, Player and Queue only, hides stage/share tools, switches to MusicPlayer mode and shows a native waiting screen before startup completes; Android Auto browses playlists/library/queue, searches, and shows artwork |
 | Auto-analysis setting | U | persisted through `saveSettings`/`getSettings`; cached/auto results are pushed for the current track |
 | Analysis cache | U | fresh results are reused, persisted and re-loaded; `force` re-analyses; algorithm-version mismatch invalidates; deleting a library song deletes its analysis |

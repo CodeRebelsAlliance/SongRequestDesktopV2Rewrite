@@ -249,7 +249,10 @@ The player (desktop and mobile) shares the same three audio tools:
   stem index in their metadata and a distinct algorithm version, so enabling AI,
   changing models, reinstalling a model or correcting a stem mapping regenerates
   the affected songs. If the AI model or runtime is unavailable, the built-in
-  spectral separator is used and the fallback is recorded.
+  spectral separator is used and the fallback is recorded. Enabling the feature
+  requires accepting an experimental-AI disclaimer; while it is active, the
+  expanded desktop player and the mobile player show an animated **AI** badge,
+  and the AI settings card uses the same animated gradient treatment.
 - **On-device karaoke versions**: generate instrumental mixes from stereo songs
   (spectral center-channel suppression with bass preservation) on request, or
   automatically when “Play karaoke versions” is enabled. Files are versioned and
