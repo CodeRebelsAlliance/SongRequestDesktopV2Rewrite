@@ -96,6 +96,13 @@ internal static class StageDisplay
             _web.Settings.DomStorageEnabled = true;
             _web.SetBackgroundColor(Android.Graphics.Color.Black);
 
+            // An HDMI stage is often left running with the phone screen off. Android
+            // pauses/throttles a WebView when the device sleeps, which looked like
+            // the stage freezing until the OS ANR dialog appeared. Keep the screen
+            // awake while the presentation window exists.
+            _web.KeepScreenOn = true;
+            try { Window?.AddFlags(WindowManagerFlags.KeepScreenOn); } catch { }
+
             SetContentView(_web);
             Window?.SetLayout(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent);
             _web.LoadUrl(url);

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -31,10 +32,19 @@ internal sealed class StageServer : IDisposable
     private readonly Func<string?, string?>? _thumbnailResolver;
     private readonly Func<MusicShareMetadata?>? _musicShareMetadata;
 
-    private readonly Dictionary<string, LyricsResult?> _lyricsCache = new(StringComparer.OrdinalIgnoreCase);
+    // Lyrics + karaoke timing are expensive (network fetch, analysis, syllable
+    // inference). Build them once per song in the background; the 500 ms poll
+    // must never block on a lyrics request or re-run the timing builder.
+    private readonly ConcurrentDictionary<string, (bool Loaded, object? Payload)> _lyricsPayloadCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, byte> _lyricsLoading =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly object _cacheLock = new();
+    private readonly object _stateLock = new();
     private string? _qrCacheUrl;
     private string? _qrCacheData;
+    private string? _stateCache;
+    private DateTime _stateCacheAt = DateTime.MinValue;
 
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
@@ -334,7 +344,34 @@ internal sealed class StageServer : IDisposable
             : html.Replace("</body>", bridge + "\n</body>", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Coalesces concurrent polls (HDMI + a TV browser) and keeps a very short
+    /// cache. Building is cheap once lyrics are cached, but serializing it keeps
+    /// two clients from racing the engine collections.
+    /// </summary>
     private string BuildState()
+    {
+        lock (_stateLock)
+        {
+            if (_stateCache != null &&
+                (DateTime.UtcNow - _stateCacheAt).TotalMilliseconds < 250)
+                return _stateCache;
+
+            try
+            {
+                _stateCache = BuildStateCore();
+                _stateCacheAt = DateTime.UtcNow;
+                return _stateCache;
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Debug("SongRequest", $"stage state build failed: {ex.Message}");
+                return _stateCache ?? "{}";
+            }
+        }
+    }
+
+    private string BuildStateCore()
     {
         var cfg = ConfigService.Instance.Current;
         var source = cfg?.PresentationSource ?? "player";
@@ -495,51 +532,76 @@ internal sealed class StageServer : IDisposable
         }
     }
 
-    /// <summary>Lyrics for the current song (fetched once, then cached).</summary>
+    /// <summary>
+    /// Lyrics payload for the current song. The first poll starts a background
+    /// build and returns null; later polls use the cache. This keeps the HTTP
+    /// thread and the UI responsive even when the lyrics provider is slow.
+    /// </summary>
     private object? LyricsFor(Song song)
     {
-        LyricsResult? result;
-        lock (_cacheLock)
+        var key = song.songPath ?? string.Empty;
+        if (_lyricsPayloadCache.TryGetValue(key, out var cached))
+            return cached.Payload;
+
+        if (_lyricsLoading.TryAdd(key, 0))
         {
-            if (!_lyricsCache.TryGetValue(song.songPath, out result))
+            _ = Task.Run(() =>
             {
-                result = null;
-                try
+                object? payload = null;
+                try { payload = BuildLyricsPayload(song); }
+                catch { payload = null; }
+                finally
                 {
-                    // Same order as the desktop presentation: embedded sidecar/inline
-                    // first (works offline), then the host cache, then the network.
-                    var embedded = LyricsService.GetEmbeddedLyrics(song.songPath);
-                    var lrc = embedded == null || !embedded.Found
-                        ? LyricsService.GetLrcFileLyrics(song.songPath)
-                        : null;
+                    _lyricsPayloadCache[key] = (true, payload);
+                    _lyricsLoading.TryRemove(key, out _);
 
-                    if (embedded != null && embedded.Found) result = embedded;
-                    else if (lrc != null && lrc.Found) result = lrc;
-
-                    // Same title/artist cleaning as the desktop player (YouTube
-                    // titles carry "Official Video", "(Lyrics)" and similar noise).
-                    var query = LyricsQueryNormalizer.Build(song);
-
-                    if (result == null)
-                    {
-                        var cached = _lyrics.GetCachedLyricsAsync(
-                                query.Artist, query.Title, song.Duration)
-                            .GetAwaiter().GetResult();
-                        if (cached != null && cached.Found) result = cached;
-                    }
-
-                    if (result == null)
-                    {
-                        result = _lyrics.GetLyricsAsync(
-                                query.Artist, query.Title, song.Duration)
-                            .GetAwaiter().GetResult();
-                    }
+                    // Keep a long event's memory bounded; cached lyrics are cheap to
+                    // rebuild for an old song that comes back later.
+                    if (_lyricsPayloadCache.Count > 24)
+                        _lyricsPayloadCache.Clear();
                 }
-                catch { result = null; }
+            });
+        }
 
-                _lyricsCache[song.songPath] = result;
+        return null;
+    }
+
+    /// <summary>Heavy lyrics/analysis/karaoke build; always runs off the poll thread.</summary>
+    private object? BuildLyricsPayload(Song song)
+    {
+        LyricsResult? result = null;
+        try
+        {
+            // Same order as the desktop presentation: embedded sidecar/inline
+            // first (works offline), then the host cache, then the network.
+            var embedded = LyricsService.GetEmbeddedLyrics(song.songPath);
+            var lrc = embedded == null || !embedded.Found
+                ? LyricsService.GetLrcFileLyrics(song.songPath)
+                : null;
+
+            if (embedded != null && embedded.Found) result = embedded;
+            else if (lrc != null && lrc.Found) result = lrc;
+
+            // Same title/artist cleaning as the desktop player (YouTube
+            // titles carry "Official Video", "(Lyrics)" and similar noise).
+            var query = LyricsQueryNormalizer.Build(song);
+
+            if (result == null)
+            {
+                var cached = _lyrics.GetCachedLyricsAsync(
+                        query.Artist, query.Title, song.Duration)
+                    .GetAwaiter().GetResult();
+                if (cached != null && cached.Found) result = cached;
+            }
+
+            if (result == null)
+            {
+                result = _lyrics.GetLyricsAsync(
+                        query.Artist, query.Title, song.Duration)
+                    .GetAwaiter().GetResult();
             }
         }
+        catch { result = null; }
 
         if (result == null || !result.Found) return null;
 
@@ -615,6 +677,13 @@ internal sealed class StageServer : IDisposable
                         start = word.Start,
                         end = word.End,
                         text = word.Text
+                    }).ToList(),
+                    syllables = line.Syllables.Select(syllable => new
+                    {
+                        start = syllable.Start,
+                        end = syllable.End,
+                        text = syllable.Text,
+                        wordIndex = syllable.WordIndex
                     }).ToList()
                 }).ToList(),
                 pauses = karaoke.Pauses.Select(pause => new
@@ -740,7 +809,7 @@ internal sealed class StageServer : IDisposable
   }
 
   function poll(handler) {
-    fetch('state', { cache: 'no-store' })
+    return fetch('state', { cache: 'no-store' })
       .then(function (r) { return r.text(); })
       .then(function (text) {
         var state = JSON.parse(text);
@@ -771,9 +840,22 @@ internal sealed class StageServer : IDisposable
 
   var api = {
     registerHostMessageHandler: function (handler) {
-      // The page's own registration drives the poll: nothing is pushed to it.
-      setInterval(function () { poll(handler); }, 500);
-      poll(handler);
+      // Schedule the next poll only after the previous one finishes. The old
+      // The old repeating timer overlapped requests whenever the server was slow
+      // (first-song lyrics/analysis), piling up WebView fetches and freezing the stage.
+      var inFlight = false;
+      function loop() {
+        if (inFlight) return;
+        inFlight = true;
+        poll(handler).then(function () {
+          inFlight = false;
+          setTimeout(loop, 500);
+        }, function () {
+          inFlight = false;
+          setTimeout(loop, 1500);
+        });
+      }
+      loop();
       return 'http';
     },
     sendToHost: function (message) {

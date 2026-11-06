@@ -101,6 +101,21 @@ public class MainActivity : MauiAppCompatActivity
         UpdateCarMode();
     }
 
+    protected override void OnResume()
+    {
+        base.OnResume();
+        // Restore the lyrics keep-screen-on request after the app was backgrounded.
+        ScreenAwake.Resume();
+    }
+
+    protected override void OnPause()
+    {
+        // Never hold the phone awake while the app is not visible; the requested
+        // state is remembered and restored in OnResume.
+        ScreenAwake.Suspend();
+        base.OnPause();
+    }
+
     private void UpdateCarMode()
     {
         try

@@ -349,6 +349,22 @@ test('mobile stage follows the presentation source and sends plain lyrics as lin
   assert.match(server, /plainLyrics = plain/);
 });
 
+test('mobile lyrics keep the screen awake only while visible', () => {
+  const root = path.join(__dirname, '..', '..');
+  const music = read('mobilemusic.js');
+  const appHost = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'AppHost.cs'), 'utf8');
+  const activity = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'Platforms', 'Android', 'MainActivity.cs'), 'utf8');
+  const screenAwake = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'ScreenAwake.cs'), 'utf8');
+
+  assert.match(music, /setLyricsScreenAwake/);
+  assert.match(music, /lyricsOpen && currentTab === 'player'/);
+  assert.match(appHost, /ScreenAwake\.SetLyrics/);
+  assert.match(activity, /ScreenAwake\.Resume/);
+  assert.match(activity, /ScreenAwake\.Suspend/);
+  assert.match(screenAwake, /KeepScreenOn/);
+  assert.match(screenAwake, /IdleTimerDisabled/);
+});
+
 test('visualization frames wait until the native window exists', () => {
   const root = path.join(__dirname, '..', '..');
   const window = fs.readFileSync(path.join(root, 'SongRequestDesktopV2Rewrite', 'NewUiWindow.cs'), 'utf8');

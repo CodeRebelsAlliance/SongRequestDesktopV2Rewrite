@@ -212,6 +212,7 @@
 
     if (!views[tab]) tab = 'home';
     currentTab = tab;
+    updateLyricsScreenAwake();
 
     for (var name in views) views[name].hidden = name !== tab;
 
@@ -553,6 +554,7 @@
 
       currentPlaylist = data;
       currentTab = 'playlist';
+      updateLyricsScreenAwake();
       for (var name in views) views[name].hidden = name !== 'playlist';
       closeQueue(false);
       updateMini();
@@ -838,6 +840,12 @@
     totalEl.textContent = formatTime(total);
   }
 
+  // Keep the phone awake only while the lyrics view is actually visible on the
+  // player tab. The host also releases this when the app is backgrounded.
+  function updateLyricsScreenAwake() {
+    send('setLyricsScreenAwake', { enabled: lyricsOpen && currentTab === 'player' });
+  }
+
   function toggleLyrics(force) {
     lyricsOpen = force == null ? !lyricsOpen : !!force;
     playerView.classList.toggle('is-lyrics', lyricsOpen);
@@ -850,6 +858,8 @@
       lyricsSettingsToggle.hidden = !lyricsOpen;
       if (!lyricsOpen) closeLyricsSettings();
     }
+
+    updateLyricsScreenAwake();
 
     if (lyricsOpen) {
       applyLyricsFontScale();

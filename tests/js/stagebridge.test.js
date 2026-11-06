@@ -26,7 +26,7 @@ function bridgeScript() {
 function makeHarness(states) {
   const emitted = [];
   let index = 0;
-  let interval = null;
+  let scheduled = null;
 
   const window = {};
   const context = vm.createContext({
@@ -37,7 +37,8 @@ function makeHarness(states) {
     fetch: () => Promise.resolve({
       text: () => Promise.resolve(JSON.stringify(states[Math.min(index++, states.length - 1)])),
     }),
-    setInterval: (fn) => { interval = fn; return 1; },
+    // The bridge now schedules the next poll after the previous one completes.
+    setTimeout: (fn) => { scheduled = fn; return 1; },
   });
 
   vm.runInContext(bridgeScript(), context, { filename: 'bridge-http.js' });
@@ -51,7 +52,7 @@ function makeHarness(states) {
   return {
     host,
     emitted,
-    next: () => interval(),
+    next: () => { const fn = scheduled; scheduled = null; if (fn) fn(); },
   };
 }
 
@@ -120,4 +121,35 @@ test('stage bridge reads the presentation settings field names', async () => {
   assert.equal(settings.data.lyricsFontScale, 1.25);
   assert.equal(settings.data.lyricsHidden, true);
   assert.equal(settings.data.requestQr, 'data:image/png;base64,BB==');
+});
+
+test('stage polling is self-paced and heavy lyric work stays off the poll thread', () => {
+  const bridge = bridgeScript();
+  const server = fs.readFileSync(serverPath, 'utf8');
+  const display = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'SongRequest.Mobile', 'Platforms', 'Android', 'Stage', 'StageDisplay.cs'),
+    'utf8');
+
+  // The old setInterval overlapped requests when a poll was slow; the new loop
+  // schedules only after the previous response.
+  assert.doesNotMatch(bridge, /setInterval/);
+  assert.match(bridge, /setTimeout\(loop, 500\)/);
+  assert.match(bridge, /inFlight/);
+
+  // First-song lyrics/analysis no longer run on every /state request or hold a
+  // lock while the provider is slow.
+  assert.match(server, /ConcurrentDictionary<string, \(bool Loaded, object\? Payload\)>/);
+  assert.match(server, /_lyricsPayloadCache/);
+  assert.match(server, /_lyricsLoading/);
+  assert.match(server, /BuildLyricsPayload/);
+  assert.match(server, /Task\.Run\(\(\) =>/);
+  assert.match(server, /_stateLock/);
+  assert.match(server, /BuildStateCore/);
+
+  // The stage carries the same syllable data as the desktop/mobile lyrics.
+  assert.match(server, /syllables = line\.Syllables/);
+
+  // Keep the HDMI WebView awake instead of letting Android throttle it.
+  assert.match(display, /KeepScreenOn/);
+  assert.match(display, /WindowManagerFlags\.KeepScreenOn/);
 });

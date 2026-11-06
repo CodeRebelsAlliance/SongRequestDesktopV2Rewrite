@@ -410,6 +410,11 @@ public sealed class AppHost : IDisposable
                 result = new { success = true };
                 break;
 
+            case "setLyricsScreenAwake":
+                ScreenAwake.SetLyrics(request["enabled"]?.ToObject<bool>() == true);
+                result = new { success = true };
+                break;
+
             case "setNavColors":
                 _page.SetNavColors(
                     request["primary"]?.ToString(),

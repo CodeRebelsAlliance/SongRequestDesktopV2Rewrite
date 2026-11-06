@@ -284,6 +284,8 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Presentation source | U | player vs requests source switch payloads |
 | Queue payload | U | queue → presentation items (title/artist/thumbnail) |
 | Current-state push | U | `SendPresentationCurrentState` shape |
+| Mobile HDMI stage | J/C# | `/state` polling is self-paced (no overlapping fetches), first-song lyrics/analysis are built once in the background, state snapshots are coalesced, and the presentation window keeps the screen awake |
+| Mobile lyrics wake lock | J/C# | opening lyrics on the player tab keeps the screen awake; leaving the player or backgrounding releases it; the main activity restores the requested state on resume |
 
 ### 4.8b Advanced audio (equalizer, sleep timer, analysis)
 
