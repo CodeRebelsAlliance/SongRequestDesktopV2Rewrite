@@ -499,3 +499,25 @@ test('new launch experience is opt-in and assembles the large logo', () => {
   assert.match(music, /id="mm-set-new-launch"/);
   assert.match(music, /newLaunchExperience: !!/);
 });
+
+test('mobile tab switches avoid redundant refreshes and warm tab pages', () => {
+  const page = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Mobile', 'MainPage.cs'), 'utf8');
+  assert.match(page, /var sameFile = string\.Equals\(file, _currentFile/);
+  assert.match(page, /if \(!sameFile\)/);
+  assert.match(page, /WarmNextTabView/);
+  assert.match(page, /ScheduleWarmTabViews/);
+  // Warmed pages must stay hidden until selected.
+  assert.match(page, /IsVisible = false,/);
+});
+
+test('player and stage keep a visible composited colour drift', () => {
+  const music = read('mobilemusic.css');
+  const stage = read('presentation.css');
+
+  assert.match(music, /@keyframes mmDrift[\s\S]*?rotate/);
+  assert.match(music, /#mm-player-bg::after/);
+  assert.match(music, /@keyframes mmGlow/);
+  assert.match(stage, /#pres-player-panel::after/);
+  assert.match(stage, /@keyframes stageGlow/);
+  assert.match(stage, /@keyframes gradientDrift[\s\S]*?rotate/);
+});

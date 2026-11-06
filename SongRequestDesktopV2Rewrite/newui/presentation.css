@@ -135,8 +135,26 @@ body {
   z-index: 0;
   pointer-events: none;
   background: linear-gradient(var(--grad-angle), var(--accent-1), var(--accent-2), var(--accent-3));
-  animation: gradientDrift 18s ease-in-out infinite alternate;
+  animation: gradientDrift 16s ease-in-out infinite alternate;
   will-change: transform;
+}
+
+/* A second, composited light layer so the colour drift stays clearly visible
+   on a TV without animating the gradient's background-position. */
+#pres-player-panel::after {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 32% 32%, rgba(255, 255, 255, 0.13), transparent 50%);
+  animation: stageGlow 10s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+
+@keyframes stageGlow {
+  0%   { opacity: 0.22; transform: translate3d(-10%, -8%, 0) scale(0.92); }
+  100% { opacity: 0.72; transform: translate3d(10%, 9%, 0) scale(1.14); }
 }
 
 #pres-player-panel > * { position: relative; z-index: 1; }
@@ -148,9 +166,9 @@ body {
 }
 
 @keyframes gradientDrift {
-  0% { transform: translate3d(-2%, -1%, 0) scale(1.04); }
-  50% { transform: translate3d(2%, 2%, 0) scale(1.08); }
-  100% { transform: translate3d(3%, -2%, 0) scale(1.05); }
+  0%   { transform: translate3d(-7%, -4%, 0) rotate(-3deg) scale(1.12); }
+  50%  { transform: translate3d(1%, 2%, 0) rotate(1deg) scale(1.18); }
+  100% { transform: translate3d(7%, 5%, 0) rotate(3deg) scale(1.14); }
 }
 
 /* ── Right: Side panels (no background) ── */
@@ -671,5 +689,6 @@ body {
 .karaoke-pause-time { font-size: 12px; font-weight: 700; color: rgba(255,255,255,.7); font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {
-  #pres-player-panel::before { animation: none; }
+  #pres-player-panel::before,
+  #pres-player-panel::after { animation: none; }
 }

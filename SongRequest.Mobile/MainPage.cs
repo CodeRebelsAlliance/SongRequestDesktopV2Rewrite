@@ -207,6 +207,53 @@ public sealed class MainPage : ContentPage
 
         _baseKey = defs[0].Key;
         Select(defs[0].Key);
+
+        // Once the first screen is up, quietly create the other tab pages one at
+        // a time. Without this, the first switch to Stage/Board/Requests built a
+        // fresh HybridWebView on the UI thread and could stall for seconds.
+        if (_navigationVisible) ScheduleWarmTabViews();
+    }
+
+    private int _warmGeneration;
+
+    private void ScheduleWarmTabViews()
+    {
+        if (!_navigationVisible) return;
+        var generation = ++_warmGeneration;
+        // Let the visible page finish its first layout/paint first.
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(900), () =>
+        {
+            if (generation == _warmGeneration) WarmNextTabView();
+        });
+    }
+
+    /// <summary>
+    /// Creates one missing tab page at a time, hidden. Each dispatch returns to
+    /// the message loop so warming never becomes a startup freeze.
+    /// </summary>
+    private void WarmNextTabView()
+    {
+        if (!_navigationVisible) return;
+
+        string? next = null;
+        foreach (var file in _destinationFile.Values)
+        {
+            if (!_views.ContainsKey(file)) { next = file; break; }
+        }
+        if (next == null) return;
+
+        try
+        {
+            var view = EnsureView(next);
+            view.IsVisible = false;
+        }
+        catch { }
+
+        var generation = _warmGeneration;
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(260), () =>
+        {
+            if (generation == _warmGeneration) WarmNextTabView();
+        });
     }
 
     /// <summary>
@@ -424,6 +471,8 @@ public sealed class MainPage : ContentPage
 
         _navigationVisible = visible;
         _tabBar.IsVisible = visible;
+        if (visible) ScheduleWarmTabViews();
+        else _warmGeneration++;
     }
 
     /// <summary>Hides the native tab bar for fullscreen sub-windows (stage/visualization).</summary>
@@ -670,6 +719,11 @@ public sealed class MainPage : ContentPage
 
     private void ShowFile(string file)
     {
+        // Music tabs (Home/Library/Player/Queue) share one web view. Telling that
+        // page to "refresh" on every tab switch made it re-request the full player
+        // state (queue, lyrics, artwork) even though it was never paused; that
+        // interop round-trip was the multi-second hang on slower phones.
+        var sameFile = string.Equals(file, _currentFile, StringComparison.Ordinal);
         var view = EnsureView(file);
 
         foreach (var (key, other) in _views)
@@ -694,10 +748,13 @@ public sealed class MainPage : ContentPage
 
         // Android pauses JavaScript in a hidden web view, so a page can miss host
         // events while another tab is in front (its promise may even time out).
-        // Nudge it to re-request whatever it shows; pages that have nothing to
-        // refresh simply ignore the event.
-        try { view.SendRawMessage("{\"type\":\"event\",\"eventName\":\"refresh\"}"); }
-        catch { }
+        // Nudge it only when the *file* really changed; switching between music
+        // tabs keeps the same live page and must stay instant.
+        if (!sameFile)
+        {
+            try { view.SendRawMessage("{\"type\":\"event\",\"eventName\":\"refresh\"}"); }
+            catch { }
+        }
 
         if (_carMode)
         {
@@ -736,6 +793,9 @@ public sealed class MainPage : ContentPage
         {
             DefaultFile = file,
             HybridRoot = "wwwroot",
+            // New pages start hidden; ShowFile reveals the requested one. This
+            // prevents a background-warmed page from flashing over the current tab.
+            IsVisible = false,
         };
         view.RawMessageReceived += (_, e) => HostMessageReceived?.Invoke(file, e.Message ?? string.Empty);
 

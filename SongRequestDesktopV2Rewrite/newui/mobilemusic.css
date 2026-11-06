@@ -465,16 +465,33 @@ input[type="search"] {
   /* Animate a transform, not background-position: the old version repainted a
      full-screen gradient every frame and was one of the biggest causes of the
      mobile player lag. */
-  animation: mmDrift 22s ease-in-out infinite alternate;
+  animation: mmDrift 16s ease-in-out infinite alternate;
   opacity: 0.95;
   transition: background 0.8s ease;
   will-change: transform;
 }
 
 @keyframes mmDrift {
-  0% { transform: translate3d(-3%, -2%, 0) scale(1.04); }
-  50% { transform: translate3d(2%, 3%, 0) scale(1.08); }
-  100% { transform: translate3d(4%, -1%, 0) scale(1.05); }
+  0%   { transform: translate3d(-9%, -6%, 0) rotate(-4deg) scale(1.16); }
+  50%  { transform: translate3d(1%, 3%, 0) rotate(1deg) scale(1.22); }
+  100% { transform: translate3d(9%, 6%, 0) rotate(4deg) scale(1.18); }
+}
+
+/* A moving light wash makes the colour drift obvious without repainting the
+   gradient every frame: only this layer's transform/opacity animate. */
+#mm-player-bg::after {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+  background: radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.20), transparent 46%);
+  animation: mmGlow 9s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+
+@keyframes mmGlow {
+  0%   { opacity: 0.25; transform: translate3d(-12%, -9%, 0) scale(0.9); }
+  100% { opacity: 0.7;  transform: translate3d(12%, 10%, 0) scale(1.16); }
 }
 
 #mm-view-player > *:not(#mm-player-bg) { position: relative; z-index: 1; }
@@ -1535,7 +1552,8 @@ input[type="search"] {
   #mm-seek::-moz-range-thumb {
     transition: none;
   }
-  #mm-player-bg { animation: none; }
+  #mm-player-bg,
+  #mm-player-bg::after { animation: none; }
 }
 
 /* ── Header actions + multi-select ───────────────────────── */
