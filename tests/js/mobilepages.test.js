@@ -169,14 +169,48 @@ test('mobile queue reorders both the play queue and the playlist queue', () => {
   const js = read('mobilemusic.js');
   const css = read('mobilemusic.css');
 
-  // Both sections render move controls, tagged with the list they belong to.
-  assert.match(js, /queueRow\(item, index, index === 0, 'removeQueueItem', 'queue'\)/);
-  assert.match(js, /queueRow\(item, index, false, 'removePlaylistQueueItem', 'playlist'\)/);
-  assert.match(js, /data-source=/);
+  // Rows carry the list they belong to; actions are behind a long-press sheet
+  // so the compact list has no per-row button clutter.
+  assert.match(js, /queueRow\(item, index, index === 0, 'queue'\)/);
+  assert.match(js, /queueRow\(item, index, false, 'playlist'\)/);
+  assert.match(js, /data-queue-source=/);
   assert.match(js, /movePlaylistQueueItem/);
+  assert.match(js, /openQueueItemActions/);
   // The now-playing slot stays first.
-  assert.match(js, /var minIndex = isPlaylist \? 0 : 1/);
-  assert.match(css, /\.mm-queue-row \.mm-icon-btn:disabled/);
+  assert.match(js, /var minIndex = source === 'playlist' \? 0 : 1/);
+  assert.match(css, /\.mm-queue-row \{[\s\S]*?min-height: 48px/);
+});
+
+test('mobile library and queue support hidden multi-select batches', () => {
+  const js = read('mobilemusic.js');
+  const html = read('mobilemusic.html');
+  const css = read('mobilemusic.css');
+  const interop = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+
+  assert.match(html, /id="mm-library-select"/);
+  assert.match(html, /id="mm-library-sort"/);
+  assert.match(html, /id="mm-lib-clear"/);
+  assert.match(js, /cycleLibrarySort/);
+  assert.match(js, /lib\.sortBy/);
+  assert.match(html, /id="mm-lib-multi"/);
+  assert.match(html, /data-lib-multi="queue"/);
+  assert.match(html, /id="mm-queue-select"/);
+  assert.match(html, /data-queue-multi="remove"/);
+  assert.match(js, /setLibrarySelecting/);
+  assert.match(js, /toggleSongSelection/);
+  assert.match(js, /queueLibrarySongs/);
+  assert.match(js, /deleteLibrarySongs/);
+  assert.match(js, /addSongsToPlaylist/);
+  assert.match(js, /setQueueSelecting/);
+  assert.match(js, /removeSelectedQueueItems/);
+  assert.match(css, /\.mm-select-check/);
+  assert.match(css, /\.mm-multi-bar/);
+
+  // Batch commands exist on the host so selecting many rows is one round-trip.
+  assert.match(interop, /case "queueLibrarySongs"/);
+  assert.match(interop, /case "deleteLibrarySongs"/);
+  assert.match(interop, /case "addSongsToPlaylist"/);
 });
 
 test('queue artwork that arrives after the first update patches rows', () => {
@@ -430,4 +464,38 @@ test('presentation gradient drift is composited instead of repainting', () => {
   // interpolate between the stage's 500 ms polls.
   assert.match(js, /SongRequestKaraoke\.setPlaying/);
   assert.match(js, /SongRequestKaraoke\.update\(presLyrics, currentTime, currentPlaying\)/);
+});
+
+test('new launch experience is opt-in and assembles the large logo', () => {
+  const app = read('app.js');
+  const css = read('styles.css');
+  const music = read('mobilemusic.js');
+  const requests = read('mobilerequests.html');
+  const config = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'ConfigService.cs'), 'utf8');
+  const interop = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+
+  assert.match(config, /NewLaunchExperience/);
+  assert.match(interop, /newLaunchExperience/);
+  assert.match(interop, /defaultMode/);
+  assert.match(interop, /SilentAuthAsync/);
+  assert.match(interop, /case "silentAuth"/);
+
+  assert.match(app, /data\.newLaunchExperience/);
+  assert.match(app, /createLaunchCinematic/);
+  assert.match(app, /LargeSR\.png/);
+  assert.match(app, /is-assembled/);
+  assert.match(app, /send\('silentAuth'\)/);
+  // The updater must still intercept before the app takes over.
+  assert.match(app, /promptForUpdate/);
+  assert.match(app, /checkForUpdates/);
+
+  assert.match(css, /#startup-cinematic/);
+  assert.match(css, /@keyframes cineAssemble/);
+  assert.match(css, /prefers-reduced-motion/);
+
+  // The setting is reachable from both launch-oriented pages and the music
+  // player's mobile settings sheet.
+  assert.match(requests, /id="s-new-launch"/);
+  assert.match(music, /id="mm-set-new-launch"/);
+  assert.match(music, /newLaunchExperience: !!/);
 });

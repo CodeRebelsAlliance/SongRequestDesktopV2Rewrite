@@ -49,6 +49,7 @@ namespace SongRequestDesktopV2Rewrite
         private bool _toolPromptDismissed = false;
         private string _cookieBrowser = string.Empty;
         private bool _autoGrabCookies = false;
+        private bool _newLaunchExperience = false;
         private bool _systemMediaIntegration = true;
         private bool _autoAnalyzeSongs = true;
         private bool _autoAnalyzeLibraryOnAdd = true;
@@ -346,6 +347,19 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _autoGrabCookies;
             set => SetField(ref _autoGrabCookies, value);
+        }
+
+        /// <summary>
+        /// Replaces the splash/mode-picker/auth launch sequence with a single
+        /// full-screen animated logo experience. Mode selection is skipped (the
+        /// previous/default mode is used) and YouTube authentication runs quietly
+        /// in the background. Off by default so existing installs keep their
+        /// familiar launch flow.
+        /// </summary>
+        public bool NewLaunchExperience
+        {
+            get => _newLaunchExperience;
+            set => SetField(ref _newLaunchExperience, value);
         }
 
         /// <summary>

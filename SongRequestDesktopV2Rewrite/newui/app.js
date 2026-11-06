@@ -14,6 +14,9 @@
   let _authOverlayVisible = false;
   let _authBrowsers = [];
   let _signInSupported = false;
+  // Lets the new launch animation wait for the first data pass (or a short
+  // ceiling) instead of holding the app on a fixed timer.
+  let initialDataLoad = null;
 
   function postMessageToHost(msg) {
     if (!SongRequestHost.sendToHost(msg)) {
@@ -410,6 +413,8 @@
       document.getElementById('s-default-sorting').value = cfg.defaultSorting ?? '';
       document.getElementById('s-fullscreen').checked = cfg.presentationFullscreen ?? false;
       document.getElementById('s-normalize-volume').checked = cfg.normalizeVolume ?? false;
+      const newLaunch = document.getElementById('s-new-launch');
+      if (newLaunch) newLaunch.checked = cfg.newLaunchExperience === true;
       document.getElementById('s-auto-analyze').checked = cfg.autoAnalyzeSongs ?? true;
       document.getElementById('s-karaoke-mode').checked = cfg.karaokeMode === true;
       document.getElementById('s-play-karaoke').checked = cfg.playKaraokeVersions === true;
@@ -587,6 +592,7 @@
         defaultSorting: document.getElementById('s-default-sorting').value,
         presentationFullscreen: document.getElementById('s-fullscreen').checked,
         normalizeVolume: document.getElementById('s-normalize-volume').checked,
+        newLaunchExperience: !!(document.getElementById('s-new-launch') && document.getElementById('s-new-launch').checked),
         autoAnalyzeSongs: document.getElementById('s-auto-analyze').checked,
         karaokeMode: document.getElementById('s-karaoke-mode').checked,
         playKaraokeVersions: document.getElementById('s-play-karaoke').checked,
@@ -2321,7 +2327,7 @@
   function runStartupAnim() {
     const els = document.querySelectorAll('.startup-hide');
     els.forEach((el, i) => {
-      setTimeout(() => el.classList.add('startup-show'), 80 * i);
+      setTimeout(() => el.classList.add('startup-show'), 40 * i);
     });
   }
 
@@ -2332,12 +2338,199 @@
   }).catch(() => {});
 
   // Initial load
-  loadData();
+  initialDataLoad = loadData();
   loadWordFilter();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', runStartupAnim);
   } else {
     runStartupAnim();
+  }
+
+  // Shows the update prompt and waits for the user's decision. Shared by the
+  // classic launch flow and the new cinematic one; it never hides the cinematic
+  // backdrop (the caller pauses it instead).
+  async function promptForUpdate(updateInfo) {
+    const updatePanel = document.getElementById('startup-update-panel');
+    const splash = document.getElementById('startup-splash');
+    const launchPanel = document.getElementById('startup-launch-panel');
+    const authPanel = document.getElementById('startup-auth-panel');
+    if (splash) splash.style.display = 'none';
+    if (launchPanel) launchPanel.style.display = 'none';
+    if (authPanel) authPanel.style.display = 'none';
+    updatePanel.style.display = 'flex';
+
+    document.getElementById('startup-update-info').textContent =
+      'Version ' + updateInfo.latestVersion + ' available (current: ' + updateInfo.currentVersion + ')';
+    var startupNotes = document.getElementById('startup-update-notes');
+    if (startupNotes) {
+      var notesHtml = renderMarkdown(updateInfo.releaseNotes || '');
+      startupNotes.innerHTML = notesHtml;
+      startupNotes.style.display = notesHtml ? '' : 'none';
+    }
+    document.getElementById('startup-update-buttons').style.display = 'flex';
+    document.getElementById('startup-update-progress').style.display = 'none';
+    const laterButton = document.getElementById('startup-update-later');
+    const nowButton = document.getElementById('startup-update-now');
+    laterButton.textContent = 'Remind Me Later';
+    nowButton.style.display = '';
+    laterButton.onclick = null;
+    nowButton.onclick = null;
+
+    await new Promise(resolve => {
+      laterButton.onclick = resolve;
+      nowButton.onclick = async () => {
+        document.getElementById('startup-update-buttons').style.display = 'none';
+        document.getElementById('startup-update-progress').style.display = 'block';
+        document.getElementById('startup-update-progress-text').textContent = 'Starting download...';
+        const text = document.getElementById('startup-update-progress-text');
+        try {
+          // Long timeout: the mobile updater now stays in this request until the
+          // APK has downloaded, verified and the system installer has opened.
+          const r = await send('installUpdate', { downloadUrl: updateInfo.downloadUrl }, { timeout: 30 * 60 * 1000 });
+          if (r && r.error) {
+            text.textContent = 'Error: ' + r.error;
+            document.getElementById('startup-update-buttons').style.display = 'flex';
+            nowButton.style.display = '';
+            return;
+          }
+
+          if (updateInfo.installKind === 'package') {
+            // Do NOT continue startup while the platform installer is running.
+            // The user returns here after installing (or cancelling) and can
+            // explicitly continue without updating.
+            text.textContent = 'Installer opened. Complete the update there, then return to this screen.';
+            laterButton.textContent = 'Continue without updating';
+            laterButton.onclick = resolve;
+            nowButton.style.display = 'none';
+            document.getElementById('startup-update-buttons').style.display = 'flex';
+          }
+          // Otherwise the desktop updater replaces the app and restarts it, so we
+          // intentionally stay on this panel and keep the sequence paused.
+        } catch (e) {
+          text.textContent = 'Error: ' + e.message;
+          document.getElementById('startup-update-buttons').style.display = 'flex';
+          nowButton.style.display = '';
+        }
+      };
+    });
+
+    updatePanel.style.display = 'none';
+  }
+
+  // ── New launch experience ────────────────────────────────
+  // A full-screen, composited animation assembles the large wordmark from
+  // slices, then hands over to the app. It replaces only the splash/launch/auth
+  // panels; the update prompt still intercepts above it.
+  function createLaunchCinematic() {
+    const existing = document.getElementById('startup-cinematic');
+    if (existing) return existing;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'startup-cinematic';
+    wrap.className = 'cine';
+    wrap.innerHTML =
+      '<div class="cine-bg" aria-hidden="true">' +
+        '<span class="cine-orb cine-orb-1"></span>' +
+        '<span class="cine-orb cine-orb-2"></span>' +
+        '<span class="cine-orb cine-orb-3"></span>' +
+        '<span class="cine-grid"></span>' +
+      '</div>' +
+      '<div class="cine-stage">' +
+        '<div class="cine-halo" aria-hidden="true"></div>' +
+        '<div class="cine-ring" aria-hidden="true"></div>' +
+        '<div class="cine-logo" aria-hidden="true"></div>' +
+        '<div class="cine-sweep" aria-hidden="true"></div>' +
+        '<div class="cine-title"><span>Technik-AG</span></div>' +
+        '<div class="cine-sub">Preparing your session</div>' +
+        '<div class="cine-loader" aria-hidden="true"><i></i></div>' +
+      '</div>';
+
+    const logo = wrap.querySelector('.cine-logo');
+    const pieces = 7;
+    const offsets = [
+      ['-22vw', '-8vh', '-8deg'], ['18vw', '-12vh', '6deg'], ['-26vw', '10vh', '10deg'],
+      ['24vw', '14vh', '-6deg'], ['-12vw', '-18vh', '4deg'], ['14vw', '-4vh', '-10deg'],
+      ['0vw', '20vh', '8deg']
+    ];
+    for (let i = 0; i < pieces; i++) {
+      const img = document.createElement('img');
+      img.className = 'cine-piece';
+      img.src = 'LargeSR.png';
+      img.alt = '';
+      img.decoding = 'async';
+      const width = 100 / pieces;
+      img.style.clipPath = 'inset(0 ' + (100 - (i + 1) * width) + '% 0 ' + (i * width) + '%)';
+      img.style.setProperty('--dx', offsets[i][0]);
+      img.style.setProperty('--dy', offsets[i][1]);
+      img.style.setProperty('--rot', offsets[i][2]);
+      img.style.animationDelay = (i * 60) + 'ms';
+      logo.appendChild(img);
+    }
+    return wrap;
+  }
+
+  async function runCinematicLaunch(data, overlay) {
+    const splash = document.getElementById('startup-splash');
+    if (splash) splash.style.display = 'none';
+
+    const cinematic = createLaunchCinematic();
+    overlay.appendChild(cinematic);
+    cinematic.hidden = false;
+    cinematic.classList.remove('is-leaving', 'is-paused');
+    // One frame so the start state (scattered, transparent) is committed before
+    // the assembly animation begins.
+    await new Promise(resolve => requestAnimationFrame(() => {
+      cinematic.classList.add('is-assembled');
+      requestAnimationFrame(resolve);
+    }));
+
+    // Authentication runs invisibly and never blocks launch. If no saved session
+    // exists the app simply continues; Settings can still perform a real sign-in.
+    try { send('silentAuth').catch(() => { }); } catch (_) { }
+
+    // The updater still gets first refusal, but it runs during the animation
+    // instead of adding a separate wait.
+    const updateTask = (async () => {
+      let info = null;
+      try { info = await send('checkForUpdates'); } catch (_) { }
+      if (info && info.updateAvailable) {
+        cinematic.classList.add('is-paused');
+        await promptForUpdate(info);
+        cinematic.classList.remove('is-paused');
+      }
+    })();
+
+    // "Default mode set before": reuse the configured/previous mode and skip
+    // the mode picker entirely.
+    const launchState = data.launchOptions || {};
+    const selectedMode = data.defaultMode || launchState.lastSelectedMode || 'SongRequests';
+
+    // Adaptive minimum: always let the logo finish assembling, but never hold the
+    // app back for more than a few seconds waiting for optional data.
+    const minimumAnimation = delay(1500);
+    const initialLoad = initialDataLoad
+      ? Promise.race([initialDataLoad.catch(() => { }), delay(3200)])
+      : Promise.resolve();
+    await Promise.all([minimumAnimation, initialLoad, updateTask]);
+
+    // Keep the classic launch flow in step with the mode this launch picked.
+    // Save before switching tabs so the request cannot be lost when Android
+    // pauses the hidden requests page.
+    try {
+      await send('saveLaunchOptions', {
+        rememberSelection: launchState.rememberSelection === true,
+        lastSelectedMode: selectedMode
+      });
+    } catch (_) { }
+
+    await send('completeSetup', { startupMode: selectedMode });
+
+    cinematic.classList.add('is-leaving');
+    overlay.style.opacity = '0';
+    await delay(480);
+    overlay.style.display = 'none';
+    try { cinematic.remove(); } catch (_) { }
+    try { window.focus(); } catch (_) { }
   }
 
   async function runStartupSequence() {
@@ -2351,17 +2544,22 @@
     const versionEl = document.getElementById('startup-version');
     const shimmer = document.getElementById('startup-shimmer');
 
-    // Shimmer animation
+    // The shimmer used to keep a 60 fps timer alive for the whole app session,
+    // even after the overlay was gone. Stop it as soon as launch finishes.
     let shimmerPos = -80;
-    setInterval(() => {
+    const shimmerTimer = setInterval(() => {
+      if (!shimmer || !shimmer.isConnected) return;
       shimmerPos += 3;
       if (shimmerPos > overlay.offsetWidth + 80) shimmerPos = -80;
       shimmer.style.transform = 'translateX(' + shimmerPos + 'px)';
     }, 16);
+    function stopShimmer() {
+      if (shimmerTimer) clearInterval(shimmerTimer);
+    }
 
     function setProgress(pct, status) {
-      progressFill.style.width = pct + '%';
-      if (status) statusEl.textContent = status;
+      if (progressFill) progressFill.style.width = pct + '%';
+      if (status && statusEl) statusEl.textContent = status;
     }
 
     function hideAll() {
@@ -2379,90 +2577,47 @@
     // Get startup data
     let data;
     try { data = await send('getStartupData'); } catch (e) { data = { version: '?' }; }
-    versionEl.textContent = 'Version ' + (data.version || '?');
+    if (versionEl) versionEl.textContent = 'Version ' + (data.version || '?');
 
     // Already set up in this app session (the page was recreated after a tab
     // switch or under memory pressure): never replay the splash/launch/auth flow.
     if (data.setupComplete) {
+      stopShimmer();
       overlay.style.display = 'none';
       return;
     }
 
-    // Loading phase: progress to 35%, then check for updates
-    setProgress(5, 'Initializing...');
-    await delay(400);
-    setProgress(15, 'Loading configuration...');
-    await delay(400);
-    setProgress(30, 'Checking for updates...');
-    await delay(300);
+    if (data.newLaunchExperience) {
+      stopShimmer();
+      await runCinematicLaunch(data, overlay);
+      return;
+    }
 
-    // Update check at ~35%
+    // Loading phase: progress to 35%, then check for updates. Delays are short:
+    // the old 400–500 ms pauses added more than two seconds to every launch.
+    setProgress(12, 'Initializing...');
+    await delay(140);
+    setProgress(24, 'Loading configuration...');
+    await delay(160);
+    setProgress(34, 'Checking for updates...');
+
     let updateInfo = null;
     try {
       updateInfo = await send('checkForUpdates');
     } catch (e) { /* silently fail */ }
 
     if (updateInfo && updateInfo.updateAvailable) {
-      // Pause loading, show update prompt
-      showPanel(updatePanel);
-      document.getElementById('startup-update-info').textContent =
-        'Version ' + updateInfo.latestVersion + ' available (current: ' + updateInfo.currentVersion + ')';
-      var startupNotes = document.getElementById('startup-update-notes');
-      if (startupNotes) {
-        var notesHtml = renderMarkdown(updateInfo.releaseNotes || '');
-        startupNotes.innerHTML = notesHtml;
-        startupNotes.style.display = notesHtml ? '' : 'none';
-      }
-
-      await new Promise(resolve => {
-        const laterButton = document.getElementById('startup-update-later');
-        const nowButton = document.getElementById('startup-update-now');
-        laterButton.onclick = resolve;
-        nowButton.onclick = async () => {
-          document.getElementById('startup-update-buttons').style.display = 'none';
-          document.getElementById('startup-update-progress').style.display = 'block';
-          document.getElementById('startup-update-progress-text').textContent = 'Starting download...';
-          const text = document.getElementById('startup-update-progress-text');
-          try {
-            // Long timeout: the mobile updater now stays in this request until the
-            // APK has downloaded, verified and the system installer has opened.
-            const r = await send('installUpdate', { downloadUrl: updateInfo.downloadUrl }, { timeout: 30 * 60 * 1000 });
-            if (r && r.error) {
-              text.textContent = 'Error: ' + r.error;
-              document.getElementById('startup-update-buttons').style.display = 'flex';
-              nowButton.style.display = '';
-              return;
-            }
-
-            if (updateInfo.installKind === 'package') {
-              // Do NOT continue startup while the platform installer is running.
-              // The user returns here after installing (or cancelling) and can
-              // explicitly continue without updating.
-              text.textContent = 'Installer opened. Complete the update there, then return to this screen.';
-              laterButton.textContent = 'Continue without updating';
-              laterButton.onclick = resolve;
-              nowButton.style.display = 'none';
-              document.getElementById('startup-update-buttons').style.display = 'flex';
-            }
-            // Otherwise the desktop updater replaces the app and restarts it, so we
-            // intentionally stay on this panel and keep the sequence paused.
-          } catch (e) {
-            text.textContent = 'Error: ' + e.message;
-            document.getElementById('startup-update-buttons').style.display = 'flex';
-            nowButton.style.display = '';
-          }
-        };
-      });
+      await promptForUpdate(updateInfo);
+      showPanel(splash);
     }
 
     // Resume loading
-    showPanel(splash);
-    setProgress(50, 'Preparing launch options...');
-    await delay(500);
-    setProgress(70, 'Almost ready...');
-    await delay(500);
-    setProgress(85, 'Starting...');
-    await delay(300);
+    setProgress(55, 'Preparing launch options...');
+    await delay(180);
+    setProgress(78, 'Almost ready...');
+    await delay(180);
+    setProgress(92, 'Starting...');
+    await delay(120);
     setProgress(100, 'Ready!');
 
     // Launch options phase
@@ -2649,7 +2804,7 @@
     }
 
     if (autoAuthSucceeded) {
-      await delay(700);
+      await delay(250);
     } else {
       await new Promise(resolve => {
         document.getElementById('startup-auth-no').onclick = () => resolve();
@@ -2697,12 +2852,13 @@
         };
       });
     }
-    await delay(600);
+    await delay(250);
 
     // Complete setup
     await send('completeSetup', { startupMode: selectedMode });
 
     // Dismiss overlay
+    stopShimmer();
     overlay.style.opacity = '0';
     setTimeout(() => { overlay.style.display = 'none'; window.focus(); }, 400);
   }

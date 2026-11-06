@@ -135,11 +135,13 @@
   // large part of the input lag while queuing; only build it when visible.
   var queueDirty = true;
   var queueSignature = '';
+  var queueSelecting = false;
+  var queueSelection = {};
 
   var feed = null;
   var feedAt = 0;
 
-  var lib = { mode: 'songs', page: 0, total: 0, loading: false, query: '' };
+  var lib = { mode: 'songs', page: 0, total: 0, loading: false, query: '', sortBy: 'title', descending: false };
   var libSongs = [];
   var recentSongs = [];
   var playlists = [];
@@ -147,6 +149,23 @@
   var playlistsAt = 0;
   var libAt = 0;
   var libKey = '';
+  var libSelecting = false;
+  var selectedSongIds = {};
+  var LIB_SORTS = [
+    { id: 'title', label: 'Title', descending: false },
+    { id: 'artist', label: 'Artist', descending: false },
+    { id: 'dateAdded', label: 'Recently added', descending: true },
+    { id: 'playCount', label: 'Most played', descending: true }
+  ];
+  (function restoreLibrarySort() {
+    try {
+      var saved = JSON.parse(localStorage.getItem('sr-mobile-library-sort') || 'null');
+      if (saved && LIB_SORTS.some(function (s) { return s.id === saved.id; })) {
+        lib.sortBy = saved.id;
+        lib.descending = !!saved.descending;
+      }
+    } catch (_) { }
+  })();
 
   var lyrics = { synced: [], plain: [], active: -1, syncOffset: 0, fontScale: 1, hidden: false, karaokeTimes: [] };
   // Lyrics are only turned into DOM while the lyrics view is open. The payload
@@ -238,6 +257,7 @@
     }
 
     if (!views[tab]) tab = 'home';
+    if (libSelecting && tab !== 'library') setLibrarySelecting(false);
     currentTab = tab;
     updateLyricsScreenAwake();
 
@@ -279,6 +299,7 @@
 
   function closeQueue(notifyHost) {
     if (queueEl.hidden) return;
+    if (queueSelecting) setQueueSelecting(false);
 
     queueScrim.classList.remove('is-open');
     queueEl.classList.remove('is-open');
@@ -364,11 +385,14 @@
 
   // ── Library ──────────────────────────────────────────────
   function setLibraryMode(mode) {
+    if (libSelecting) setLibrarySelecting(false);
     lib.mode = mode;
     lib.page = 0;
     lib.query = '';
     var filter = $('mm-lib-search');
     if (filter) filter.value = '';
+    var clear = $('mm-lib-clear');
+    if (clear) clear.hidden = true;
 
     var chips = document.querySelectorAll('.mm-chip');
     chips.forEach(function (chip) { chip.classList.toggle('is-active', chip.dataset.lib === mode); });
@@ -390,8 +414,17 @@
     $('mm-lib-more-wrap').hidden = true;
     $('mm-playlist-new-wrap').hidden = mode !== 'playlists';
     $('mm-library-scroll').scrollTop = 0;
+    updateLibraryTools();
 
     loadLibrary(true);
+  }
+
+  function updateLibraryTools() {
+    var sort = $('mm-library-sort');
+    var select = $('mm-library-select');
+    if (sort) sort.hidden = lib.mode !== 'songs';
+    if (select) select.hidden = lib.mode === 'playlists';
+    if (lib.mode === 'playlists' && libSelecting) setLibrarySelecting(false);
   }
 
   // Switches the library to the song list without clearing a query the user is
@@ -411,11 +444,12 @@
     $('mm-lib-playlists').hidden = true;
     $('mm-lib-more-wrap').hidden = true;
     $('mm-playlist-new-wrap').hidden = true;
+    updateLibraryTools();
   }
 
   function loadLibrary(force, more) {
-    var key = lib.mode + '|' + lib.query;
-    var fresh = libAt > 0 && key === libKey && Date.now() - libAt < 15000;
+    var key = lib.mode + '|' + lib.query + '|' + lib.sortBy + '|' + lib.descending;
+    var fresh = libAt > 0 && key === libKey && Date.now() - libAt < 20000;
 
     if (lib.mode === 'recent') {
       // Tab switches reuse the list that is already in the DOM.
@@ -459,8 +493,8 @@
     request('getLibrarySongs', {
       page: page,
       pageSize: 60,
-      sortBy: 'title',
-      descending: false,
+      sortBy: lib.sortBy,
+      descending: lib.descending,
       filterMissing: true
     }).then(function (data) {
       var songs = (data && data.songs) || [];
@@ -484,6 +518,7 @@
 
     $('mm-lib-more-wrap').hidden = libSongs.length >= lib.total || !!lib.query;
     patchThumbnails($('mm-lib-songs'), 0);
+    applyLibrarySelection();
   }
 
   function renderRecent() {
@@ -500,6 +535,7 @@
         }).join('')
       : '<div class="mm-empty"><i class="fas fa-clock-rotate-left"></i><span>Nothing played yet</span></div>';
     patchThumbnails($('mm-lib-recent'), 0);
+    applyLibrarySelection();
   }
 
   function renderPlaylists() {
@@ -527,6 +563,7 @@
     }
     var thumbClass = 'mm-thumb' + (song.thumbnail ? '' : ' thumb-pending');
     return '<button class="mm-song" data-song-id="' + esc(id) + '">' +
+      '<span class="mm-select-check" aria-hidden="true"><i class="fas fa-check"></i></span>' +
       '<div class="' + thumbClass + '" data-songid="' + esc(id) + '">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="" loading="lazy" decoding="async">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-song-text">' +
         '<div class="mm-song-title">' + esc(song.title || 'Unknown') + '</div>' +
@@ -586,6 +623,7 @@
   // ── Playlist detail (browse + modify) ────────────────────
   function openPlaylist(id) {
     if (!id) return;
+    if (libSelecting) setLibrarySelecting(false);
     if (currentTab !== 'playlist') playlistReturnTab = currentTab;
 
     request('getPlaylist', { playlistId: id }).then(function (data) {
@@ -1211,6 +1249,9 @@
     }
     if (data && data.repeatEnabled != null) setRepeatState(data.repeatEnabled);
     var signature = queueSignatureOf(queue) + '\u0003' + queueSignatureOf(playlistQueue);
+    // Queue indexes shift when the host changes the queue; keeping stale
+    // selected indexes would remove the wrong song.
+    if (queueSelecting && signature !== queueSignature) queueSelection = {};
     queueDirty = signature !== queueSignature;
     // Do not build a queue DOM that nobody can see. Opening the sheet renders
     // the latest state in one pass; while open, identical updates are a no-op.
@@ -1238,14 +1279,14 @@
 
     if (queue.length) {
       html += queue.map(function (item, index) {
-        return queueRow(item, index, index === 0, 'removeQueueItem', 'queue');
+        return queueRow(item, index, index === 0, 'queue');
       }).join('');
     }
 
     if (playlistQueue.length) {
       html += '<div class="mm-row" style="margin:12px 0 2px"><h3>Playlist</h3></div>';
       html += playlistQueue.map(function (item, index) {
-        return queueRow(item, index, false, 'removePlaylistQueueItem', 'playlist');
+        return queueRow(item, index, false, 'playlist');
       }).join('');
     }
 
@@ -1263,33 +1304,140 @@
       rows[r].classList.add('is-enter');
       rows[r].style.animationDelay = (r * 16) + 'ms';
     }
+    queueListEl.classList.toggle('is-selecting', queueSelecting);
+    applyQueueSelection();
   }
 
-  function queueRow(item, index, current, removeMethod, moveSource) {
-    // The first queue item is the now-playing slot and cannot be reordered (the
-    // desktop engine refuses to move anything into index 0).
-    var canMove = !current;
-    var listLength = moveSource === 'playlist' ? playlistQueue.length : queue.length;
-    var move = '';
-    if (canMove) {
-      var canUp = moveSource === 'playlist' ? index > 0 : index > 1;
-      var canDown = index < listLength - 1;
-      move =
-        '<button class="mm-icon-btn" data-move="up" data-source="' + moveSource + '" data-index="' + index + '"' + (canUp ? '' : ' disabled') + ' aria-label="Move up"><i class="fas fa-chevron-up"></i></button>' +
-        '<button class="mm-icon-btn" data-move="down" data-source="' + moveSource + '" data-index="' + index + '"' + (canDown ? '' : ' disabled') + ' aria-label="Move down"><i class="fas fa-chevron-down"></i></button>';
-    }
-
-    return '<div class="mm-queue-row' + (current ? ' is-current' : '') + '" data-song-path="' + esc(item.songPath || '') + '">' +
+  function queueRow(item, index, current, moveSource) {
+    // Compact row: no per-row move/remove buttons. Actions live behind a
+    // long-press sheet, and multi-select exposes batch removal, so more of the
+    // queue fits on screen without losing any action.
+    return '<div class="mm-queue-row' + (current ? ' is-current' : '') + '" data-song-path="' + esc(item.songPath || '') + '" data-queue-source="' + moveSource + '" data-queue-index="' + index + '">' +
+      '<span class="mm-select-check" aria-hidden="true"><i class="fas fa-check"></i></span>' +
       (current ? '<div class="mm-now-bar"></div>' : '') +
       '<div class="mm-thumb">' + (item.thumbnail ? '<img src="' + esc(item.thumbnail) + '" alt="" loading="lazy" decoding="async">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-queue-text">' +
         '<div class="mm-queue-title">' + esc(item.title || 'Unknown') + '</div>' +
         '<div class="mm-queue-sub">' + esc(item.artist || item.estimatedStart || '—') + '</div>' +
       '</div>' +
-      move +
-      '<button class="mm-icon-btn" data-remove="' + esc(removeMethod) + '" data-index="' + index + '" aria-label="Remove">' +
-        '<i class="fas fa-times"></i></button>' +
       '</div>';
+  }
+
+  // ── Queue multi-select ───────────────────────────────────
+  function queueSelectionKey(source, index) { return source + ':' + index; }
+
+  function setQueueSelecting(on) {
+    queueSelecting = !!on;
+    queueSelection = {};
+
+    var button = $('mm-queue-select');
+    if (button) {
+      button.classList.toggle('is-active', queueSelecting);
+      button.setAttribute('aria-pressed', queueSelecting ? 'true' : 'false');
+      button.setAttribute('aria-label', queueSelecting ? 'Finish selecting queue items' : 'Select queue items');
+    }
+
+    var bar = $('mm-queue-multi');
+    if (bar) {
+      bar.hidden = !queueSelecting;
+      if (queueSelecting) {
+        bar.classList.remove('is-enter');
+        void bar.offsetWidth;
+        bar.classList.add('is-enter');
+      }
+    }
+    queueListEl.classList.toggle('is-selecting', queueSelecting);
+    applyQueueSelection();
+  }
+
+  function applyQueueSelection() {
+    var count = 0;
+    var rows = queueListEl.querySelectorAll('.mm-queue-row[data-queue-index]');
+    for (var i = 0; i < rows.length; i++) {
+      var source = rows[i].dataset.queueSource;
+      var index = parseInt(rows[i].dataset.queueIndex, 10);
+      var selected = queueSelecting && !!queueSelection[queueSelectionKey(source, index)];
+      rows[i].classList.toggle('is-selected', selected);
+      if (selected) count++;
+    }
+
+    var countEl = $('mm-queue-multi-count');
+    if (countEl) countEl.textContent = count + ' selected';
+    var remove = document.querySelector('#mm-queue-multi [data-queue-multi="remove"]');
+    if (remove) remove.disabled = count === 0;
+  }
+
+  function toggleQueueSelection(source, index) {
+    var key = queueSelectionKey(source, index);
+    if (queueSelection[key]) delete queueSelection[key];
+    else queueSelection[key] = true;
+    applyQueueSelection();
+  }
+
+  function clearQueueSelection() {
+    queueSelection = {};
+    applyQueueSelection();
+  }
+
+  function removeSelectedQueueItems() {
+    var queueIndexes = [];
+    var playlistIndexes = [];
+    Object.keys(queueSelection).forEach(function (key) {
+      var split = key.split(':');
+      var index = parseInt(split[1], 10);
+      if (!isFinite(index)) return;
+      if (split[0] === 'playlist') playlistIndexes.push(index);
+      else queueIndexes.push(index);
+    });
+
+    queueIndexes.sort(function (a, b) { return b - a; });
+    playlistIndexes.sort(function (a, b) { return b - a; });
+    var total = queueIndexes.length + playlistIndexes.length;
+    if (!total) return;
+
+    queueIndexes.forEach(function (index) { send('removeQueueItem', { index: index }); });
+    playlistIndexes.forEach(function (index) { send('removePlaylistQueueItem', { index: index }); });
+
+    toast('Removed ' + total + (total === 1 ? ' item' : ' items') + ' from the queue', 'success');
+    setQueueSelecting(false);
+  }
+
+  function openQueueItemActions(source, index) {
+    var list = source === 'playlist' ? playlistQueue : queue;
+    var item = list[index];
+    if (!item) return;
+    var canUp = source === 'playlist' ? index > 0 : index > 1;
+    var canDown = index < list.length - 1;
+
+    openSheet(
+      '<h3>' + esc(item.title || 'Queue item') + '</h3>' +
+      '<button class="mm-sheet-action" data-queue-action="up"' + (canUp ? '' : ' disabled') + '><i class="fas fa-chevron-up"></i> Move up</button>' +
+      '<button class="mm-sheet-action" data-queue-action="down"' + (canDown ? '' : ' disabled') + '><i class="fas fa-chevron-down"></i> Move down</button>' +
+      '<button class="mm-sheet-action is-danger" data-queue-action="remove"><i class="fas fa-trash-alt"></i> Remove from queue</button>'
+    );
+    sheetBody.dataset.queueSource = source;
+    sheetBody.dataset.queueIndex = String(index);
+  }
+
+  function onQueueItemAction(button) {
+    var source = sheetBody.dataset.queueSource || 'queue';
+    var index = parseInt(sheetBody.dataset.queueIndex, 10);
+    if (!isFinite(index)) return;
+    var action = button.dataset.queueAction;
+    var list = source === 'playlist' ? playlistQueue : queue;
+
+    if (action === 'remove') {
+      send(source === 'playlist' ? 'removePlaylistQueueItem' : 'removeQueueItem', { index: index });
+      closeSheet();
+      return;
+    }
+
+    var target = action === 'up' ? index - 1 : index + 1;
+    var minIndex = source === 'playlist' ? 0 : 1;
+    if (target < minIndex || target >= list.length) { closeSheet(); return; }
+
+    send(source === 'playlist' ? 'movePlaylistQueueItem' : 'moveQueueItem', { fromIndex: index, toIndex: target });
+    closeSheet();
   }
 
   // Artwork arrives after the queue when the background cache was cold; patch the
@@ -1599,20 +1747,29 @@
   }
 
   // ── Wiring ───────────────────────────────────────────────
-  function bindTapList(container, handler) {
+  function bindTapList(container, handler, selectable) {
     container.addEventListener('click', function (event) {
       var button = event.target.closest('button[data-song-id]');
-      if (button) { handler('song', button.dataset.songId); return; }
+      if (button) {
+        if (selectable && libSelecting) toggleSongSelection(button.dataset.songId);
+        else handler('song', button.dataset.songId);
+        return;
+      }
 
       var playlist = event.target.closest('button[data-playlist-id]');
       if (playlist) handler('playlist', playlist.dataset.playlistId);
     });
 
-    // Long-press (Android fires contextmenu) opens the song actions.
+    // Long-press (Android fires contextmenu) opens the song actions. While
+    // selecting, it is a faster way to toggle a row instead.
     container.addEventListener('contextmenu', function (event) {
       var button = event.target.closest('button[data-song-id]');
       if (!button) return;
       event.preventDefault();
+      if (selectable && libSelecting) {
+        toggleSongSelection(button.dataset.songId);
+        return;
+      }
       var row = button.querySelector('.mm-song-title, .mm-card-title');
       openSongActions(button.dataset.songId, row ? row.textContent : '');
     });
@@ -1624,8 +1781,8 @@
   bindTapList($('mm-home-scroll'), function (kind, id) {
     if (kind === 'song') playSong(id); else openPlaylist(id);
   });
-  bindTapList($('mm-lib-songs'), function (kind, id) { if (kind === 'song') playSong(id); });
-  bindTapList($('mm-lib-recent'), function (kind, id) { if (kind === 'song') playSong(id); });
+  bindTapList($('mm-lib-songs'), function (kind, id) { if (kind === 'song') playSong(id); }, true);
+  bindTapList($('mm-lib-recent'), function (kind, id) { if (kind === 'song') playSong(id); }, true);
   bindTapList($('mm-lib-playlists'), function (kind, id) { if (kind === 'playlist') openPlaylist(id); });
   bindTapList($('mm-playlist-list'), function (kind, id) { if (kind === 'song') playSong(id); });
 
@@ -1696,17 +1853,42 @@
   });
 
   var libSearch = $('mm-lib-search');
+  var libClear = $('mm-lib-clear');
   var libTimer = null;
   libSearch.addEventListener('input', function () {
     // Cars show the search field on every library destination; start typing and
     // the list switches to song results without losing the text.
     ensureSongsMode();
+    if (libClear) libClear.hidden = !libSearch.value;
     clearTimeout(libTimer);
     libTimer = setTimeout(function () {
       lib.query = libSearch.value.trim();
       lib.page = 0;
       loadLibrary(true);
     }, 250);
+  });
+  if (libClear) libClear.addEventListener('click', function () {
+    libSearch.value = '';
+    libClear.hidden = true;
+    lib.query = '';
+    lib.page = 0;
+    loadLibrary(true);
+    libSearch.focus();
+  });
+
+  $('mm-library-sort').addEventListener('click', cycleLibrarySort);
+  $('mm-library-select').addEventListener('click', function () {
+    setLibrarySelecting(!libSelecting);
+  });
+  $('mm-lib-multi-cancel').addEventListener('click', function () { setLibrarySelecting(false); });
+  document.querySelectorAll('#mm-lib-multi [data-lib-multi]').forEach(function (button) {
+    button.addEventListener('click', function () { runLibraryMultiAction(button.dataset.libMulti); });
+  });
+
+  $('mm-home-refresh').addEventListener('click', function () {
+    feedAt = 0;
+    loadHomeFeed(true);
+    toast('Home refreshed', 'info');
   });
 
   $('mm-lib-more').addEventListener('click', function () { loadLibrary(false, true); });
@@ -1775,16 +1957,6 @@
   queueScrim.addEventListener('click', function () { closeQueue(true); });
   $('mm-queue-clear').addEventListener('click', function () { send('clearQueue'); });
 
-  queueListEl.addEventListener('click', function (event) {
-    var remove = event.target.closest('button[data-remove]');
-    if (!remove) return;
-
-    var index = parseInt(remove.dataset.index, 10);
-    if (!isFinite(index)) return;
-
-    send(remove.dataset.remove, { index: index });
-  });
-
   // Empty library: import music.
   $('mm-home-import').addEventListener('click', function () { send('importLibrary', { mode: 'files' }); });
 
@@ -1801,6 +1973,10 @@
       setLyricsSettingsChipActive(false);
     }
     sheetBody.dataset.sheet = kind || '';
+    delete sheetBody.dataset.songId;
+    delete sheetBody.dataset.songIds;
+    delete sheetBody.dataset.queueSource;
+    delete sheetBody.dataset.queueIndex;
     sheetBody.innerHTML = html;
     sheetScrim.hidden = false;
     sheet.hidden = false;
@@ -1990,6 +2166,9 @@
       openSheet(
         '<h3>Operating mode</h3>' +
         '<div class="mm-sheet-row"><select id="mm-set-mode">' + modeOptions + '</select></div>' +
+        '<h3>Launch</h3>' +
+        '<label class="mm-check"><input type="checkbox" id="mm-set-new-launch"' + (cfg.newLaunchExperience === true ? ' checked' : '') + '> New animated launch experience</label>' +
+        '<div class="mm-sheet-note">Starts in your previous mode, skips the mode picker and tries YouTube sign-in quietly in the background.</div>' +
         '<h3>Playback</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-auto-analyze"' + (cfg.autoAnalyzeSongs !== false ? ' checked' : '') + '> Automatically analyze playing songs</label>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-karaoke"' + (cfg.karaokeMode === true ? ' checked' : '') + '> Karaoke mode (syllable-by-syllable lyrics and pause bars)</label>' +
@@ -2268,6 +2447,7 @@
         return;
       }
       var settings = {
+        newLaunchExperience: !!($('mm-set-new-launch') && $('mm-set-new-launch').checked),
         address: $('mm-set-address').value.trim(),
         bearerToken: $('mm-set-token').value,
         autoGrabCookies: $('mm-set-auto-yt').checked,
@@ -2443,11 +2623,13 @@
     }
   }
 
-  function openPlaylistPicker(songId) {
+  function openPlaylistPicker(songId, songIds) {
+    var ids = songIds && songIds.length ? songIds : (songId ? [songId] : []);
     request('getPlaylists').then(function (data) {
       // Auto/dynamic playlists are generated and cannot receive songs.
       var lists = ((data && data.playlists) || []).filter(function (list) { return !list.isDynamic; });
-      var html = '<h3>Add to playlist</h3>';
+      var html = '<h3>Add to playlist</h3>' +
+        (ids.length > 1 ? '<div class="mm-sheet-empty">' + ids.length + ' songs selected</div>' : '');
 
       if (!lists.length) html += '<div class="mm-sheet-empty">No playlists yet — create one below.</div>';
 
@@ -2466,19 +2648,154 @@
       playlistIconSelection = 'fa-list';
       openSheet(html);
       renderPlaylistIconPicker();
-      sheetBody.dataset.songId = songId;
+      sheetBody.dataset.songId = ids.length === 1 ? ids[0] : '';
+      sheetBody.dataset.songIds = JSON.stringify(ids);
     }).catch(function () { });
   }
 
-  function createPlaylist(name, songId) {
+  function sheetSongIds() {
+    try {
+      var ids = JSON.parse(sheetBody.dataset.songIds || '[]');
+      if (Array.isArray(ids) && ids.length) return ids;
+    } catch (_) { }
+    var single = sheetBody.dataset.songId;
+    return single ? [single] : [];
+  }
+
+  function createPlaylist(name, songIds) {
     if (!name) return;
+    var ids = Array.isArray(songIds) ? songIds : (songIds ? [songIds] : []);
     request('createPlaylist', { name: name, icon: playlistIconSelection || 'fa-list' }).then(function (result) {
       if (result && result.error) { toast(result.error, 'error'); return; }
-      if (songId && result && result.id) send('addSongToPlaylist', { playlistId: result.id, songId: songId });
+      if (ids.length && result && result.id) {
+        if (ids.length === 1) send('addSongToPlaylist', { playlistId: result.id, songId: ids[0] });
+        else send('addSongsToPlaylist', { playlistId: result.id, songIds: ids });
+      }
       toast('Playlist created', 'success');
       closeSheet();
+      if (libSelecting) setLibrarySelecting(false);
       refreshPlaylists();
     }).catch(function (error) { toast(error.message, 'error'); });
+  }
+
+  // ── Library multi-select ─────────────────────────────────
+  function setLibrarySelecting(on) {
+    libSelecting = !!on;
+    selectedSongIds = {};
+
+    var button = $('mm-library-select');
+    if (button) {
+      button.classList.toggle('is-active', libSelecting);
+      button.setAttribute('aria-pressed', libSelecting ? 'true' : 'false');
+      button.setAttribute('aria-label', libSelecting ? 'Finish selecting songs' : 'Select songs');
+    }
+
+    var songs = $('mm-lib-songs');
+    var recent = $('mm-lib-recent');
+    if (songs) songs.classList.toggle('is-selecting', libSelecting);
+    if (recent) recent.classList.toggle('is-selecting', libSelecting);
+
+    var bar = $('mm-lib-multi');
+    if (bar) {
+      bar.hidden = !libSelecting;
+      if (libSelecting) {
+        bar.classList.remove('is-enter');
+        void bar.offsetWidth;
+        bar.classList.add('is-enter');
+      }
+    }
+
+    if (!libSelecting) {
+      // Leaving selection mode also leaves the extra bottom padding behind.
+      var view = views.library;
+      if (view) view.classList.remove('is-selecting');
+      applyLibrarySelection();
+      return;
+    }
+
+    if (views.library) views.library.classList.add('is-selecting');
+    applyLibrarySelection();
+  }
+
+  function applyLibrarySelection() {
+    var count = 0;
+    var seen = {};
+    if (views.library) {
+      var rows = views.library.querySelectorAll('.mm-song[data-song-id]');
+      for (var i = 0; i < rows.length; i++) {
+        var id = rows[i].dataset.songId;
+        var selected = !!(libSelecting && selectedSongIds[id]);
+        rows[i].classList.toggle('is-selected', selected);
+        // The same song can exist in both the songs and recent lists; count it
+        // once even though both DOM rows show the selected state.
+        if (selected && !seen[id]) { seen[id] = true; count++; }
+      }
+    }
+
+    var countEl = $('mm-lib-multi-count');
+    if (countEl) countEl.textContent = count + ' selected';
+    var actions = document.querySelectorAll('#mm-lib-multi .mm-multi-btn');
+    for (var a = 0; a < actions.length; a++) actions[a].disabled = count === 0;
+  }
+
+  function toggleSongSelection(id) {
+    if (!id) return;
+    if (selectedSongIds[id]) delete selectedSongIds[id];
+    else selectedSongIds[id] = true;
+    applyLibrarySelection();
+  }
+
+  function selectedSongIdList() {
+    return Object.keys(selectedSongIds);
+  }
+
+  function runLibraryMultiAction(action) {
+    var ids = selectedSongIdList();
+    if (!ids.length) return;
+
+    if (action === 'queue') {
+      send('queueLibrarySongs', { songIds: ids });
+      toast(ids.length + (ids.length === 1 ? ' song queued' : ' songs queued'), 'success');
+      setLibrarySelecting(false);
+      return;
+    }
+
+    if (action === 'playlist') {
+      openPlaylistPicker(null, ids);
+      return;
+    }
+
+    if (action === 'remove') {
+      openConfirmSheet(
+        'Remove from library',
+        'Remove ' + ids.length + (ids.length === 1 ? ' song' : ' songs') + ' from the library?',
+        'Remove',
+        function () {
+          request('deleteLibrarySongs', { songIds: ids }).then(function (result) {
+            if (result && result.error) { toast(result.error, 'error'); return; }
+            toast('Removed ' + (result.count || ids.length) + ' from the library', 'success');
+            setLibrarySelecting(false);
+            refreshLibraryViews();
+          }).catch(function (error) { toast(error.message, 'error'); });
+        }
+      );
+    }
+  }
+
+  function cycleLibrarySort() {
+    var index = 0;
+    for (var i = 0; i < LIB_SORTS.length; i++) {
+      if (LIB_SORTS[i].id === lib.sortBy) { index = i; break; }
+    }
+    var next = LIB_SORTS[(index + 1) % LIB_SORTS.length];
+    lib.sortBy = next.id;
+    lib.descending = next.descending;
+    libAt = 0;
+    try {
+      localStorage.setItem('sr-mobile-library-sort', JSON.stringify({ id: lib.sortBy, descending: lib.descending }));
+    } catch (_) { }
+    toast('Sorted by ' + next.label, 'info');
+    if (lib.mode === 'songs' && !lib.query) loadLibrary(true);
   }
 
   function refreshPlaylists() {
@@ -2669,14 +2986,20 @@
     var action = event.target.closest('button[data-song-action]');
     if (action) { onSongAction(action); return; }
 
+    var queueAction = event.target.closest('button[data-queue-action]');
+    if (queueAction) { onQueueItemAction(queueAction); return; }
+
     var add = event.target.closest('button[data-add-playlist]');
     if (add) {
-      var songId = sheetBody.dataset.songId;
-      if (songId) {
-        send('addSongToPlaylist', { playlistId: add.dataset.addPlaylist, songId: songId });
-        toast('Added to playlist', 'success');
+      var ids = sheetSongIds();
+      if (ids.length === 1) {
+        send('addSongToPlaylist', { playlistId: add.dataset.addPlaylist, songId: ids[0] });
+      } else if (ids.length > 1) {
+        send('addSongsToPlaylist', { playlistId: add.dataset.addPlaylist, songIds: ids });
       }
+      if (ids.length) toast('Added ' + ids.length + (ids.length === 1 ? ' song' : ' songs') + ' to playlist', 'success');
       closeSheet();
+      if (libSelecting) setLibrarySelecting(false);
       return;
     }
 
@@ -2686,7 +3009,7 @@
     var inlineCreate = event.target.closest('#mm-create-playlist-inline');
     if (inlineCreate) {
       var input = $('mm-new-playlist-name');
-      createPlaylist(input ? input.value.trim() : '', sheetBody.dataset.songId);
+      createPlaylist(input ? input.value.trim() : '', sheetSongIds());
     }
   });
 
@@ -2782,24 +3105,36 @@
     if (searchButton) searchYoutubeFor(lastQuery);
   });
 
-  // Queue reordering / removal.
+  // Queue rows: tap while selecting toggles; long-press opens the compact item
+  // actions (move/remove). No per-row buttons, so the list stays dense.
+  function queueRowAt(event) {
+    var row = event.target.closest('.mm-queue-row[data-queue-index]');
+    if (!row) return null;
+    var index = parseInt(row.dataset.queueIndex, 10);
+    if (!isFinite(index)) return null;
+    return { row: row, source: row.dataset.queueSource || 'queue', index: index };
+  }
+
   queueListEl.addEventListener('click', function (event) {
-    var move = event.target.closest('button[data-move]');
-    if (move) {
-      var index = parseInt(move.dataset.index, 10);
-      if (!isFinite(index)) return;
-
-      var isPlaylist = move.dataset.source === 'playlist';
-      var list = isPlaylist ? playlistQueue : queue;
-      var target = move.dataset.move === 'up' ? index - 1 : index + 1;
-      // The now-playing slot (regular queue index 0) must stay first.
-      var minIndex = isPlaylist ? 0 : 1;
-      if (target < minIndex || target >= list.length) return;
-
-      send(isPlaylist ? 'movePlaylistQueueItem' : 'moveQueueItem', { fromIndex: index, toIndex: target });
-      return;
-    }
+    var target = queueRowAt(event);
+    if (!target || !queueSelecting) return;
+    toggleQueueSelection(target.source, target.index);
   });
+
+  queueListEl.addEventListener('contextmenu', function (event) {
+    var target = queueRowAt(event);
+    if (!target) return;
+    event.preventDefault();
+    if (queueSelecting) toggleQueueSelection(target.source, target.index);
+    else openQueueItemActions(target.source, target.index);
+  });
+
+  $('mm-queue-select').addEventListener('click', function () {
+    setQueueSelecting(!queueSelecting);
+  });
+  $('mm-queue-multi-cancel').addEventListener('click', function () { setQueueSelecting(false); });
+  var queueMultiRemove = document.querySelector('#mm-queue-multi [data-queue-multi="remove"]');
+  if (queueMultiRemove) queueMultiRemove.addEventListener('click', removeSelectedQueueItems);
 
   // Share wiring.
   $('mm-share-start').addEventListener('click', toggleSharing);

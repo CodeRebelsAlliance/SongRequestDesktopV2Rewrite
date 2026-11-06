@@ -1102,6 +1102,9 @@ public class YoutubeFormInterop
                 case "grabCookies":
                     result = await GrabCookiesAsync(msg);
                     break;
+                case "silentAuth":
+                    result = await SilentAuthAsync();
+                    break;
                 case "saveCookieBrowser":
                     result = SaveCookieBrowser(msg);
                     break;
@@ -1142,6 +1145,15 @@ public class YoutubeFormInterop
                     break;
                 case "deleteLibrarySong":
                     result = DeleteLibrarySong(msg);
+                    break;
+                case "deleteLibrarySongs":
+                    result = DeleteLibrarySongs(msg);
+                    break;
+                case "queueLibrarySongs":
+                    result = QueueLibrarySongs(msg);
+                    break;
+                case "addSongsToPlaylist":
+                    result = AddSongsToPlaylist(msg);
                     break;
                 case "updateLibrarySongMetadata":
                     result = UpdateLibrarySongMetadata(msg);
@@ -3320,6 +3332,7 @@ public class YoutubeFormInterop
             toolPromptDismissed = cfg.ToolPromptDismissed,
             cookieBrowser = cfg.CookieBrowser ?? string.Empty,
             autoGrabCookies = cfg.AutoGrabCookies,
+            newLaunchExperience = cfg.NewLaunchExperience,
             systemMediaIntegration = cfg.SystemMediaIntegration,
             autoAnalyzeSongs = cfg.AutoAnalyzeSongs,
             autoAnalyzeLibraryOnAdd = cfg.AutoAnalyzeLibraryOnAdd,
@@ -3683,6 +3696,7 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("aiVocalModelId", out var aiVocalModel)) cfg.AiVocalModelId = aiVocalModel.ToString();
                 if (settings.TryGetValue("aiDisclaimerAccepted", out var aiDisclaimer)) cfg.AiDisclaimerAccepted = aiDisclaimer.ToObject<bool>();
                 if (settings.TryGetValue("autoGrabCookies", out var agc)) cfg.AutoGrabCookies = agc.ToObject<bool>();
+                if (settings.TryGetValue("newLaunchExperience", out var nle)) cfg.NewLaunchExperience = nle.ToObject<bool>();
 
                 // Local API / MCP servers. ApplyConfig is called after the update;
                 // these assignments only persist the values.
@@ -3947,6 +3961,10 @@ public class YoutubeFormInterop
             setupComplete = _ytForm.SetupComplete,
             cookieBrowser = ConfigService.Instance.Current?.CookieBrowser ?? string.Empty,
             autoGrabCookies = ConfigService.Instance.Current?.AutoGrabCookies ?? false,
+            newLaunchExperience = ConfigService.Instance.Current?.NewLaunchExperience ?? false,
+            // The mode the app was last configured for; the new launch experience
+            // starts here instead of showing the picker.
+            defaultMode = ConfigService.Instance.Current?.OperatingMode ?? "SongRequests",
             launchOptions = new
             {
                 rememberSelection = state.RememberSelection,
@@ -4233,6 +4251,50 @@ public class YoutubeFormInterop
 
         ApplyCookies(cookies);
         return new { success = true, cookieCount = cookies.Count };
+    }
+
+    /// <summary>
+    /// Quiet authentication used by the new launch experience. It never opens a
+    /// browser/login window: it reuses saved cookies and, on desktop, may import
+    /// them from the configured browser in the background. A phone with no saved
+    /// session simply continues without blocking startup; the user can sign in
+    /// later from Settings.
+    /// </summary>
+    private async Task<object> SilentAuthAsync()
+    {
+        try
+        {
+            var saved = YoutubeCookieService.LoadSaved();
+            if (saved.Count > 0)
+            {
+                ApplyCookies(saved);
+                return new { success = true, cookieCount = saved.Count, alreadySignedIn = true };
+            }
+
+            var cfg = ConfigService.Instance.Current;
+            if (cfg?.AutoGrabCookies == true && SignInAsync == null &&
+                !string.IsNullOrWhiteSpace(cfg.CookieBrowser))
+            {
+                var (ok, cookies, error) = await YoutubeCookieService
+                    .GrabFromBrowserAsync(cfg.CookieBrowser)
+                    .ConfigureAwait(false);
+
+                if (ok && cookies.Count > 0)
+                {
+                    ApplyCookies(cookies);
+                    return new { success = true, cookieCount = cookies.Count };
+                }
+
+                return new { success = false, skipped = true, error };
+            }
+
+            return new { success = false, skipped = true };
+        }
+        catch (Exception ex)
+        {
+            // Authentication must never block or break launch.
+            return new { success = false, skipped = true, error = ex.Message };
+        }
     }
 
     private object SubmitCookies(JObject msg)
@@ -5536,6 +5598,57 @@ public class YoutubeFormInterop
         return new { success = true };
     }
 
+    /// <summary>Queues several library items in one batch (used by multi-select).</summary>
+    private object QueueLibrarySongs(JObject msg)
+    {
+        var ids = msg["songIds"] as JArray;
+        if (ids == null || ids.Count == 0) return new { error = "No songIds" };
+
+        var songs = new List<Song>();
+        lock (_libraryService.Data)
+        {
+            foreach (var token in ids)
+            {
+                var id = token?.ToString();
+                if (string.IsNullOrEmpty(id)) continue;
+                var libSong = _libraryService.Data.FindSong(id);
+                if (libSong == null || !File.Exists(libSong.FilePath)) continue;
+                songs.Add(CreateSongFromLibrary(libSong));
+            }
+        }
+
+        if (songs.Count == 0) return new { error = "No playable songs found" };
+
+        PostToUi(() =>
+        {
+            try { _ytForm.Music?.AddSongs(songs); } catch { }
+        });
+
+        return new { success = true, count = songs.Count };
+    }
+
+    /// <summary>Deletes several library entries in one request.</summary>
+    private object DeleteLibrarySongs(JObject msg)
+    {
+        var ids = msg["songIds"] as JArray;
+        if (ids == null || ids.Count == 0) return new { error = "No songIds" };
+
+        int removed = 0;
+        int failed = 0;
+        foreach (var token in ids)
+        {
+            var id = token?.ToString();
+            if (string.IsNullOrEmpty(id)) { failed++; continue; }
+
+            var result = DeleteLibrarySong(new JObject { ["songId"] = id });
+            var hasError = result?.GetType().GetProperty("error")?.GetValue(result) != null;
+            if (hasError) failed++;
+            else removed++;
+        }
+
+        return new { success = removed > 0, count = removed, failed };
+    }
+
     private object PlayLibrarySongNext(JObject msg)
     {
         var songId = msg["songId"]?.ToString();
@@ -5969,6 +6082,29 @@ public class YoutubeFormInterop
             return new { error = "Missing playlistId or songId" };
         var pl = _libraryService.AddSongToPlaylist(playlistId, songId);
         return pl != null ? new { success = true, songCount = pl.Entries.Count } : new { error = "Playlist not found" };
+    }
+
+    /// <summary>Adds several library songs to a playlist in one request.</summary>
+    private object AddSongsToPlaylist(JObject msg)
+    {
+        var playlistId = msg["playlistId"]?.ToString();
+        var ids = msg["songIds"] as JArray;
+        if (string.IsNullOrEmpty(playlistId) || ids == null || ids.Count == 0)
+            return new { error = "Missing playlistId or songIds" };
+        if (IsDynamicPlaylist(playlistId))
+            return new { error = "Dynamic playlists update automatically" };
+
+        int added = 0;
+        foreach (var token in ids)
+        {
+            var songId = token?.ToString();
+            if (string.IsNullOrEmpty(songId)) continue;
+            var playlist = _libraryService.AddSongToPlaylist(playlistId, songId);
+            if (playlist != null) added++;
+        }
+
+        if (added == 0) return new { error = "Playlist not found" };
+        return new { success = true, count = added };
     }
 
     private object RemovePlaylistEntry(JObject msg)

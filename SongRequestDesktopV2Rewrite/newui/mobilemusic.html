@@ -18,7 +18,10 @@
     <section class="mm-view" id="mm-view-home">
       <header class="mm-header">
         <div class="mm-brand"><img src="SRshortLogo.png" alt=""><span>Music</span></div>
-        <button id="mm-home-settings" class="mm-icon-btn" aria-label="Settings"><i class="fas fa-gear"></i></button>
+        <div class="mm-header-actions">
+          <button id="mm-home-refresh" class="mm-icon-btn" aria-label="Refresh home"><i class="fas fa-rotate"></i></button>
+          <button id="mm-home-settings" class="mm-icon-btn" aria-label="Settings"><i class="fas fa-gear"></i></button>
+        </div>
       </header>
 
       <div class="mm-search">
@@ -67,7 +70,11 @@
     <section class="mm-view" id="mm-view-library" hidden>
       <header class="mm-header">
         <h1 id="mm-library-title">Library</h1>
-        <button id="mm-library-settings" class="mm-icon-btn" aria-label="Settings"><i class="fas fa-gear"></i></button>
+        <div class="mm-header-actions">
+          <button id="mm-library-sort" class="mm-icon-btn" aria-label="Change library sort" title="Sort"><i class="fas fa-arrow-down-wide-short"></i></button>
+          <button id="mm-library-select" class="mm-icon-btn" aria-label="Select songs" aria-pressed="false" title="Select"><i class="fas fa-check-square"></i></button>
+          <button id="mm-library-settings" class="mm-icon-btn" aria-label="Settings"><i class="fas fa-gear"></i></button>
+        </div>
       </header>
 
       <div class="mm-chips">
@@ -79,6 +86,7 @@
       <div class="mm-search" id="mm-lib-search-wrap">
         <i class="fas fa-search"></i>
         <input id="mm-lib-search" type="search" placeholder="Filter songs" autocomplete="off" spellcheck="false">
+        <button id="mm-lib-clear" class="mm-icon-btn" hidden aria-label="Clear filter"><i class="fas fa-times"></i></button>
       </div>
 
       <div class="mm-scroll" id="mm-library-scroll">
@@ -91,6 +99,16 @@
         <div class="mm-more" id="mm-playlist-new-wrap" hidden>
           <button id="mm-playlist-new" class="mm-btn"><i class="fas fa-plus"></i> New playlist</button>
         </div>
+      </div>
+
+      <div id="mm-lib-multi" class="mm-multi-bar" hidden>
+        <span id="mm-lib-multi-count" class="mm-multi-count">0 selected</span>
+        <div class="mm-multi-actions">
+          <button class="mm-multi-btn" data-lib-multi="queue" aria-label="Add selected to queue"><i class="fas fa-list"></i><span>Queue</span></button>
+          <button class="mm-multi-btn" data-lib-multi="playlist" aria-label="Add selected to playlist"><i class="fas fa-folder-plus"></i><span>Playlist</span></button>
+          <button class="mm-multi-btn is-danger" data-lib-multi="remove" aria-label="Remove selected from library"><i class="fas fa-trash-alt"></i></button>
+        </div>
+        <button id="mm-lib-multi-cancel" class="mm-multi-cancel" aria-label="Cancel selection"><i class="fas fa-times"></i></button>
       </div>
     </section>
 
@@ -209,11 +227,22 @@
   <aside id="mm-queue" hidden aria-label="Queue">
     <header>
       <h2>Queue</h2>
-      <button id="mm-queue-close" class="mm-icon-btn" aria-label="Close"><i class="fas fa-times"></i></button>
+      <div class="mm-header-actions">
+        <button id="mm-queue-select" class="mm-icon-btn" aria-label="Select queue items" aria-pressed="false" title="Select"><i class="fas fa-check-square"></i></button>
+        <button id="mm-queue-close" class="mm-icon-btn" aria-label="Close"><i class="fas fa-times"></i></button>
+      </div>
     </header>
     <div class="mm-queue-actions">
       <button id="mm-queue-shuffle" class="mm-btn mm-quiet"><i class="fas fa-shuffle"></i> Shuffle</button>
       <button id="mm-queue-clear" class="mm-btn mm-quiet"><i class="fas fa-trash-alt"></i> Clear</button>
+      <span class="mm-queue-hint">Long-press for actions</span>
+    </div>
+    <div id="mm-queue-multi" class="mm-multi-bar is-inside" hidden>
+      <span id="mm-queue-multi-count" class="mm-multi-count">0 selected</span>
+      <div class="mm-multi-actions">
+        <button class="mm-multi-btn is-danger" data-queue-multi="remove" aria-label="Remove selected"><i class="fas fa-trash-alt"></i><span>Remove</span></button>
+      </div>
+      <button id="mm-queue-multi-cancel" class="mm-multi-cancel" aria-label="Cancel selection"><i class="fas fa-times"></i></button>
     </div>
     <div class="mm-scroll" id="mm-queue-scroll">
       <div id="mm-queue-list" class="mm-list"></div>

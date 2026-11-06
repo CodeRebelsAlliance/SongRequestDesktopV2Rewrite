@@ -326,7 +326,7 @@ select:disabled { opacity: 0.55; cursor: default; }
 #startup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f0f10; z-index: 99999; display: flex; align-items: center; justify-content: center; transition: opacity 0.4s ease; }
 
 /* Quit is always reachable while the app is loading (and on the main page). */
-#startup-quit { position: absolute; top: 16px; right: 18px; display: inline-flex; align-items: center; gap: 8px; background: #1e1e1e; color: #d0d0d0; border: 1px solid #333; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-family: inherit; cursor: pointer; transition: all 0.15s ease; }
+#startup-quit { position: absolute; top: 16px; right: 18px; z-index: 4; display: inline-flex; align-items: center; gap: 8px; background: #1e1e1e; color: #d0d0d0; border: 1px solid #333; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-family: inherit; cursor: pointer; transition: all 0.15s ease; }
 #startup-quit:hover { background: #2a1a1a; border-color: #a33; color: #f0b0b0; }
 .top-btn-quit:hover { background: #2a1a1a; border-color: #a33; color: #f0b0b0; }
 
@@ -343,7 +343,7 @@ select:disabled { opacity: 0.55; cursor: default; }
 #startup-footer { font-size: 12px; color: #666; }
 
 /* Phase 2: Update prompt */
-#startup-update-panel, #startup-launch-panel, #startup-auth-panel { display: none; align-items: center; justify-content: center; width: 100%; height: 100%; }
+#startup-update-panel, #startup-launch-panel, #startup-auth-panel { display: none; align-items: center; justify-content: center; width: 100%; height: 100%; position: relative; z-index: 3; }
 #startup-update-box, #startup-launch-box, #startup-auth-box { text-align: center; max-width: 540px; width: 90%; background: #0f0f10; border: 1px solid #2C2C2C; border-radius: 15px; padding: 30px; max-height: calc(100vh - 32px); overflow-y: auto; }
 #startup-update-icon, #startup-auth-icon { margin-bottom: 12px; }
 #startup-update-title, #startup-auth-title { font-size: 24px; font-weight: 700; color: #E0E0E0; margin-bottom: 8px; }
@@ -412,3 +412,244 @@ select:disabled { opacity: 0.55; cursor: default; }
 .md-panel .md-table { border-collapse: collapse; margin: 8px 0; font-size: 12.5px; }
 .md-panel .md-table th, .md-panel .md-table td { border: 1px solid #2c2c2c; padding: 5px 9px; text-align: left; }
 .md-panel .md-table th { background: #1e1e1e; color: #e6e6e6; font-weight: 600; }
+
+/* ── New launch experience ─────────────────────────────────
+   Full-screen, composited assembly of the large wordmark. Only transforms,
+   opacity and filter are animated, so the intro stays smooth on phones while
+   the real app continues loading behind it. */
+#startup-cinematic {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #1b1630 0%, #0f0d16 48%, #08070c 100%);
+  color: #ece7f0;
+  z-index: 1;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.cine-bg { position: absolute; inset: 0; overflow: hidden; }
+
+.cine-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(8px);
+  opacity: 0.55;
+  will-change: transform;
+}
+.cine-orb-1 {
+  width: 62vmax; height: 62vmax; left: -22vmax; top: -26vmax;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.42), transparent 62%);
+  animation: cineOrbOne 14s ease-in-out infinite alternate;
+}
+.cine-orb-2 {
+  width: 54vmax; height: 54vmax; right: -20vmax; bottom: -24vmax;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.30), transparent 62%);
+  animation: cineOrbTwo 17s ease-in-out infinite alternate;
+}
+.cine-orb-3 {
+  width: 34vmax; height: 34vmax; right: 8vmax; top: -12vmax;
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.22), transparent 64%);
+  animation: cineOrbThree 12s ease-in-out infinite alternate;
+}
+
+@keyframes cineOrbOne {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(8vmax, 5vmax, 0) scale(1.12); }
+}
+@keyframes cineOrbTwo {
+  from { transform: translate3d(0, 0, 0) scale(1.06); }
+  to   { transform: translate3d(-7vmax, -4vmax, 0) scale(0.96); }
+}
+@keyframes cineOrbThree {
+  from { transform: translate3d(0, 0, 0) scale(0.94); }
+  to   { transform: translate3d(-4vmax, 6vmax, 0) scale(1.16); }
+}
+
+.cine-grid {
+  position: absolute;
+  inset: -10%;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 54px 54px;
+  transform: perspective(620px) rotateX(62deg) translateY(18%);
+  mask-image: radial-gradient(circle at 50% 42%, #000 0%, transparent 68%);
+  -webkit-mask-image: radial-gradient(circle at 50% 42%, #000 0%, transparent 68%);
+}
+
+.cine-stage {
+  position: relative;
+  z-index: 2;
+  width: min(92vw, 900px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.cine-halo {
+  position: absolute;
+  width: min(110vw, 900px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(208, 188, 255, 0.20), rgba(124, 58, 237, 0.08) 42%, transparent 66%);
+  opacity: 0;
+  transform: scale(0.5);
+  pointer-events: none;
+}
+.cine.is-assembled .cine-halo { animation: cineHalo 1.35s cubic-bezier(0.2, 0.8, 0.2, 1) 0.18s both; }
+@keyframes cineHalo {
+  0%   { opacity: 0; transform: scale(0.45); }
+  55%  { opacity: 1; }
+  100% { opacity: 0.72; transform: scale(1); }
+}
+
+.cine-ring {
+  position: absolute;
+  width: min(94vw, 760px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid rgba(208, 188, 255, 0.18);
+  box-shadow: inset 0 0 60px rgba(208, 188, 255, 0.06);
+  opacity: 0;
+  transform: scale(0.72);
+  pointer-events: none;
+}
+.cine.is-assembled .cine-ring { animation: cineRing 1.5s ease-out 0.1s both; }
+@keyframes cineRing {
+  0%   { opacity: 0; transform: scale(0.72) rotate(-16deg); }
+  40%  { opacity: 0.9; }
+  100% { opacity: 0.45; transform: scale(1) rotate(0deg); }
+}
+
+.cine-logo {
+  position: relative;
+  width: min(88vw, 760px);
+  aspect-ratio: 2300 / 600;
+  margin: 6vh 0 3vh;
+  filter: drop-shadow(0 22px 44px rgba(0, 0, 0, 0.55))
+          drop-shadow(0 0 28px rgba(208, 188, 255, 0.22));
+}
+
+/* Each slice is a full copy of LargeSR.png clipped to a vertical band; they
+   fly in from different directions and lock together into the complete logo. */
+.cine-piece {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  filter: blur(7px);
+  transform: translate3d(var(--dx, 0), var(--dy, 0), 0) rotate(var(--rot, 0deg)) scale(0.82);
+  will-change: transform, opacity;
+}
+.cine.is-assembled .cine-piece {
+  animation: cineAssemble 1.05s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+}
+@keyframes cineAssemble {
+  0%   { opacity: 0; filter: blur(8px); transform: translate3d(var(--dx, 0), var(--dy, 0), 0) rotate(var(--rot, 0deg)) scale(0.80); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; filter: blur(0); transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+}
+
+.cine-sweep {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  height: 22%;
+  transform: translateX(-130%) skewX(-18deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+}
+.cine.is-assembled .cine-sweep { animation: cineSweep 1.15s ease-in-out 0.9s both; }
+@keyframes cineSweep {
+  0%   { opacity: 0; transform: translateX(-130%) skewX(-18deg); }
+  30%  { opacity: 0.9; }
+  100% { opacity: 0; transform: translateX(130%) skewX(-18deg); }
+}
+
+.cine-title {
+  display: flex;
+  gap: 0.35em;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: rgba(236, 231, 240, 0.72);
+  opacity: 0;
+}
+.cine-title span:last-child { color: #d0bcff; }
+.cine.is-assembled .cine-title { animation: cineTextIn 0.7s ease-out 0.85s both; }
+
+.cine-sub {
+  margin-top: 10px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #8f8a9c;
+  opacity: 0;
+}
+.cine.is-assembled .cine-sub { animation: cineTextIn 0.7s ease-out 1s both; }
+
+@keyframes cineTextIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Indeterminate loader: a composited bar that keeps moving if the device or
+   network takes longer than the assembly animation. */
+.cine-loader {
+  width: min(52vw, 260px);
+  height: 3px;
+  margin-top: 30px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0;
+}
+.cine.is-assembled .cine-loader { animation: cineTextIn 0.4s ease-out 1.05s both; }
+.cine-loader i {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, #d0bcff, transparent);
+  animation: cineLoader 1.25s ease-in-out infinite;
+}
+@keyframes cineLoader {
+  from { transform: translateX(-120%); }
+  to   { transform: translateX(360%); }
+}
+
+.cine.is-paused * { animation-play-state: paused !important; }
+.cine.is-paused { opacity: 0.45; }
+
+.cine.is-leaving {
+  opacity: 0;
+  transform: scale(1.04);
+}
+
+@media (max-width: 620px) {
+  .cine-logo { width: min(94vw, 520px); margin: 4vh 0 2vh; }
+  .cine-title { font-size: 11px; letter-spacing: 0.34em; }
+  .cine-sub { font-size: 12px; }
+  .cine-stage { padding: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cine-orb, .cine-grid { animation: none !important; }
+  .cine-piece { opacity: 1; filter: none; transform: none; animation: none !important; }
+  .cine-halo, .cine-ring, .cine-title, .cine-sub, .cine-loader { opacity: 1; transform: none; animation: none !important; }
+  .cine-sweep { display: none; }
+  .cine-loader i { animation: none !important; width: 100%; background: #d0bcff; }
+}

@@ -290,6 +290,9 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Syllable pacing | U | line estimates use a realistic sung tempo; syllables keep a minimum display time; line ends retain a short vocal tail |
 | Mobile player rendering | J | queue and lyrics DOM are built only while visible; tab switches reuse cached lists; identical queue updates are a no-op; play/pause answers optimistically |
 | Stage compositing | J/CSS | full-screen gradients drift via composited transforms (no per-frame background-position repaint); karaoke spans are not all promoted to GPU layers |
+| New launch experience | J/C#/CSS | opt-in setting skips the mode picker, reuses the configured mode, runs silent auth without UI, assembles the large wordmark from slices, adapts to the initial data load, and still lets the updater intercept |
+| Mobile multi-select | J/C# | library selection batches queue/playlist/remove through one request per action; queue selection removes selected queue/playlist entries and clears when indexes would shift |
+| Compact mobile queue | J/CSS | rows use a 48 px compact layout with no per-row buttons; long-press opens move/remove actions and multi-select reveals batch removal |
 
 ### 4.8b Advanced audio (equalizer, sleep timer, analysis)
 
