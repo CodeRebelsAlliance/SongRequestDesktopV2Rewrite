@@ -31,6 +31,12 @@
   var currentTitle = '';
   var currentArtist = '';
   var currentArtwork = '';
+  var currentPlaying = false;
+  var lyricsLineEls = [];
+  var activeLineEl = null;
+  var prevLineEl = null;
+  var lastLyricsData = null;
+  var karaokeSettingFromPayload = false;
   var lyricsFontScale = 1.0;
   var lyricsHidden = false;
   var presentationZoom = 1.0;
@@ -284,26 +290,36 @@
   // jumping to the first line.
   function resetLyricsScroll() {
     lastHighlightIndex = -1;
+    activeLineEl = null;
+    prevLineEl = null;
     try { presLyrics.scrollTop = 0; } catch (e) { }
   }
 
   function renderLyricsLoading() {
+    lyricsLineEls = [];
     presLyrics.innerHTML = '<div class="lyrics-loading"><i class="fas fa-circle-notch fa-spin"></i><div>Loading lyrics...</div></div>';
     if (lyricsProvider) lyricsProvider.textContent = '';
     resetLyricsScroll();
   }
 
   function renderNoLyrics() {
+    lyricsLineEls = [];
+    if (window.SongRequestKaraoke) window.SongRequestKaraoke.invalidate(presLyrics);
     presLyrics.innerHTML = '<div class="lyrics-no-lyrics"><i class="fas fa-music"></i><div>No lyrics available</div></div>';
     resetLyricsScroll();
   }
 
   function renderLyrics(data) {
+    lastLyricsData = data || null;
     presLyrics.innerHTML = '';
     if (lyricsProvider) lyricsProvider.textContent = '';
     presChapters = data.chapters || [];
+    var karaokeOn = false;
     if (window.SongRequestKaraoke) {
+      karaokeSettingFromPayload = true;
       window.SongRequestKaraoke.setEnabled(data.karaokeMode === true);
+      karaokeSettingFromPayload = false;
+      karaokeOn = window.SongRequestKaraoke.isEnabled();
     }
 
     var fragment = document.createDocumentFragment();
@@ -334,7 +350,8 @@
         div.textContent = item.text || '';
         div.dataset.index = i;
         div.dataset.time = item.time;
-        if (window.SongRequestKaraoke && data.karaoke && data.karaoke.lines && data.karaoke.lines[i]) {
+        if (karaokeOn && window.SongRequestKaraoke &&
+            data.karaoke && data.karaoke.lines && data.karaoke.lines[i]) {
           window.SongRequestKaraoke.renderLine(div, data.karaoke.lines[i]);
         }
         fragment.appendChild(div);
@@ -360,9 +377,15 @@
       lyricsProvider.textContent = 'Source: ' + data.provider;
     }
 
+    lyricsLineEls = lines;
     if (window.SongRequestKaraoke) {
-      if (data.karaoke) window.SongRequestKaraoke.attachPauses(presLyrics, data.karaoke.pauses);
-      window.SongRequestKaraoke.update(presLyrics, lastCurrentTime || 0);
+      window.SongRequestKaraoke.invalidate(presLyrics);
+      if (karaokeOn && data.karaoke) {
+        window.SongRequestKaraoke.attachPauses(presLyrics, data.karaoke.pauses);
+      }
+      if (karaokeOn) {
+        window.SongRequestKaraoke.update(presLyrics, lastCurrentTime || 0, currentPlaying);
+      }
     }
 
     updateLyricFontSizes();
@@ -540,57 +563,67 @@
   }
 
   // ── Lyric highlighting ──
-  function updateLyricHighlighting(currentTime) {
-    lastCurrentTime = currentTime;
-    var lines = presLyrics.querySelectorAll('.lyrics-line');
-    if (!lines.length) return;
-
-    var adjustedTime = currentTime;
-    if (window.SongRequestKaraoke) window.SongRequestKaraoke.update(presLyrics, adjustedTime);
-
-    if (hasSyncedLyrics && syncedLyrics.length > 0) {
-      var domIndex = -1;
-      for (var i = syncedLyrics.length - 1; i >= 0; i--) {
-        var lineTime = karaokeLineTimes[i];
-        if (lineTime == null || !isFinite(lineTime)) lineTime = syncedLyrics[i].time;
-        if (lineTime <= adjustedTime + 0.1) {
-          if (String(syncedLyrics[i].text || '').trim()) {
-            domIndex = i;
-            break;
-          }
-        }
-      }
-
-      if (domIndex !== lastHighlightIndex) {
-        lastHighlightIndex = domIndex;
-        lines.forEach(function(line, i) {
-          if (i === domIndex) {
-            line.className = 'lyrics-line active';
-            line.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          } else if (i === domIndex - 1) {
-            line.className = 'lyrics-line prev';
-          } else {
-            line.className = 'lyrics-line';
-          }
-        });
-      }
-    } else if (plainLyricLines.length > 0 && totalTimeSecs > 0) {
-      var pct = Math.min(currentTime / totalTimeSecs, 1);
-      var idx = Math.min(Math.floor(pct * plainLyricLines.length), plainLyricLines.length - 1);
-      if (idx !== lastHighlightIndex) {
-        lastHighlightIndex = idx;
-        lines.forEach(function(line, i) {
-          if (i === idx) {
-            line.className = 'lyrics-line active';
-            line.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          } else if (i === idx - 1) {
-            line.className = 'lyrics-line prev';
-          } else {
-            line.className = 'lyrics-line';
-          }
-        });
+  // Returns the last non-empty timed line at/before `time`. Empty LRC markers
+  // stay in the list (for pause placement) but must not take the highlight.
+  function syncedIndexAt(time) {
+    var lo = 0;
+    var hi = syncedLyrics.length - 1;
+    var found = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      var lineTime = karaokeLineTimes[mid];
+      if (lineTime == null || !isFinite(lineTime)) lineTime = syncedLyrics[mid].time;
+      if (lineTime <= time + 0.1) {
+        found = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
       }
     }
+    while (found >= 0 && !String(syncedLyrics[found].text || '').trim()) found--;
+    return found;
+  }
+
+  function setLineClasses(index) {
+    var newActive = index >= 0 ? lyricsLineEls[index] : null;
+    var newPrev = index > 0 ? lyricsLineEls[index - 1] : null;
+
+    if (prevLineEl && prevLineEl !== newActive && prevLineEl !== newPrev) {
+      prevLineEl.className = 'lyrics-line';
+    }
+    if (activeLineEl && activeLineEl !== newActive && activeLineEl !== newPrev) {
+      activeLineEl.className = 'lyrics-line';
+    }
+    if (newPrev) newPrev.className = 'lyrics-line prev';
+    if (newActive) {
+      newActive.className = 'lyrics-line active';
+      // Keep the active line centred; this only runs when the line changes.
+      newActive.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    prevLineEl = newPrev;
+    activeLineEl = newActive;
+  }
+
+  function updateLyricHighlighting(currentTime) {
+    lastCurrentTime = currentTime;
+    if (!lyricsLineEls.length) return;
+
+    if (window.SongRequestKaraoke) {
+      window.SongRequestKaraoke.update(presLyrics, currentTime, currentPlaying);
+    }
+
+    var index = -1;
+    if (hasSyncedLyrics && syncedLyrics.length > 0) {
+      index = syncedIndexAt(currentTime);
+    } else if (plainLyricLines.length > 0 && totalTimeSecs > 0) {
+      var pct = Math.min(currentTime / totalTimeSecs, 1);
+      index = Math.min(Math.floor(pct * plainLyricLines.length), plainLyricLines.length - 1);
+    }
+
+    if (index === lastHighlightIndex) return;
+    lastHighlightIndex = index;
+    setLineClasses(index);
   }
 
   // ── Event handlers ──
@@ -630,16 +663,22 @@
       totalTimeSecs = data.totalTime;
     }
 
+    // Update play state before the position so the karaoke clock starts/stops
+    // on the same tick as the wipe.
+    if (data.isPlaying !== undefined) {
+      currentPlaying = !!data.isPlaying;
+      presPanel.classList.toggle('idle', !currentPlaying);
+      // The stage polls at 2 Hz; let the shared clock interpolate the karaoke
+      // wipe between updates instead of jumping in half-second bursts.
+      if (window.SongRequestKaraoke) window.SongRequestKaraoke.setPlaying(currentPlaying);
+    }
+
     if (data.currentTime != null) {
       var effectiveTotal = totalTimeSecs;
       var pct = effectiveTotal > 0 ? Math.min(data.currentTime / effectiveTotal * 100, 100) : 0;
       presProgressFill.style.width = pct + '%';
       presProgressCurrent.textContent = formatTime(data.currentTime);
       updateLyricHighlighting(data.currentTime);
-    }
-
-    if (data.isPlaying !== undefined) {
-      presPanel.classList.toggle('idle', !data.isPlaying);
     }
   }
 
@@ -739,6 +778,16 @@
   });
 
   updateFullscreenIcon();
+
+  // Toggling karaoke mode rebuilds only the lyric spans, from the payload we
+  // already have, so the stage does not wait for another host round-trip.
+  document.addEventListener('karaokechange', function () {
+    if (karaokeSettingFromPayload || !lastLyricsData) return;
+    // Keep the cached payload in sync with the toggle; otherwise re-rendering
+    // would apply the old mode and immediately switch karaoke back off.
+    lastLyricsData.karaokeMode = window.SongRequestKaraoke.isEnabled();
+    renderLyrics(lastLyricsData);
+  });
 
   // Zoom before the first paint, then let the host's stored setting confirm it.
   restoreZoom();

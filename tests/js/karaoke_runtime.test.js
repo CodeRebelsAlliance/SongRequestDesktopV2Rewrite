@@ -49,8 +49,10 @@ class Element {
     this.parentNode = null;
     this.dataset = {};
     this.hidden = false;
+    this.isConnected = true;
     this._classes = new Set();
     this._style = Object.create(null);
+    this._styleWrites = 0;
     this._text = '';
     this._html = '';
     this._attributes = {};
@@ -96,8 +98,9 @@ class Element {
 
   get style() {
     const style = this._style;
+    const element = this;
     return {
-      setProperty(name, value) { style[name] = String(value); },
+      setProperty(name, value) { element._styleWrites++; style[name] = String(value); },
       getPropertyValue(name) { return style[name] || ''; }
     };
   }
@@ -148,6 +151,8 @@ class Element {
 function createHarness() {
   const documentElement = new Element('html');
   const byId = new Map();
+  let now = 0;
+  const frames = [];
   const document = {
     documentElement,
     createElement: (tag) => new Element(tag),
@@ -158,6 +163,9 @@ function createHarness() {
   const sandbox = {
     document,
     console,
+    performance: { now: () => now },
+    requestAnimationFrame: (fn) => { frames.push(fn); return frames.length; },
+    cancelAnimationFrame: () => { },
     CustomEvent: function (name, options) {
       this.type = name;
       this.detail = options && options.detail;
@@ -167,7 +175,16 @@ function createHarness() {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
-  return { karaoke: sandbox.SongRequestKaraoke, document, byId };
+  return {
+    karaoke: sandbox.SongRequestKaraoke,
+    document,
+    byId,
+    setNow: (ms) => { now = ms; },
+    runFrame: () => {
+      const frame = frames.shift();
+      if (frame) frame();
+    }
+  };
 }
 
 function addLine(karaoke, container, id, syllables, time, end) {
@@ -280,4 +297,59 @@ test('instrumental pauses render as a large bar, not a panel', () => {
 
   karaoke.update(container, 4.2);
   assert.equal(pause.hidden, true);
+});
+
+test('only the active lyric line is repainted as time advances', () => {
+  const { karaoke } = createHarness();
+  karaoke.setEnabled(true);
+
+  const container = new Element('div');
+  const first = addLine(karaoke, container, 0, [
+    { start: 1.0, end: 1.5, text: 'one', wordIndex: 0 },
+    { start: 1.5, end: 2.0, text: 'two', wordIndex: 1 }
+  ], 1, 2);
+  const second = addLine(karaoke, container, 1, [
+    { start: 3.0, end: 3.5, text: 'three', wordIndex: 0 },
+    { start: 3.5, end: 4.0, text: 'four', wordIndex: 1 }
+  ], 3, 4);
+
+  karaoke.update(container, 1.2);
+  const firstSpans = spans(first);
+  const secondSpans = spans(second);
+  firstSpans.forEach((span) => { span._styleWrites = 0; });
+  secondSpans.forEach((span) => { span._styleWrites = 0; });
+
+  karaoke.update(container, 1.7);
+
+  assert.ok(firstSpans.some((span) => span._styleWrites > 0), 'active line must update');
+  assert.equal(secondSpans.reduce((sum, span) => sum + span._styleWrites, 0), 0,
+    'inactive lines must not be touched between host ticks');
+});
+
+test('the shared clock interpolates the wipe between host position updates', () => {
+  const harness = createHarness();
+  const karaoke = harness.karaoke;
+  karaoke.setEnabled(true);
+
+  const container = new Element('div');
+  const line = addLine(karaoke, container, 0, [
+    { start: 0, end: 2, text: 'hold', wordIndex: 0 }
+  ], 0, 2);
+  const span = spans(line)[0];
+
+  harness.setNow(0);
+  karaoke.update(container, 1.0, true);
+  assert.equal(span.style.getPropertyValue('--karaoke-progress'), '50%');
+  assert.equal(span.classList.contains('is-active'), true);
+
+  harness.setNow(500);
+  harness.runFrame();
+  assert.equal(span.style.getPropertyValue('--karaoke-progress'), '75%');
+
+  harness.setNow(1000);
+  harness.runFrame();
+  assert.equal(span.style.getPropertyValue('--karaoke-progress'), '100%');
+  assert.equal(span.classList.contains('is-sung'), true);
+
+  karaoke.setPlaying(false);
 });

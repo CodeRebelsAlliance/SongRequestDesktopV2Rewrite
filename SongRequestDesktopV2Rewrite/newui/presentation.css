@@ -119,11 +119,27 @@ body {
   --accent-1: #1e1e1e;
   --accent-2: #1e1e1e;
   --accent-3: #1a1a1a;
-  background: linear-gradient(var(--grad-angle), var(--accent-1), var(--accent-2), var(--accent-3));
-  background-size: 400% 400%;
-  animation: gradientDrift 12s ease infinite;
+  background: #1e1e1e;
   position: relative;
+  isolation: isolate;
 }
+
+/* The old drift animated background-position on a full-screen gradient, which
+   forced the HDMI WebView to repaint the whole panel every frame. Paint the
+   gradient on an oversized pseudo-element and move it with a composited
+   transform instead. */
+#pres-player-panel::before {
+  content: '';
+  position: absolute;
+  inset: -14%;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(var(--grad-angle), var(--accent-1), var(--accent-2), var(--accent-3));
+  animation: gradientDrift 18s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+#pres-player-panel > * { position: relative; z-index: 1; }
 
 /* When queue panel is hidden, player panel fills full width */
 #pres-player-panel.fullwidth {
@@ -132,11 +148,9 @@ body {
 }
 
 @keyframes gradientDrift {
-  0% { background-position: 0% 50%; }
-  25% { background-position: 100% 0%; }
-  50% { background-position: 100% 100%; }
-  75% { background-position: 0% 100%; }
-  100% { background-position: 0% 50%; }
+  0% { transform: translate3d(-2%, -1%, 0) scale(1.04); }
+  50% { transform: translate3d(2%, 2%, 0) scale(1.08); }
+  100% { transform: translate3d(3%, -2%, 0) scale(1.05); }
 }
 
 /* ── Right: Side panels (no background) ── */
@@ -619,8 +633,6 @@ body {
   position: relative; display: inline-block; color: inherit; white-space: pre;
   transform: translateY(var(--karaoke-lift, 0px));
   transition: color var(--karaoke-color-time, .12s) linear, transform var(--karaoke-lift-time, .16s) cubic-bezier(.22, .61, .36, 1);
-  will-change: transform;
-  backface-visibility: hidden;
 }
 .karaoke-word::after {
   content: attr(data-text); position: absolute; left: 0; top: 0; white-space: pre;
@@ -657,3 +669,7 @@ body {
 .karaoke-pause-label { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #cbb7f5; opacity: .78; }
 .karaoke-pause-label i { margin-right: 6px; }
 .karaoke-pause-time { font-size: 12px; font-weight: 700; color: rgba(255,255,255,.7); font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  #pres-player-panel::before { animation: none; }
+}

@@ -63,7 +63,10 @@ public static class KaraokeLyrics
 {
     private const double MinPauseSeconds = 3.5;
     private const double MinWordSeconds = 0.08;
-    private const double MinSyllableSeconds = 0.045;
+    // Syllables shorter than this flashed past between host position updates
+    // (~4/s) and looked like the lyrics were skipping. Keep a real minimum
+    // display time while still letting fast lines stay fast.
+    private const double MinSyllableSeconds = 0.075;
     private const double MaxLineStartSnapSeconds = 0.24;
 
     public static KaraokeLyricsData Build(
@@ -121,7 +124,7 @@ public static class KaraokeLyrics
 
             double interval = Math.Max(0.25, nextStart - start);
             double estimated = EstimateLineDuration(tokens);
-            double end = Math.Min(nextStart - 0.04, start + Math.Min(interval * 0.92, Math.Max(1.0, estimated)));
+            double end = Math.Min(nextStart - 0.04, start + Math.Min(interval * 0.95, Math.Max(1.2, estimated)));
             if (end <= start + 0.2) end = Math.Min(nextStart, start + Math.Max(0.5, interval * 0.92));
 
             // Do not keep the wipe running through a long silent tail before the
@@ -250,7 +253,9 @@ public static class KaraokeLyrics
 
         if (lastVocal <= start + 0.30) return end;
 
-        double refined = lastVocal + 0.10;
+        // A slightly longer tail keeps the final syllable readable even when the
+        // last vocal frame lands a little early.
+        double refined = lastVocal + 0.16;
         return refined < end - 0.12
             ? Math.Min(end, Math.Max(start + 0.30, refined))
             : end;
@@ -602,9 +607,12 @@ public static class KaraokeLyrics
 
     private static double EstimateLineDuration(List<string> tokens)
     {
+        // Sung English sits around 3–4 syllables/second. The old estimate ran
+        // near 6/s, which made lines without an analysis finish their wipe far
+        // before the singer did (the "syllables are way too fast" case).
         int syllables = tokens.Sum(t => Syllabify(t).Count);
         int characters = tokens.Sum(t => t.Length);
-        return 0.55 + syllables * 0.17 + characters * 0.012;
+        return 0.45 + syllables * 0.24 + characters * 0.016;
     }
 
     private static double WordWeight(List<string> syllables)

@@ -256,3 +256,41 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 .ms-toast.is-error { background: #5b2a2a; color: #ffdad6; }
 .ms-toast.is-out { opacity: 0; transform: translateY(6px); }
+
+/* ── Micro-interactions ──────────────────────────────────── */
+.ms-btn,
+.ms-round,
+.ms-seg button,
+.ms-badge {
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1),
+              background 0.18s ease, color 0.18s ease,
+              border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ms-btn:active:not(:disabled),
+.ms-round:active,
+.ms-seg button:active {
+  transform: scale(0.96);
+}
+
+.ms-seg button.is-active {
+  box-shadow: 0 2px 12px rgba(208, 188, 255, 0.18);
+}
+
+.ms-card {
+  animation: msCardIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ms-card:nth-of-type(2) { animation-delay: 40ms; }
+.ms-card:nth-of-type(3) { animation-delay: 80ms; }
+.ms-card:nth-of-type(4) { animation-delay: 120ms; }
+
+@keyframes msCardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ms-card { animation: none; }
+  .ms-btn, .ms-round, .ms-seg button, .ms-badge { transition: none; }
+}

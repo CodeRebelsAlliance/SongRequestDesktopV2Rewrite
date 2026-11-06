@@ -458,18 +458,19 @@ input[type="search"] {
   inset: -20%;
   z-index: 0;
   background: linear-gradient(var(--mm-angle, 0deg), var(--mm-a1), var(--mm-a2), var(--mm-a3));
-  background-size: 320% 320%;
-  animation: mmDrift 18s ease infinite;
+  /* Animate a transform, not background-position: the old version repainted a
+     full-screen gradient every frame and was one of the biggest causes of the
+     mobile player lag. */
+  animation: mmDrift 22s ease-in-out infinite alternate;
   opacity: 0.95;
   transition: background 0.8s ease;
+  will-change: transform;
 }
 
 @keyframes mmDrift {
-  0% { background-position: 0% 50%; }
-  25% { background-position: 100% 0%; }
-  50% { background-position: 100% 100%; }
-  75% { background-position: 0% 100%; }
-  100% { background-position: 0% 50%; }
+  0% { transform: translate3d(-3%, -2%, 0) scale(1.04); }
+  50% { transform: translate3d(2%, 3%, 0) scale(1.08); }
+  100% { transform: translate3d(4%, -1%, 0) scale(1.05); }
 }
 
 #mm-view-player > *:not(#mm-player-bg) { position: relative; z-index: 1; }
@@ -1370,4 +1371,138 @@ input[type="search"] {
   :root[data-car="1"] #mm-player-bg { opacity: .35; }
   :root[data-car="1"] .mm-player .mm-hero { max-width: 560px; }
   :root[data-car="1"] .mm-player-bottom { max-width: 760px; margin: 0 auto; width: 100%; }
+}
+
+/* ── Micro-interactions ─────────────────────────────────── */
+/* Everything here animates only transform/opacity (or one line's font-size),
+   so the quick transitions never trigger a layout pass on the whole list. */
+
+.mm-pill-btn,
+.mm-chip,
+.mm-icon-btn,
+.mm-btn,
+.mm-play-btn,
+.mm-card-art,
+.mm-thumb {
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1),
+              background 0.18s ease, border-color 0.18s ease,
+              color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.mm-pill-btn:active,
+.mm-chip:active,
+.mm-icon-btn:active,
+.mm-btn:active {
+  transform: scale(0.96);
+}
+
+.mm-play-btn:active { transform: scale(0.92); }
+
+.mm-card:active .mm-card-art,
+.mm-song:active .mm-thumb {
+  transform: scale(0.95);
+}
+
+.mm-chip.is-active {
+  box-shadow: 0 2px 12px rgba(208, 188, 255, 0.16);
+}
+
+#mm-seek::-webkit-slider-thumb {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+#mm-seek:active::-webkit-slider-thumb {
+  transform: scale(1.35);
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+}
+#mm-seek::-moz-range-thumb {
+  transition: transform 0.12s ease;
+}
+#mm-seek:active::-moz-range-thumb { transform: scale(1.35); }
+
+/* Tab changes: a short rise instead of a hard cut. */
+.mm-view.is-entering {
+  animation: mmViewIn 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes mmViewIn {
+  from { opacity: 0.4; transform: translateY(8px) scale(0.995); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* New song: artwork and title settle in without moving the controls. */
+.mm-player.is-song-change .mm-hero {
+  animation: mmSongIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes mmSongIn {
+  from { opacity: 0.35; transform: scale(0.965); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* The mini player slides up the first time a track makes it visible. */
+#mm-mini.is-entering {
+  animation: mmMiniIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes mmMiniIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Queue rows cascade in when the sheet opens (only the first screenful). */
+.mm-queue-row.is-enter {
+  animation: mmQueueRowIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes mmQueueRowIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* A quiet pulse marks the playing row without moving any layout. */
+.mm-queue-row.is-current .mm-now-bar {
+  animation: mmNowPulse 1.9s ease-in-out infinite;
+}
+
+@keyframes mmNowPulse {
+  0%, 100% { opacity: 0.55; transform: scaleY(0.78); }
+  50%      { opacity: 1; transform: scaleY(1); }
+}
+
+/* Karaoke/lyrics mode: the active line gets a small, smooth lift. */
+.mm-player.is-lyrics .mm-line.is-active {
+  opacity: 1;
+}
+
+/* Opening lyrics: a short fade/rise instead of the panel snapping in. */
+.mm-lyrics.is-opening {
+  animation: mmLyricsIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes mmLyricsIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-view.is-entering,
+  .mm-player.is-song-change .mm-hero,
+  .mm-lyrics.is-opening,
+  #mm-mini.is-entering,
+  .mm-queue-row.is-enter,
+  .mm-queue-row.is-current .mm-now-bar {
+    animation: none;
+  }
+  .mm-pill-btn,
+  .mm-chip,
+  .mm-icon-btn,
+  .mm-btn,
+  .mm-play-btn,
+  .mm-card-art,
+  .mm-thumb,
+  #mm-seek::-webkit-slider-thumb,
+  #mm-seek::-moz-range-thumb {
+    transition: none;
+  }
+  #mm-player-bg { animation: none; }
 }

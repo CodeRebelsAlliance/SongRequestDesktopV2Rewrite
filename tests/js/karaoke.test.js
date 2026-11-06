@@ -28,7 +28,13 @@ test('karaoke mode is available on desktop, mobile and presentation pages', () =
   assert.match(js, /dataset\.text/);
   assert.match(js, /dataset\.karaokeStart/);
   assert.match(js, /dataset\.karaokeEnd/);
-  assert.match(js, /\(lastTime - start\) \/ \(end - start\)/);
+  assert.match(js, /\(time - start\) \/ \(end - start\)/);
+  // The painter interpolates between host ticks instead of jumping 2–4 times a
+  // second, and keeps a per-span cache so inactive lines are not re-written.
+  assert.match(js, /setPlaying/);
+  assert.match(js, /requestAnimationFrame/);
+  assert.match(js, /entryFor/);
+  assert.match(js, /invalidate/);
   assert.match(js, /--karaoke-lift/);
   assert.match(js, /--karaoke-smooth/);
   assert.match(js, /--karaoke-lift-time/);

@@ -1152,6 +1152,7 @@
     // Play state
     if (data.isPlaying != null) {
       syncPlayButtons(data.isPlaying);
+      if (window.SongRequestKaraoke) window.SongRequestKaraoke.setPlaying(!!data.isPlaying);
     }
     // Sync queue now-playing header when playback active state changes
     if (data.isPlaybackActive != null) {
@@ -1591,6 +1592,7 @@
     bottomSpacer.className = 'lyrics-spacer';
     lyricsContainer.appendChild(bottomSpacer);
 
+    if (window.SongRequestKaraoke) window.SongRequestKaraoke.invalidate(lyricsContainer);
     if (window.SongRequestKaraoke && data.karaoke) {
       window.SongRequestKaraoke.attachPauses(lyricsContainer, data.karaoke.pauses);
     }
@@ -1600,7 +1602,9 @@
     updateLyricFontSizes();
     resetLyricsScroll();                       // a new song starts at line one
     if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.decorateLyrics();
-    if (window.SongRequestKaraoke) window.SongRequestKaraoke.update(lyricsContainer, lastCurrentTime);
+    if (window.SongRequestKaraoke) {
+      window.SongRequestKaraoke.update(lyricsContainer, lastCurrentTime, lastPlaybackActive);
+    }
     if (lastCurrentTime >= 0) updateLyricHighlighting(lastCurrentTime);
   }
 

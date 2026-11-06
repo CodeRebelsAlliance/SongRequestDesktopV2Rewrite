@@ -286,6 +286,10 @@ or a temp network), **M** = manual/OS (documented, not automatable here).
 | Current-state push | U | `SendPresentationCurrentState` shape |
 | Mobile HDMI stage | J/C# | `/state` polling is self-paced (no overlapping fetches), first-song lyrics/analysis are built once in the background, state snapshots are coalesced, and the presentation window keeps the screen awake |
 | Mobile lyrics wake lock | J/C# | opening lyrics on the player tab keeps the screen awake; leaving the player or backgrounding releases it; the main activity restores the requested state on resume |
+| Karaoke paint budget | J/U | only the active lyric line is rewritten between host ticks; inactive lines keep their last state; the shared clock interpolates the wipe at animation-frame rate and stops when every lyrics panel is hidden |
+| Syllable pacing | U | line estimates use a realistic sung tempo; syllables keep a minimum display time; line ends retain a short vocal tail |
+| Mobile player rendering | J | queue and lyrics DOM are built only while visible; tab switches reuse cached lists; identical queue updates are a no-op; play/pause answers optimistically |
+| Stage compositing | J/CSS | full-screen gradients drift via composited transforms (no per-frame background-position repaint); karaoke spans are not all promoted to GPU layers |
 
 ### 4.8b Advanced audio (equalizer, sleep timer, analysis)
 

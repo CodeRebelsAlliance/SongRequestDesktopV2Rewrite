@@ -231,7 +231,7 @@ test('chapter markers are added to every lyrics view', () => {
   assert.match(advanced, /data-part/);
   assert.match(desktop, /div\.dataset\.time = line\.time/);
   assert.match(desktop, /decorateLyrics\(\)/);
-  assert.match(mobile, /data-time=/);
+  assert.match(mobile, /dataset\.time/);
   assert.match(mobile, /decorateLyrics\(\)/);
   assert.match(presentation, /presChapters/);
   assert.match(presentation, /decoratePresentationChapters/);

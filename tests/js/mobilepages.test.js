@@ -392,3 +392,42 @@ test('desktop output device menu stays inside the window and scrolls', () => {
   assert.match(css, /#device-menu-list\s*\{[^}]*overflow-y:\s*auto/s);
   assert.match(css, /#device-menu-list\s*\{[^}]*min-height:\s*0/s);
 });
+
+test('mobile player defers heavy lists and avoids per-frame gradient repaints', () => {
+  const music = read('mobilemusic.js');
+  const css = read('mobilemusic.css');
+
+  // Queue and lyrics DOM are only built while their view is visible.
+  assert.match(music, /if \(!queueEl\.hidden\) renderQueue\(\)/);
+  assert.match(music, /if \(lyricsOpen\) renderLyricsNow\(\)/);
+  assert.match(music, /queueDirty/);
+  assert.match(music, /lyricsDirty/);
+
+  // Tab switches reuse already-loaded lists instead of re-running requests
+  // and rebuilding the DOM (which reset the scroll position).
+  assert.match(music, /libKey/);
+  assert.match(music, /Date\.now\(\) - libAt/);
+  assert.match(music, /Date\.now\(\) - recentAt/);
+
+  // Pressing play answers immediately; the next state tick reconciles.
+  assert.match(music, /function togglePlay\(\)/);
+  assert.match(music, /now\.playing = !now\.playing/);
+
+  // The ambient player background animates a composited transform instead of
+  // repainting a full-screen gradient every frame.
+  assert.match(css, /@keyframes mmDrift/);
+  assert.match(css, /translate3d/);
+  assert.match(css, /prefers-reduced-motion/);
+});
+
+test('presentation gradient drift is composited instead of repainting', () => {
+  const css = read('presentation.css');
+  const js = read('presentation.js');
+
+  assert.match(css, /#pres-player-panel::before/);
+  assert.match(css, /@keyframes gradientDrift[\s\S]*translate3d/);
+  // The new karaoke painter is told whether playback is running so it can
+  // interpolate between the stage's 500 ms polls.
+  assert.match(js, /SongRequestKaraoke\.setPlaying/);
+  assert.match(js, /SongRequestKaraoke\.update\(presLyrics, currentTime, currentPlaying\)/);
+});

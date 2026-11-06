@@ -124,7 +124,6 @@
   var lyricsOpen = false;
 
   var now = { title: '', artist: '', art: '', playing: false, time: 0, total: 0, quality: null, lyricsSource: '' };
-  var seeking = false;
   var seekDragging = false;
 
   var queue = [];
@@ -132,6 +131,10 @@
   var currentPlaylist = null;
   var playlistReturnTab = 'library';
   var playlistIconSelection = 'fa-list';
+  // The queue sheet is usually closed. Rendering it on every host update was a
+  // large part of the input lag while queuing; only build it when visible.
+  var queueDirty = true;
+  var queueSignature = '';
 
   var feed = null;
   var feedAt = 0;
@@ -141,9 +144,20 @@
   var recentSongs = [];
   var playlists = [];
   var recentAt = 0;
+  var playlistsAt = 0;
+  var libAt = 0;
+  var libKey = '';
 
   var lyrics = { synced: [], plain: [], active: -1, syncOffset: 0, fontScale: 1, hidden: false, karaokeTimes: [] };
+  // Lyrics are only turned into DOM while the lyrics view is open. The payload
+  // is kept so opening the view is instant.
+  var lyricData = null;
+  var lyricLineEls = [];
+  var lyricTimed = [];
+  var lyricsDirty = true;
+  var karaokeSettingFromPayload = false;
   var lastColors = '';
+  var viewAnimTimer = null;
 
   // ── Element refs ─────────────────────────────────────────
   var appEl = $('mm-app');
@@ -196,6 +210,19 @@
   var queueListEl = $('mm-queue-list');
 
   // ── Views ────────────────────────────────────────────────
+  // A short transform/opacity enter keeps tab changes feeling connected without
+  // animating layout (which is what made the old player stutter).
+  function animateView(tab) {
+    var el = views[tab];
+    if (!el) return;
+    el.classList.remove('is-entering');
+    // Restart the animation even when switching back to the same view.
+    void el.offsetWidth;
+    el.classList.add('is-entering');
+    clearTimeout(viewAnimTimer);
+    viewAnimTimer = setTimeout(function () { el.classList.remove('is-entering'); }, 220);
+  }
+
   function setTab(tab) {
     if (tab === 'queue') {
       openQueue();
@@ -215,6 +242,7 @@
     updateLyricsScreenAwake();
 
     for (var name in views) views[name].hidden = name !== tab;
+    animateView(tab);
 
     closeQueue(false);
     updateMini();
@@ -238,6 +266,7 @@
   }
 
   function openQueue() {
+    if (queueDirty) renderQueue();
     queueScrim.hidden = false;
     queueEl.hidden = false;
     updateQueueToggle(true);
@@ -272,11 +301,9 @@
 
   // ── Home feed ────────────────────────────────────────────
   function loadHomeFeed(force) {
-    var fresh = feed && Date.now() - feedAt < 15000;
-    if (!force && fresh) {
-      renderHome();
-      return;
-    }
+    // The DOM is kept alive between tab switches, so a fresh feed needs no
+    // rebuild at all (rebuilding reset the scroll position).
+    if (!force && feed && Date.now() - feedAt < 8000) return;
 
     $('mm-home-loading').hidden = false;
     $('mm-home-empty').hidden = true;
@@ -321,7 +348,7 @@
     var id = song.songId || song.id || '';
     var artClass = 'mm-card-art' + (song.thumbnail ? '' : ' thumb-pending');
     return '<button class="mm-card" data-song-id="' + esc(id) + '">' +
-      '<div class="' + artClass + '" data-songid="' + esc(id) + '">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
+      '<div class="' + artClass + '" data-songid="' + esc(id) + '">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="" loading="lazy" decoding="async">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-card-title">' + esc(song.title || 'Unknown') + '</div>' +
       '<div class="mm-card-sub">' + esc(song.artist || '—') + '</div>' +
       '</button>';
@@ -329,7 +356,7 @@
 
   function playlistCard(list) {
     return '<button class="mm-card' + (list.isDynamic ? ' is-dynamic' : '') + '" data-playlist-id="' + esc(list.id || '') + '">' +
-      '<div class="mm-card-art">' + (list.thumbnail ? '<img src="' + esc(list.thumbnail) + '" alt="">' : plIconHtml(list.icon)) + '</div>' +
+      '<div class="mm-card-art">' + (list.thumbnail ? '<img src="' + esc(list.thumbnail) + '" alt="" loading="lazy" decoding="async">' : plIconHtml(list.icon)) + '</div>' +
       '<div class="mm-card-title">' + esc(list.name || 'Playlist') + '</div>' +
       '<div class="mm-card-sub">' + (list.songCount || 0) + ' songs' + (list.isDynamic ? ' · Auto' : '') + '</div>' +
       '</button>';
@@ -386,9 +413,13 @@
     $('mm-playlist-new-wrap').hidden = true;
   }
 
-  function loadLibrary(force) {
+  function loadLibrary(force, more) {
+    var key = lib.mode + '|' + lib.query;
+    var fresh = libAt > 0 && key === libKey && Date.now() - libAt < 15000;
+
     if (lib.mode === 'recent') {
-      if (!force && Date.now() - recentAt < 15000) { renderRecent(); return; }
+      // Tab switches reuse the list that is already in the DOM.
+      if (!force && !more && recentAt > 0 && Date.now() - recentAt < 15000) return;
       request('getPlayHistory', { count: 60 }).then(function (data) {
         recentSongs = (data && data.history) || [];
         recentAt = Date.now();
@@ -398,18 +429,24 @@
     }
 
     if (lib.mode === 'playlists') {
+      if (!force && !more && playlistsAt > 0 && Date.now() - playlistsAt < 15000) return;
       request('getPlaylists').then(function (data) {
         playlists = (data && data.playlists) || [];
+        playlistsAt = Date.now();
         renderPlaylists();
       }).catch(function () { renderPlaylists(); });
       return;
     }
+
+    if (!more && !force && fresh) return;
 
     if (lib.query) {
       request('searchLibrary', { query: lib.query, maxResults: 100 }).then(function (data) {
         libSongs = (data && data.results) || [];
         lib.total = libSongs.length;
         lib.page = 1;
+        libAt = Date.now();
+        libKey = key;
         renderSongs();
       }).catch(function () { renderSongs(); });
       return;
@@ -417,7 +454,7 @@
 
     if (lib.loading) return;
     lib.loading = true;
-    var page = force ? 1 : lib.page + 1;
+    var page = more && !force ? lib.page + 1 : 1;
 
     request('getLibrarySongs', {
       page: page,
@@ -430,6 +467,8 @@
       libSongs = page === 1 ? songs : libSongs.concat(songs);
       lib.page = page;
       lib.total = (data && data.total) || libSongs.length;
+      libAt = Date.now();
+      libKey = key;
       renderSongs();
     }).catch(function () {
       renderSongs();
@@ -467,7 +506,7 @@
     $('mm-lib-playlists').innerHTML = playlists.length
       ? playlists.map(function (list) {
           return '<button class="mm-song' + (list.isDynamic ? ' is-dynamic' : '') + '" data-playlist-id="' + esc(list.id || '') + '">' +
-            '<div class="mm-thumb mm-playlist-icon">' + (list.thumbnail ? '<img src="' + esc(list.thumbnail) + '" alt="">' : plIconHtml(list.icon)) + '</div>' +
+            '<div class="mm-thumb mm-playlist-icon">' + (list.thumbnail ? '<img src="' + esc(list.thumbnail) + '" alt="" loading="lazy" decoding="async">' : plIconHtml(list.icon)) + '</div>' +
             '<div class="mm-song-text">' +
               '<div class="mm-song-title">' + esc(list.name || 'Playlist') + '</div>' +
               '<div class="mm-song-sub">' + (list.songCount || 0) + ' songs' + (list.isDynamic ? ' · Auto' : '') + '</div>' +
@@ -488,7 +527,7 @@
     }
     var thumbClass = 'mm-thumb' + (song.thumbnail ? '' : ' thumb-pending');
     return '<button class="mm-song" data-song-id="' + esc(id) + '">' +
-      '<div class="' + thumbClass + '" data-songid="' + esc(id) + '">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
+      '<div class="' + thumbClass + '" data-songid="' + esc(id) + '">' + (song.thumbnail ? '<img src="' + esc(song.thumbnail) + '" alt="" loading="lazy" decoding="async">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-song-text">' +
         '<div class="mm-song-title">' + esc(song.title || 'Unknown') + '</div>' +
         '<div class="mm-song-sub">' + sub + '</div>' +
@@ -595,7 +634,7 @@
 
     return '<div class="mm-playlist-song" data-entry-id="' + esc(entry.entryId || '') + '">' +
       '<button class="mm-song mm-song-main" data-song-id="' + esc(entry.songId || '') + '">' +
-        '<div class="mm-thumb' + (entry.thumbnail ? '' : ' thumb-pending') + '" data-songid="' + esc(entry.songId || '') + '">' + (entry.thumbnail ? '<img src="' + esc(entry.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
+        '<div class="mm-thumb' + (entry.thumbnail ? '' : ' thumb-pending') + '" data-songid="' + esc(entry.songId || '') + '">' + (entry.thumbnail ? '<img src="' + esc(entry.thumbnail) + '" alt="" loading="lazy" decoding="async">' : '<i class="fas fa-music"></i>') + '</div>' +
         '<div class="mm-song-text">' +
           '<div class="mm-song-title">' + esc(entry.title || 'Unknown') + '</div>' +
           '<div class="mm-song-sub">' + esc(entry.artist || '—') + '</div>' +
@@ -804,16 +843,28 @@
 
   function updateMini() {
     var show = !!(now.title && (currentTab === 'home' || currentTab === 'library' || currentTab === 'playlist'));
+    if (show && miniEl.hidden) {
+      miniEl.classList.remove('is-entering');
+      void miniEl.offsetWidth;
+      miniEl.classList.add('is-entering');
+    }
     miniEl.hidden = !show;
 
     if (!show) return;
-    miniTitle.textContent = now.title;
-    miniArtist.textContent = now.artist || '—';
-    if (now.art) { miniArt.src = now.art; miniArt.hidden = false; }
+    if (miniTitle.textContent !== now.title) miniTitle.textContent = now.title;
+    var artist = now.artist || '—';
+    if (miniArtist.textContent !== artist) miniArtist.textContent = artist;
+    if (now.art && miniArt.getAttribute('src') !== now.art) {
+      miniArt.src = now.art;
+      miniArt.hidden = false;
+    }
     setMiniPlayIcon(now.playing);
   }
 
   function setPlayingUi(playing) {
+    playing = !!playing;
+    if (playBtn.dataset.playing === (playing ? '1' : '0')) return;
+    playBtn.dataset.playing = playing ? '1' : '0';
     playBtn.innerHTML = playing ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     setMiniPlayIcon(playing);
@@ -828,6 +879,9 @@
   }
 
   function setMiniPlayIcon(playing) {
+    playing = !!playing;
+    if (miniPlay.dataset.playing === (playing ? '1' : '0')) return;
+    miniPlay.dataset.playing = playing ? '1' : '0';
     miniPlay.innerHTML = playing ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
     miniPlay.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   }
@@ -835,9 +889,12 @@
   function updateSeekUi() {
     var total = now.total || 0;
     var pct = total > 0 ? Math.min(1000, Math.max(0, now.time / total * 1000)) : 0;
-    if (!seekDragging) seekEl.value = String(Math.round(pct));
-    curEl.textContent = formatTime(now.time);
-    totalEl.textContent = formatTime(total);
+    var value = String(Math.round(pct));
+    if (!seekDragging && seekEl.value !== value) seekEl.value = value;
+    var current = formatTime(now.time);
+    if (curEl.textContent !== current) curEl.textContent = current;
+    var totalText = formatTime(total);
+    if (totalEl.textContent !== totalText) totalEl.textContent = totalText;
   }
 
   // Keep the phone awake only while the lyrics view is actually visible on the
@@ -862,8 +919,12 @@
     updateLyricsScreenAwake();
 
     if (lyricsOpen) {
+      lyricsEl.classList.remove('is-opening');
+      void lyricsEl.offsetWidth;
+      lyricsEl.classList.add('is-opening');
+      if (lyricsDirty) renderLyricsNow();
       applyLyricsFontScale();
-      highlightLyrics(now.time);
+      highlightLyrics(now.time, true);
     }
   }
 
@@ -976,7 +1037,7 @@
 
   // ── Lyrics ───────────────────────────────────────────────
   function onLyrics(data) {
-    lyricsEl.innerHTML = '';
+    lyricData = data || null;
     lyrics.synced = (data && data.syncedLyrics) || [];
     lyrics.plain = (data && data.plainLyrics) || [];
     lyrics.karaokeTimes = [];
@@ -990,73 +1051,153 @@
     setLyricsSource(data && data.provider ? data.provider : '');
 
     if (window.SongRequestKaraoke) {
+      // The karaokechange listener must not force a second render while we are
+      // already processing the payload that carries the setting.
+      karaokeSettingFromPayload = true;
       window.SongRequestKaraoke.setEnabled(data && data.karaokeMode === true);
+      karaokeSettingFromPayload = false;
     }
 
-    if (!lyrics.synced.length && !lyrics.plain.length) {
+    lyricsDirty = true;
+    // Lyrics are expensive to build (one span per syllable). Skip the DOM work
+    // completely while the lyrics view is closed; opening it renders once.
+    if (lyricsOpen) renderLyricsNow();
+  }
+
+  /**
+   * Builds the lyrics DOM from the last payload. Called on song change only
+   * while the lyrics view is open, when the view is opened, or when karaoke
+   * mode is toggled.
+   */
+  function renderLyricsNow() {
+    lyricsDirty = false;
+    lyricLineEls = [];
+    lyricTimed = [];
+
+    if (!lyricData) {
+      lyricsEl.innerHTML = now.title
+        ? '<div class="mm-lyrics-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Loading lyrics…</span></div>'
+        : '<div class="mm-lyrics-empty"><i class="fas fa-music"></i><span>No lyrics available</span></div>';
+      return;
+    }
+
+    var synced = lyrics.synced;
+    var plain = lyrics.plain;
+    var data = lyricData;
+
+    if (!synced.length && !plain.length) {
       lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-music"></i><span>No lyrics available</span></div>';
       return;
     }
 
-    var html = '';
-    if (lyrics.synced.length) {
-      for (var i = 0; i < lyrics.synced.length; i++) {
-        html += '<div class="mm-line" data-index="' + i + '" data-time="' + (lyrics.synced[i].time || 0) + '">' + esc(lyrics.synced[i].text || '') + '</div>';
+    var karaokeOn = !!(window.SongRequestKaraoke && window.SongRequestKaraoke.isEnabled());
+    var fragment = document.createDocumentFragment();
+
+    if (synced.length) {
+      var karaokeLines = data.karaoke && data.karaoke.lines ? data.karaoke.lines : null;
+      for (var i = 0; i < synced.length; i++) {
+        var item = synced[i] || {};
+        var line = document.createElement('div');
+        line.className = 'mm-line';
+        line.dataset.index = i;
+        line.dataset.time = item.time || 0;
+
+        var karaokeLine = karaokeLines ? karaokeLines[i] : null;
+        if (karaokeOn && karaokeLine) {
+          window.SongRequestKaraoke.renderLine(line, karaokeLine);
+        } else {
+          line.textContent = item.text || '';
+        }
+
+        var timed = karaokeLine && isFinite(Number(karaokeLine.time))
+          ? Number(karaokeLine.time)
+          : Number(item.time) || 0;
+        lyricTimed.push({ time: timed, empty: !String(item.text || '').trim() });
+        lyricLineEls.push(line);
+        fragment.appendChild(line);
       }
     } else {
-      for (var j = 0; j < lyrics.plain.length; j++) {
-        var text = lyrics.plain[j];
-        if (!text) { html += '<div class="mm-gap"></div>'; continue; }
-        html += '<div class="mm-line">' + esc(text) + '</div>';
+      for (var j = 0; j < plain.length; j++) {
+        var text = plain[j];
+        if (!text) {
+          var gap = document.createElement('div');
+          gap.className = 'mm-gap';
+          fragment.appendChild(gap);
+          continue;
+        }
+        var plainLine = document.createElement('div');
+        plainLine.className = 'mm-line';
+        plainLine.textContent = text;
+        lyricLineEls.push(plainLine);
+        fragment.appendChild(plainLine);
       }
     }
 
-    lyricsEl.innerHTML = html;
-    applyLyricsFontScale();
+    lyricsEl.innerHTML = '';
+    lyricsEl.appendChild(fragment);
 
     if (window.SongRequestKaraoke) {
-      if (data && data.karaoke && data.karaoke.lines) {
-        for (var k = 0; k < data.karaoke.lines.length; k++) {
-          var lineEl = lyricsEl.querySelector('.mm-line[data-index="' + k + '"]');
-          if (lineEl) window.SongRequestKaraoke.renderLine(lineEl, data.karaoke.lines[k]);
-        }
+      window.SongRequestKaraoke.invalidate(lyricsEl);
+      if (karaokeOn && data.karaoke) {
+        window.SongRequestKaraoke.attachPauses(lyricsEl, data.karaoke.pauses);
       }
-      if (data && data.karaoke) window.SongRequestKaraoke.attachPauses(lyricsEl, data.karaoke.pauses);
-      window.SongRequestKaraoke.update(lyricsEl, now.time || 0);
+      if (karaokeOn) {
+        window.SongRequestKaraoke.update(lyricsEl, now.time || 0, now.playing);
+      }
     }
 
+    applyLyricsFontScale();
     if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.decorateLyrics();
-    if (lyricsOpen) highlightLyrics(now.time);
+    if (lyricsOpen) highlightLyrics(now.time, true);
   }
 
-  function highlightLyrics(time) {
+  // Last non-empty timed line at/before the given time (binary search).
+  function lyricIndexAt(time) {
+    var lo = 0;
+    var hi = lyricTimed.length - 1;
+    var found = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (lyricTimed[mid].time <= time) {
+        found = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    while (found >= 0 && lyricTimed[found].empty) found--;
+    return found;
+  }
+
+  function highlightLyrics(time, force) {
     if (!lyrics.synced.length || !lyricsOpen) return;
+    if (lyricsDirty) renderLyricsNow();
 
     var adjustedTime = time + lyrics.syncOffset;
-    if (window.SongRequestKaraoke) window.SongRequestKaraoke.update(lyricsEl, adjustedTime);
-    var index = -1;
-    for (var i = 0; i < lyrics.synced.length; i++) {
-      var lineTime = lyrics.karaokeTimes[i];
-      if (lineTime == null || !isFinite(lineTime)) lineTime = lyrics.synced[i].time;
-      if (lineTime <= adjustedTime) {
-        // Empty timed markers must not steal the highlight from the line that is
-        // still being sung (the pause bar covers the gap instead).
-        if (String(lyrics.synced[i].text || '').trim()) index = i;
-      } else break;
+    if (window.SongRequestKaraoke) {
+      window.SongRequestKaraoke.update(lyricsEl, adjustedTime, now.playing);
     }
 
-    if (index === lyrics.active) return;
+    var index = lyricIndexAt(adjustedTime);
+    if (!force && index === lyrics.active) return;
+
+    var previous = lyrics.active;
     lyrics.active = index;
 
-    var lines = lyricsEl.querySelectorAll('.mm-line');
-    for (var j = 0; j < lines.length; j++) {
-      lines[j].classList.toggle('is-active', j === index);
+    if (previous >= 0 && previous !== index && lyricLineEls[previous]) {
+      lyricLineEls[previous].classList.remove('is-active');
     }
 
-    var active = lines[index];
+    var active = index >= 0 ? lyricLineEls[index] : null;
     if (!active) return;
+    if (!active.classList.contains('is-active')) active.classList.add('is-active');
 
-    var target = active.offsetTop - lyricsEl.clientHeight / 2 + active.offsetHeight / 2;
+    // Measure against the scroll container instead of assuming it is the
+    // offsetParent (it is not: the view is absolutely positioned).
+    var lineBox = active.getBoundingClientRect();
+    var lyricsBox = lyricsEl.getBoundingClientRect();
+    var target = lyricsEl.scrollTop + (lineBox.top - lyricsBox.top) -
+      lyricsBox.height / 2 + lineBox.height / 2;
     lyricsEl.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
   }
 
@@ -1069,10 +1210,30 @@
       setPlayingUi(now.playing);
     }
     if (data && data.repeatEnabled != null) setRepeatState(data.repeatEnabled);
-    renderQueue();
+    var signature = queueSignatureOf(queue) + '\u0003' + queueSignatureOf(playlistQueue);
+    queueDirty = signature !== queueSignature;
+    // Do not build a queue DOM that nobody can see. Opening the sheet renders
+    // the latest state in one pass; while open, identical updates are a no-op.
+    if (!queueEl.hidden) renderQueue();
   }
 
-  function renderQueue() {
+  function queueSignatureOf(items) {
+    var parts = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      parts.push((item.songPath || '') + '\u0001' + (item.title || '') + '\u0001' +
+        (item.artist || '') + '\u0001' + (item.estimatedStart || '') + '\u0001' +
+        (item.thumbnail ? '1' : '0'));
+    }
+    return parts.join('\u0002');
+  }
+
+  function renderQueue(force) {
+    var signature = queueSignatureOf(queue) + '\u0003' + queueSignatureOf(playlistQueue);
+    if (!force && signature === queueSignature && !queueDirty) return;
+    queueSignature = signature;
+    queueDirty = false;
+
     var html = '';
 
     if (queue.length) {
@@ -1088,7 +1249,20 @@
       }).join('');
     }
 
-    queueListEl.innerHTML = html || '<div class="mm-empty"><i class="fas fa-list"></i><span>Queue is empty</span></div>';
+    if (!html) {
+      queueListEl.innerHTML = '<div class="mm-empty"><i class="fas fa-list"></i><span>Queue is empty</span></div>';
+      return;
+    }
+
+    queueListEl.innerHTML = html;
+
+    // Stagger only the first screenful; animating hundreds of rows would undo
+    // the point of deferring the render.
+    var rows = queueListEl.querySelectorAll('.mm-queue-row');
+    for (var r = 0; r < rows.length && r < 14; r++) {
+      rows[r].classList.add('is-enter');
+      rows[r].style.animationDelay = (r * 16) + 'ms';
+    }
   }
 
   function queueRow(item, index, current, removeMethod, moveSource) {
@@ -1107,7 +1281,7 @@
 
     return '<div class="mm-queue-row' + (current ? ' is-current' : '') + '" data-song-path="' + esc(item.songPath || '') + '">' +
       (current ? '<div class="mm-now-bar"></div>' : '') +
-      '<div class="mm-thumb">' + (item.thumbnail ? '<img src="' + esc(item.thumbnail) + '" alt="">' : '<i class="fas fa-music"></i>') + '</div>' +
+      '<div class="mm-thumb">' + (item.thumbnail ? '<img src="' + esc(item.thumbnail) + '" alt="" loading="lazy" decoding="async">' : '<i class="fas fa-music"></i>') + '</div>' +
       '<div class="mm-queue-text">' +
         '<div class="mm-queue-title">' + esc(item.title || 'Unknown') + '</div>' +
         '<div class="mm-queue-sub">' + esc(item.artist || item.estimatedStart || '—') + '</div>' +
@@ -1381,8 +1555,20 @@
       lyrics.plain = [];
       lyrics.active = -1;
       lyrics.syncOffset = 0;
+      lyricData = null;
+      lyricLineEls = [];
+      lyricTimed = [];
+      lyricsDirty = true;
       updateLyricsSyncUi();
-      lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Loading lyrics…</span></div>';
+      if (lyricsOpen) {
+        lyricsEl.innerHTML = '<div class="mm-lyrics-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Loading lyrics…</span></div>';
+      }
+
+      // A fast, non-layout entrance for the new artwork/meta rather than a
+      // hard swap that makes the whole player flash.
+      playerView.classList.remove('is-song-change');
+      void playerView.offsetWidth;
+      playerView.classList.add('is-song-change');
     }
 
     if (data.fileType || data.bitrateKbps || data.songPath || data.currentSongPath) {
@@ -1523,7 +1709,7 @@
     }, 250);
   });
 
-  $('mm-lib-more').addEventListener('click', function () { loadLibrary(false); });
+  $('mm-lib-more').addEventListener('click', function () { loadLibrary(false, true); });
 
   // Player controls
   lyricsToggle.addEventListener('click', function () { toggleLyrics(); });
@@ -1533,12 +1719,29 @@
   updateLyricsSyncUi();
   updateLyricsFontUi();
 
+  // Karaoke mode can be toggled from the settings sheet or the desktop. The
+  // lyrics payload already carries syllable timings, so rebuild the line spans
+  // locally instead of waiting for another host round-trip.
+  document.addEventListener('karaokechange', function () {
+    if (karaokeSettingFromPayload || !lyricData) return;
+    lyricsDirty = true;
+    if (lyricsOpen) renderLyricsNow();
+  });
+
   if (queueToggle) {
     queueToggle.addEventListener('click', function () {
       if (queueEl.hidden) openQueue(); else closeQueue(true);
     });
   }
-  playBtn.addEventListener('click', function () { send('playPause'); });
+  // Toggle immediately so the button answers the tap even while the engine is
+  // preparing the next track; the 4 Hz state tick reconciles any failure.
+  function togglePlay() {
+    now.playing = !now.playing;
+    setPlayingUi(now.playing);
+    send('playPause');
+  }
+
+  playBtn.addEventListener('click', togglePlay);
   $('mm-next').addEventListener('click', function () { send('skipNext'); });
   $('mm-prev').addEventListener('click', function () { send('skipPrevious'); });
 
@@ -1564,7 +1767,7 @@
     if (event.target.closest('button')) return;
     send('mobileOpenPlayer');
   });
-  miniPlay.addEventListener('click', function () { send('playPause'); });
+  miniPlay.addEventListener('click', togglePlay);
   $('mm-mini-next').addEventListener('click', function () { send('skipNext'); });
 
   // Queue sidebar

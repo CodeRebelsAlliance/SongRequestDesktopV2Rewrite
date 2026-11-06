@@ -522,8 +522,6 @@
   white-space: pre;
   transform: translateY(var(--karaoke-lift, 0px));
   transition: color var(--karaoke-color-time, .12s) linear, transform var(--karaoke-lift-time, .16s) cubic-bezier(.22, .61, .36, 1);
-  will-change: transform;
-  backface-visibility: hidden;
 }
 .karaoke-word::after {
   content: attr(data-text);
