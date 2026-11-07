@@ -799,6 +799,10 @@ public class NewUiWindow : IUiShell
             // window. Calling Invoke on that half-created window crashes WebView2
             // on Windows, so the send channel stays closed until WindowCreated.
             var visualizationReady = false;
+            // At most one frame may be queued to the UI at a time. During playback
+            // start the UI thread is busy; without this the 30 fps audio feed piled
+            // up Invoke callbacks and could overwhelm the Linux/Photino loop.
+            var visualizationSendBusy = 0;
 
             vw.WindowCreated += (_, _) =>
             {
@@ -832,11 +836,22 @@ public class NewUiWindow : IUiShell
                 // (the window stayed on "No audio playing"). WindowCreated already
                 // guarantees the native window exists on every platform.
                 if (!visualizationReady) return;
+                if (System.Threading.Interlocked.CompareExchange(ref visualizationSendBusy, 1, 0) != 0)
+                    return; // previous frame still queued; drop this one
+
                 try
                 {
-                    vw.Invoke(() => vw.SendWebMessage(json));
+                    vw.Invoke(() =>
+                    {
+                        try { vw.SendWebMessage(json); }
+                        catch { }
+                        finally { System.Threading.Volatile.Write(ref visualizationSendBusy, 0); }
+                    });
                 }
-                catch { }
+                catch
+                {
+                    System.Threading.Volatile.Write(ref visualizationSendBusy, 0);
+                }
             };
 
             _visualizationSend = VisualizationSendMessage;
@@ -844,6 +859,7 @@ public class NewUiWindow : IUiShell
             RegisterHideOnClose(vw, "Visualization - ", () =>
             {
                 VisualizationSendMessage = null;
+                System.Threading.Volatile.Write(ref visualizationSendBusy, 0);
                 try { _interop.OnVisualizationClosed(); } catch { }
             });
 
@@ -856,7 +872,9 @@ public class NewUiWindow : IUiShell
     {
         // The window instance is kept (hidden) so reopening it is instant and no
         // web-view teardown can block the UI thread.
-        SetSubWindowVisible("Visualization - ", false);;
+        SetSubWindowVisible("Visualization - ", false);
+        VisualizationSendMessage = null;
+        try { _interop.OnVisualizationClosed(); } catch { }
     }
 
     /// <summary>

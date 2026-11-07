@@ -2488,12 +2488,17 @@
     // exists the app simply continues; Settings can still perform a real sign-in.
     try { send('silentAuth').catch(() => { }); } catch (_) { }
 
-    // The updater still gets first refusal, but it runs during the animation
-    // instead of adding a separate wait.
+    // Let the assembly, title and sweep finish. The update prompt must not pop
+    // over a half-played intro (it used to pause the animation mid-flight).
+    const animationComplete = delay(2000);
+
+    // The updater still gets first refusal, but it runs during the animation and
+    // only shows its prompt once the cinematic has played through.
     const updateTask = (async () => {
       let info = null;
       try { info = await send('checkForUpdates'); } catch (_) { }
       if (info && info.updateAvailable) {
+        await animationComplete;
         cinematic.classList.add('is-paused');
         await promptForUpdate(info);
         cinematic.classList.remove('is-paused');
@@ -2507,7 +2512,7 @@
 
     // Adaptive minimum: always let the logo finish assembling, but never hold the
     // app back for more than a few seconds waiting for optional data.
-    const minimumAnimation = delay(1500);
+    const minimumAnimation = animationComplete;
     const initialLoad = initialDataLoad
       ? Promise.race([initialDataLoad.catch(() => { }), delay(3200)])
       : Promise.resolve();

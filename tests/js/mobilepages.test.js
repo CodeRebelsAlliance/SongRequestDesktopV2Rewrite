@@ -485,7 +485,10 @@ test('new launch experience is opt-in and assembles the large logo', () => {
   assert.match(app, /LargeSR\.png/);
   assert.match(app, /is-assembled/);
   assert.match(app, /send\('silentAuth'\)/);
-  // The updater must still intercept before the app takes over.
+  // The updater must still intercept before the app takes over, but only after
+  // the cinematic has played through.
+  assert.match(app, /const animationComplete = delay\(2000\)/);
+  assert.match(app, /await animationComplete;[\s\S]*?promptForUpdate/);
   assert.match(app, /promptForUpdate/);
   assert.match(app, /checkForUpdates/);
 

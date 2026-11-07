@@ -9,11 +9,12 @@ public class VisualizationStreamerTests
     public void FirstFrame_IsEmittedImmediately_WithFormat()
     {
         var engine = new MusicEngine();
-        using var streamer = new VisualizationStreamer(engine);
+        using var streamer = new VisualizationStreamer(engine, autoPump: false);
         object? frame = null;
         streamer.FrameReady += f => frame = f;
 
         streamer.OnSamplesCaptured(null, new float[] { 0f, 1f, -1f });
+        streamer.DrainFrame();
 
         Assert.NotNull(frame);
         Assert.Equal(3, TestSupport.Prop<int>(frame!, "sampleCount"));
@@ -25,11 +26,12 @@ public class VisualizationStreamerTests
     public void Quantization_ClampsAndScalesTo8Bit()
     {
         var engine = new MusicEngine();
-        using var streamer = new VisualizationStreamer(engine);
+        using var streamer = new VisualizationStreamer(engine, autoPump: false);
         string? data = null;
         streamer.FrameReady += f => data = TestSupport.Prop<string>(f, "data");
 
         streamer.OnSamplesCaptured(null, new[] { 0f, 1f, -1f, 0.5f });
+        streamer.DrainFrame();
 
         var bytes = Convert.FromBase64String(data!);
         Assert.Equal(4, bytes.Length);
@@ -43,12 +45,14 @@ public class VisualizationStreamerTests
     public void Frames_AreThrottledWithinTheInterval()
     {
         var engine = new MusicEngine();
-        using var streamer = new VisualizationStreamer(engine);
+        using var streamer = new VisualizationStreamer(engine, autoPump: false);
         int frames = 0;
         streamer.FrameReady += _ => frames++;
 
         streamer.OnSamplesCaptured(null, new float[100]); // first -> emitted
+        streamer.DrainFrame();
         streamer.OnSamplesCaptured(null, new float[100]); // immediately after -> throttled
+        streamer.DrainFrame();
 
         Assert.Equal(1, frames);
     }
@@ -57,12 +61,13 @@ public class VisualizationStreamerTests
     public void AfterDispose_NoFramesAreEmitted()
     {
         var engine = new MusicEngine();
-        var streamer = new VisualizationStreamer(engine);
+        var streamer = new VisualizationStreamer(engine, autoPump: false);
         streamer.Dispose();
         object? frame = null;
         streamer.FrameReady += f => frame = f;
 
         streamer.OnSamplesCaptured(null, new float[10]);
+        streamer.DrainFrame();
 
         Assert.Null(frame);
     }
@@ -71,11 +76,12 @@ public class VisualizationStreamerTests
     public void EmptySampleBatch_IsIgnored()
     {
         var engine = new MusicEngine();
-        using var streamer = new VisualizationStreamer(engine);
+        using var streamer = new VisualizationStreamer(engine, autoPump: false);
         int frames = 0;
         streamer.FrameReady += _ => frames++;
 
         streamer.OnSamplesCaptured(null, Array.Empty<float>());
+        streamer.DrainFrame();
 
         Assert.Equal(0, frames);
     }
