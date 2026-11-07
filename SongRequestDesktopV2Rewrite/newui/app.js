@@ -2583,15 +2583,21 @@
     // switch or under memory pressure): never replay the splash/launch/auth flow.
     if (data.setupComplete) {
       stopShimmer();
+      document.documentElement.classList.remove('sr-boot');
       overlay.style.display = 'none';
       return;
     }
 
     if (data.newLaunchExperience) {
       stopShimmer();
+      // Keep the classic splash hidden; the cinematic replaces it from the
+      // first frame.
       await runCinematicLaunch(data, overlay);
       return;
     }
+
+    // Classic flow: reveal the old splash now that we know it is wanted.
+    document.documentElement.classList.remove('sr-boot');
 
     // Loading phase: progress to 35%, then check for updates. Delays are short:
     // the old 400–500 ms pauses added more than two seconds to every launch.

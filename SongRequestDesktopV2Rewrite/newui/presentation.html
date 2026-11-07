@@ -18,6 +18,19 @@
   </style>
 </head>
 <body>
+  <!-- First-paint splash: the same assembled wordmark as launch, then it hands
+       over to the presentation. It also covers the initial empty layout while
+       the host sends the first now-playing/lyrics state. -->
+  <div id="pres-splash" aria-hidden="true">
+    <div class="pres-splash-bg"></div>
+    <div class="pres-splash-stage">
+      <div class="pres-splash-logo" id="pres-splash-logo"></div>
+      <div class="pres-splash-title">Technik-AG</div>
+      <div class="pres-splash-sub">Preparing the stage</div>
+      <div class="pres-splash-loader"><i></i></div>
+    </div>
+  </div>
+
   <div id="pres-stage-server"></div>
   <div id="pres-zoom" role="group" aria-label="Presentation zoom">
     <button id="pres-zoom-out" title="Zoom out"><i class="fas fa-minus"></i></button>

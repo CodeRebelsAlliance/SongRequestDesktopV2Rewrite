@@ -178,6 +178,15 @@
   var lastColors = '';
   var viewAnimTimer = null;
 
+  // First-load veil on the music page. It continues the cinematic launch into
+  // the actual Home/Library content instead of showing an empty list.
+  var bootEl = $('mm-boot');
+  var bootActivated = false;
+  var bootShown = false;
+  var bootReady = false;
+  var bootMinUntil = 0;
+  var bootTimer = null;
+
   // ── Element refs ─────────────────────────────────────────
   var appEl = $('mm-app');
   var views = {
@@ -242,6 +251,56 @@
     viewAnimTimer = setTimeout(function () { el.classList.remove('is-entering'); }, 220);
   }
 
+  function bootNow() {
+    return (window.performance && performance.now) ? performance.now() : Date.now();
+  }
+
+  function activateBoot() {
+    if (!bootEl || bootActivated) return;
+    bootActivated = true;
+    bootMinUntil = bootNow() + 480;
+    maybeFinishBoot();
+  }
+
+  function markBootReady() {
+    if (!bootEl) return;
+    bootReady = true;
+    maybeFinishBoot();
+  }
+
+  function forceFinishBoot() {
+    if (!bootShown) return;
+    bootReady = true;
+    maybeFinishBoot();
+  }
+
+  function showBoot() {
+    if (bootEl && bootEl.hidden) return;
+    if (!bootShown) bootMinUntil = bootNow() + 480;
+    bootShown = true;
+    activateBoot();
+    // A page that is visible but slow (or has no data) must not keep the veil
+    // forever; the skeleton/empty state is already behind it.
+    setTimeout(forceFinishBoot, 2400);
+    maybeFinishBoot();
+  }
+
+  function maybeFinishBoot() {
+    if (!bootEl || bootEl.hidden || !bootShown || !bootActivated || !bootReady) return;
+    var wait = bootMinUntil - bootNow();
+    if (wait > 0) {
+      if (!bootTimer) {
+        bootTimer = setTimeout(function () {
+          bootTimer = null;
+          maybeFinishBoot();
+        }, wait);
+      }
+      return;
+    }
+    bootEl.classList.add('is-leaving');
+    setTimeout(function () { bootEl.hidden = true; }, 480);
+  }
+
   function setTab(tab) {
     if (tab === 'queue') {
       openQueue();
@@ -259,6 +318,7 @@
     if (!views[tab]) tab = 'home';
     if (libSelecting && tab !== 'library') setLibrarySelecting(false);
     currentTab = tab;
+    activateBoot();
     updateLyricsScreenAwake();
 
     for (var name in views) views[name].hidden = name !== tab;
@@ -281,7 +341,7 @@
         loadLibrary(false);
       }
     }
-    if (tab === 'player') updatePlayer();
+    if (tab === 'player') { updatePlayer(); markBootReady(); }
     if (tab === 'share') loadShareStatus();
   }
 
@@ -324,7 +384,7 @@
   function loadHomeFeed(force) {
     // The DOM is kept alive between tab switches, so a fresh feed needs no
     // rebuild at all (rebuilding reset the scroll position).
-    if (!force && feed && Date.now() - feedAt < 8000) return;
+    if (!force && feed && Date.now() - feedAt < 8000) { markBootReady(); return; }
 
     $('mm-home-loading').hidden = false;
     $('mm-home-empty').hidden = true;
@@ -363,6 +423,7 @@
     $('mm-new').innerHTML = added.map(songCard).join('');
 
     patchThumbnails($('mm-home-feed'), 0);
+    markBootReady();
   }
 
   function songCard(song) {
@@ -453,7 +514,7 @@
 
     if (lib.mode === 'recent') {
       // Tab switches reuse the list that is already in the DOM.
-      if (!force && !more && recentAt > 0 && Date.now() - recentAt < 15000) return;
+      if (!force && !more && recentAt > 0 && Date.now() - recentAt < 15000) { markBootReady(); return; }
       request('getPlayHistory', { count: 60 }).then(function (data) {
         recentSongs = (data && data.history) || [];
         recentAt = Date.now();
@@ -463,7 +524,7 @@
     }
 
     if (lib.mode === 'playlists') {
-      if (!force && !more && playlistsAt > 0 && Date.now() - playlistsAt < 15000) return;
+      if (!force && !more && playlistsAt > 0 && Date.now() - playlistsAt < 15000) { markBootReady(); return; }
       request('getPlaylists').then(function (data) {
         playlists = (data && data.playlists) || [];
         playlistsAt = Date.now();
@@ -472,7 +533,7 @@
       return;
     }
 
-    if (!more && !force && fresh) return;
+    if (!more && !force && fresh) { markBootReady(); return; }
 
     if (lib.query) {
       request('searchLibrary', { query: lib.query, maxResults: 100 }).then(function (data) {
@@ -489,6 +550,10 @@
     if (lib.loading) return;
     lib.loading = true;
     var page = more && !force ? lib.page + 1 : 1;
+    if (page === 1 && !libSongs.length) {
+      var list = $('mm-lib-songs');
+      if (list) list.innerHTML = skeletonRows(8);
+    }
 
     request('getLibrarySongs', {
       page: page,
@@ -511,6 +576,25 @@
     });
   }
 
+  function fadeInList(el) {
+    if (!el) return;
+    el.classList.remove('is-fresh');
+    void el.offsetWidth;
+    el.classList.add('is-fresh');
+    setTimeout(function () { el.classList.remove('is-fresh'); }, 320);
+  }
+
+  function skeletonRows(count) {
+    var html = '';
+    for (var i = 0; i < count; i++) {
+      html += '<div class="mm-song mm-skeleton-row">' +
+        '<div class="mm-thumb mm-skeleton"></div>' +
+        '<div class="mm-song-text"><div class="mm-skeleton mm-skeleton-title"></div>' +
+        '<div class="mm-skeleton mm-skeleton-sub"></div></div></div>';
+    }
+    return html;
+  }
+
   function renderSongs() {
     $('mm-lib-songs').innerHTML = libSongs.length
       ? libSongs.map(songRow).join('')
@@ -519,6 +603,8 @@
     $('mm-lib-more-wrap').hidden = libSongs.length >= lib.total || !!lib.query;
     patchThumbnails($('mm-lib-songs'), 0);
     applyLibrarySelection();
+    fadeInList($('mm-lib-songs'));
+    markBootReady();
   }
 
   function renderRecent() {
@@ -536,6 +622,8 @@
       : '<div class="mm-empty"><i class="fas fa-clock-rotate-left"></i><span>Nothing played yet</span></div>';
     patchThumbnails($('mm-lib-recent'), 0);
     applyLibrarySelection();
+    fadeInList($('mm-lib-recent'));
+    markBootReady();
   }
 
   function renderPlaylists() {
@@ -551,6 +639,7 @@
             '</button>';
         }).join('')
       : '<div class="mm-empty"><i class="fas fa-list"></i><span>No playlists yet</span></div>';
+    markBootReady();
   }
 
   function songRow(song) {
@@ -649,6 +738,7 @@
 
     var songs = currentPlaylist.songs || [];
     var editable = !currentPlaylist.isDynamic;
+    markBootReady();
     $('mm-playlist-list').innerHTML = songs.length
       ? songs.map(function (entry, index) { return playlistSongRow(entry, index, songs.length, editable); }).join('')
       : '<div class="mm-empty"><i class="fas fa-list"></i><span>This playlist is empty</span>' +
@@ -1595,6 +1685,7 @@
   function onEvent(name, data) {
     switch (name) {
       case 'mobileTab':
+        showBoot();
         setTab(data && data.tab);
         break;
 
@@ -1904,6 +1995,10 @@
   // Karaoke mode can be toggled from the settings sheet or the desktop. The
   // lyrics payload already carries syllable timings, so rebuild the line spans
   // locally instead of waiting for another host round-trip.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) showBoot();
+  });
+
   document.addEventListener('karaokechange', function () {
     if (karaokeSettingFromPayload || !lyricData) return;
     lyricsDirty = true;
@@ -2882,6 +2977,7 @@
 
     $('mm-share-join-code').disabled = share.receiving || share.sharing;
     $('mm-share-volume').value = String(Math.round(share.volume * 100));
+    markBootReady();
   }
 
   function toggleSharing() {

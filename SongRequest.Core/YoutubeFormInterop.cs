@@ -145,6 +145,10 @@ public class YoutubeFormInterop
     private LyricsService? _musicPlayerLyricsService;
     private readonly object _musicPlayerLyricsCacheLock = new();
     private readonly System.Collections.Generic.Dictionary<string, LyricsResult> _musicPlayerLyricsCache = new(StringComparer.OrdinalIgnoreCase);
+    // Word/syllable timing is expensive for long songs. Build it during the
+    // prefetch pass so the lyrics can be sent on the first frame of the song.
+    private readonly object _karaokePayloadCacheLock = new();
+    private readonly System.Collections.Generic.Dictionary<string, object?> _karaokePayloadCache = new(StringComparer.OrdinalIgnoreCase);
 
     // MIDI assignment capture (remote control settings)
     private readonly object _midiCaptureLock = new();
@@ -3100,8 +3104,21 @@ public class YoutubeFormInterop
         if (syncedLines.Count == 0) return null;
         var analysis = AnalysisForSong(song);
         double duration = analysis?.DurationSeconds ?? (song?.Duration.TotalSeconds ?? 0);
+
+        // The analysis version/count is part of the key: when the background
+        // analyzer finishes, the payload is rebuilt with the better timings.
+        var cacheKey = song == null ? null :
+            $"{song.songPath}|{song.Artist}|{song.Title}|{analysis?.AlgorithmVersion}|{analysis?.Timeline?.Count ?? 0}";
+        if (cacheKey != null)
+        {
+            lock (_karaokePayloadCacheLock)
+            {
+                if (_karaokePayloadCache.TryGetValue(cacheKey, out var cached)) return cached;
+            }
+        }
+
         var karaoke = KaraokeLyrics.Build(syncedLines, analysis, duration);
-        return new
+        var payload = new
         {
             lines = karaoke.Lines.Select(line => new
             {
@@ -3129,6 +3146,16 @@ public class YoutubeFormInterop
                 duration = pause.Duration
             }).ToList()
         };
+
+        if (cacheKey != null)
+        {
+            lock (_karaokePayloadCacheLock)
+            {
+                if (_karaokePayloadCache.Count > 48) _karaokePayloadCache.Clear();
+                _karaokePayloadCache[cacheKey] = payload;
+            }
+        }
+        return payload;
     }
 
     /// <summary>
@@ -4632,28 +4659,41 @@ public class YoutubeFormInterop
             var mp = _ytForm.Music;
             if (mp == null) return;
 
-            Song? next = null;
+            // Warm both the current track and the next one. The current item is
+            // what used to arrive with a network delay right after Play was
+            // pressed; having it cached makes lyrics appear on the first frame.
+            var songs = new List<Song>();
             RunOnUi(() =>
             {
-                if (mp.Queue.Count > 1)
-                    next = mp.Queue[1];
+                songs = mp.Queue.Take(2).ToList();
             });
-
-            if (next == null) return;
-
-            var songKey = $"{next.songPath}|{next.Artist}|{next.Title}";
-            lock (_musicPlayerLyricsCacheLock)
-            {
-                if (_musicPlayerLyricsCache.ContainsKey(songKey)) return;
-            }
+            if (songs.Count == 0) return;
 
             var lyricsService = _musicPlayerLyricsService ??= new LyricsService();
-            var result = await ResolveLyricsAsync(next, lyricsService).ConfigureAwait(false);
-            RegisterTimedLyrics(next, result);
-
-            lock (_musicPlayerLyricsCacheLock)
+            foreach (var song in songs)
             {
-                _musicPlayerLyricsCache[songKey] = result;
+                var songKey = $"{song.songPath}|{song.Artist}|{song.Title}";
+                LyricsResult? result = null;
+                lock (_musicPlayerLyricsCacheLock)
+                {
+                    _musicPlayerLyricsCache.TryGetValue(songKey, out result);
+                }
+
+                if (result == null)
+                {
+                    result = await ResolveLyricsAsync(song, lyricsService).ConfigureAwait(false);
+                    RegisterTimedLyrics(song, result);
+                    lock (_musicPlayerLyricsCacheLock)
+                    {
+                        _musicPlayerLyricsCache[songKey] = result;
+                    }
+                }
+
+                // Build the syllable/word payload now, off the playback path.
+                if (result.Found && result.HasSynced)
+                {
+                    try { BuildKaraokePayload(song, result.ParseSyncedLines()); } catch { }
+                }
             }
         }
         catch { }
@@ -4806,6 +4846,10 @@ public class YoutubeFormInterop
         lock (_musicPlayerLyricsCacheLock)
         {
             _musicPlayerLyricsCache.Clear();
+        }
+        lock (_karaokePayloadCacheLock)
+        {
+            _karaokePayloadCache.Clear();
         }
 
         if (_musicPlayerSubscribed)

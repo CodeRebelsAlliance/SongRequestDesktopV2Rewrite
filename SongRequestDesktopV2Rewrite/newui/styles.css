@@ -653,3 +653,8 @@ select:disabled { opacity: 0.55; cursor: default; }
   .cine-sweep { display: none; }
   .cine-loader i { animation: none !important; width: 100%; background: #d0bcff; }
 }
+
+/* The launch splash stays hidden until the startup script has chosen between
+   the classic and the animated launch experience. */
+#startup-splash { transition: opacity 0.25s ease; }
+html.sr-boot #startup-splash { opacity: 0; }

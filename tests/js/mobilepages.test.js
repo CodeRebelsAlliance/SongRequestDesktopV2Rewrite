@@ -521,3 +521,47 @@ test('player and stage keep a visible composited colour drift', () => {
   assert.match(stage, /@keyframes stageGlow/);
   assert.match(stage, /@keyframes gradientDrift[\s\S]*?rotate/);
 });
+
+test('presentation and mobile music hide first-paint emptiness', () => {
+  const presHtml = read('presentation.html');
+  const presJs = read('presentation.js');
+  const presCss = read('presentation.css');
+  const musicHtml = read('mobilemusic.html');
+  const musicJs = read('mobilemusic.js');
+  const musicCss = read('mobilemusic.css');
+
+  // The stage/presentation assembles the big logo before revealing content.
+  assert.match(presHtml, /id="pres-splash"/);
+  assert.match(presJs, /buildPresentationSplash/);
+  assert.match(presJs, /finishPresentationSplash/);
+  assert.match(presCss, /body\.pres-ready #presentation-root/);
+  assert.match(presCss, /@keyframes presSplashAssemble/);
+  // Absolute top bar must keep its positioning inside the gradient panel.
+  assert.match(presCss, /#pres-player-panel > \*:not\(#pres-top-bar\)/);
+
+  // The music page continues the launch into Home/Library with a boot veil and
+  // library skeletons, instead of showing an empty list.
+  assert.match(musicHtml, /id="mm-boot"/);
+  assert.match(musicJs, /showBoot/);
+  assert.match(musicJs, /markBootReady/);
+  assert.match(musicJs, /skeletonRows/);
+  assert.match(musicCss, /@keyframes mmBootLogo/);
+  assert.match(musicCss, /mm-skeleton/);
+});
+
+test('launch splash does not flash the classic logo and lyrics prefetch current track', () => {
+  const app = read('app.js');
+  const requests = read('mobilerequests.html');
+  const interop = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+
+  assert.match(requests, /sr-boot/);
+  assert.match(app, /classList\.remove\('sr-boot'\)/);
+  assert.match(app, /classList\.add\('sr-boot'\)|sr-boot/);
+
+  // Current and next lyrics are warmed, and the karaoke payload is cached so
+  // the first frame of a song can show lyrics immediately.
+  assert.match(interop, /mp\.Queue\.Take\(2\)/);
+  assert.match(interop, /_karaokePayloadCache/);
+  assert.match(interop, /BuildKaraokePayload\(song, result\.ParseSyncedLines\(\)\)/);
+});

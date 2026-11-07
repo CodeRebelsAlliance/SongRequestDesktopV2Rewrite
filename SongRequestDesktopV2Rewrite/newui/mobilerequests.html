@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+  /* Hide the classic splash until app.js knows whether the animated launch is
+     enabled. Without this the old logo painted for a frame before the new
+     experience appeared. The timeout is a fail-safe if the script never runs. */
+  document.documentElement.classList.add('sr-boot');
+  setTimeout(function () { document.documentElement.classList.remove('sr-boot'); }, 2500);
+</script>
 <title>Requests - SongRequest</title>
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">

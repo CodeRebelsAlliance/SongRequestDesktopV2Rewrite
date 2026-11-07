@@ -628,6 +628,7 @@
 
   // ── Event handlers ──
   function onNowPlayingUpdate(data) {
+    finishPresentationSplash();
     var songChanged = false;
 
     if (data.title !== undefined) {
@@ -683,6 +684,7 @@
   }
 
   function onLyricsUpdate(data) {
+    finishPresentationSplash();
     renderLyrics(data);
   }
 
@@ -800,6 +802,70 @@
     if (!document.hidden) hostSend('presentationReady');
   });
   window.addEventListener('focus', function () { hostSend('presentationReady'); });
+
+  // ── First-paint splash ───────────────────────────────────
+  // The presentation used to flash an empty panel while the host sent the
+  // first state. Show the assembled wordmark instead, then hand over as soon
+  // as real content arrives (or after a short safety timeout).
+  var splashEl = document.getElementById('pres-splash');
+  var splashStart = (window.performance && performance.now) ? performance.now() : Date.now();
+  var splashDone = false;
+  var splashTimer = 0;
+
+  function buildPresentationSplash() {
+    if (!splashEl) return;
+    var logo = document.getElementById('pres-splash-logo');
+    if (!logo) return;
+    var offsets = [
+      ['-16vw', '-7vh', '-7deg'], ['14vw', '-9vh', '5deg'], ['-18vw', '8vh', '8deg'],
+      ['17vw', '10vh', '-5deg'], ['-9vw', '-13vh', '3deg'], ['10vw', '-3vh', '-8deg'],
+      ['0vw', '15vh', '6deg']
+    ];
+    var pieces = 7;
+    for (var i = 0; i < pieces; i++) {
+      var img = document.createElement('img');
+      img.className = 'pres-splash-piece';
+      img.src = 'LargeSR.png';
+      img.alt = '';
+      img.decoding = 'async';
+      var width = 100 / pieces;
+      img.style.clipPath = 'inset(0 ' + (100 - (i + 1) * width) + '% 0 ' + (i * width) + '%)';
+      img.style.setProperty('--dx', offsets[i][0]);
+      img.style.setProperty('--dy', offsets[i][1]);
+      img.style.setProperty('--rot', offsets[i][2]);
+      img.style.animationDelay = (i * 55) + 'ms';
+      logo.appendChild(img);
+    }
+    requestAnimationFrame(function () {
+      splashEl.classList.add('is-assembled');
+    });
+  }
+
+  function finishPresentationSplash() {
+    if (!splashEl || splashDone) return;
+    var now = (window.performance && performance.now) ? performance.now() : Date.now();
+    var wait = 1200 - (now - splashStart);
+    if (wait > 0) {
+      if (!splashTimer) {
+        splashTimer = setTimeout(function () {
+          splashTimer = 0;
+          finishPresentationSplash();
+        }, wait);
+      }
+      return;
+    }
+
+    splashDone = true;
+    document.body.classList.add('pres-ready');
+    splashEl.classList.add('is-leaving');
+    setTimeout(function () {
+      splashEl.hidden = true;
+    }, 560);
+  }
+
+  buildPresentationSplash();
+  // Never leave a TV on the splash forever if the host is slow or unavailable.
+  setTimeout(function () { finishPresentationSplash(); }, 3200);
 
   // Ready
   hostSend('presentationReady');
