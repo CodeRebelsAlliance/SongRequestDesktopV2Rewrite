@@ -597,8 +597,14 @@
     if (newPrev) newPrev.className = 'lyrics-line prev';
     if (newActive) {
       newActive.className = 'lyrics-line active';
-      // Keep the active line centred; this only runs when the line changes.
-      newActive.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Scroll only the lyrics viewport. scrollIntoView also scrolled the
+      // clipped page/root, which moved the whole left panel (artwork, title,
+      // progress) upward as the song advanced.
+      var lineBox = newActive.getBoundingClientRect();
+      var lyricsBox = presLyrics.getBoundingClientRect();
+      var target = presLyrics.scrollTop + (lineBox.top - lyricsBox.top) -
+        lyricsBox.height / 2 + lineBox.height / 2;
+      presLyrics.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
     }
 
     prevLineEl = newPrev;

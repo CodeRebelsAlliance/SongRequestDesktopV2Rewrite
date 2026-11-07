@@ -565,3 +565,31 @@ test('launch splash does not flash the classic logo and lyrics prefetch current 
   assert.match(interop, /_karaokePayloadCache/);
   assert.match(interop, /BuildKaraokePayload\(song, result\.ParseSyncedLines\(\)\)/);
 });
+
+test('presentation keeps its zoom transform and scrolls only the lyrics viewport', () => {
+  const css = read('presentation.css');
+  const js = read('presentation.js');
+
+  // The splash fade must not replace the zoom transform (that left black bars
+  // at zoom levels above 100%).
+  assert.match(css, /#presentation-root \{ opacity: 0; transition: opacity/);
+  assert.doesNotMatch(css, /body\.pres-ready #presentation-root \{ opacity: 1; transform: none; \}/);
+
+  // Long songs used to call scrollIntoView(), which also scrolled the clipped
+  // page/root and visibly lifted the whole left panel.
+  assert.doesNotMatch(js, /newActive\.scrollIntoView/);
+  assert.match(js, /presLyrics\.scrollTo\(\{ top: Math\.max\(0, target\), behavior: 'smooth' \}\)/);
+});
+
+test('reopening the presentation window resumes the live data channel', () => {
+  const window = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'SongRequestDesktopV2Rewrite', 'NewUiWindow.cs'), 'utf8');
+
+  // Closing the sub-window sets the guard; the reopen branch must clear it
+  // before restoring PresentationSendMessage or every live update is dropped.
+  const reopen = window.indexOf('if (_presentationWindow != null)');
+  const clear = window.indexOf('_presentationClosing = false;', reopen);
+  const restore = window.indexOf('PresentationSendMessage = _presentationSend;', reopen);
+  assert.ok(reopen >= 0 && clear > reopen && restore > clear,
+    'reopen must clear _presentationClosing before restoring the send channel');
+});

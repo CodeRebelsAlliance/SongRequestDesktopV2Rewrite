@@ -698,12 +698,11 @@ body {
 }
 
 /* ── First-paint splash (desktop presentation + HDMI stage) ── */
-#presentation-root {
-  opacity: 0;
-  transform: scale(0.992);
-  transition: opacity 0.55s ease, transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-body.pres-ready #presentation-root { opacity: 1; transform: none; }
+/* Only fade the root: its transform is the presentation zoom (scale), and
+   overriding it here made high zoom levels leave black bars on the right and
+   bottom of the window. */
+#presentation-root { opacity: 0; transition: opacity 0.55s ease; }
+body.pres-ready #presentation-root { opacity: 1; }
 
 #pres-splash {
   position: fixed;

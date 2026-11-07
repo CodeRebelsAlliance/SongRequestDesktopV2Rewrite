@@ -598,6 +598,12 @@ public class NewUiWindow : IUiShell
                 // The window is only hidden when "closed": show it again and resume
                 // sending it data. Its page may have missed the source switch while
                 // hidden, so push the complete current state again.
+                //
+                // Closing the window sets _presentationClosing = true (so late
+                // sends to the hidden webview are dropped). Clear it before
+                // restoring the channel, otherwise the reopened window receives
+                // the initial state call but silently drops every live update.
+                _presentationClosing = false;
                 SetSubWindowVisible("Presentation - ", true);
                 PresentationSendMessage = _presentationSend;
                 _interop.RefreshPresentation();
