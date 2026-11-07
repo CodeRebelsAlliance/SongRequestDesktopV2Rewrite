@@ -186,6 +186,13 @@
   var bootReady = false;
   var bootMinUntil = 0;
   var bootTimer = null;
+  setTimeout(function () {
+    if (bootEl && !bootEl.hidden) {
+      bootShown = true;
+      bootReady = true;
+      maybeFinishBoot();
+    }
+  }, 4500);
 
   // ── Element refs ─────────────────────────────────────────
   var appEl = $('mm-app');
@@ -264,6 +271,13 @@
 
   function markBootReady() {
     if (!bootEl) return;
+    // The first mobileTab message can be sent before this page's host handler is
+    // registered (especially for a prewarmed page), leaving the veil stuck until
+    // the user taps the navbar. Content being rendered is enough to show/hide it.
+    if (!bootShown) {
+      bootShown = true;
+      bootMinUntil = bootNow() + 180;
+    }
     bootReady = true;
     maybeFinishBoot();
   }
@@ -396,6 +410,7 @@
     }).catch(function () {
       $('mm-home-loading').hidden = true;
       if (!feed) $('mm-home-empty').hidden = false;
+      markBootReady();
     });
   }
 

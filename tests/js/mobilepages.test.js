@@ -547,6 +547,10 @@ test('presentation and mobile music hide first-paint emptiness', () => {
   assert.match(musicHtml, /id="mm-boot"/);
   assert.match(musicJs, /showBoot/);
   assert.match(musicJs, /markBootReady/);
+  // Rendering content must unlock the veil even if the first mobileTab message
+  // was lost before the page registered its handler.
+  assert.match(musicJs, /function markBootReady\(\)[\s\S]*?bootShown = true/);
+  assert.match(musicJs, /4500/);
   assert.match(musicJs, /skeletonRows/);
   assert.match(musicCss, /@keyframes mmBootLogo/);
   assert.match(musicCss, /mm-skeleton/);
