@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using SongRequestDesktopV2Rewrite;
 using Xunit;
 
@@ -9,10 +10,13 @@ namespace SongRequestDesktopV2Rewrite.UnitTests;
 public class BackendHttpClientTests
 {
     [Fact]
-    public void UserAgent_IdentifiesTheAppAndVersion()
+    public void UserAgent_IdentifiesTheAppVersionAndPlatform()
     {
-        Assert.Equal($"SongRequest Desktop v{AppInfo.version}", BackendHttpClient.UserAgent);
+        Assert.Equal(
+            $"SongRequest Desktop v{AppInfo.version} ({RuntimeInformation.RuntimeIdentifier})",
+            BackendHttpClient.UserAgent);
         Assert.StartsWith("SongRequest Desktop v", BackendHttpClient.UserAgent);
+        Assert.Contains($"({RuntimeInformation.RuntimeIdentifier})", BackendHttpClient.UserAgent);
     }
 
     [Fact]
@@ -24,6 +28,7 @@ public class BackendHttpClientTests
         Assert.Contains("SongRequest", client.DefaultRequestHeaders.UserAgent.ToString());
         Assert.Contains("Desktop", client.DefaultRequestHeaders.UserAgent.ToString());
         Assert.Contains("v" + AppInfo.version, client.DefaultRequestHeaders.UserAgent.ToString());
+        Assert.Contains(RuntimeInformation.RuntimeIdentifier, client.DefaultRequestHeaders.UserAgent.ToString());
         Assert.Equal("Bearer secret", client.DefaultRequestHeaders.GetValues("Authorization").Single());
     }
 

@@ -38,10 +38,11 @@ public class FetchingServiceTests
         var userAgent = handler.LastHeaders["User-Agent"];
 
         // .NET exposes the parsed products; the wire value is the space-joined form
-        // "SongRequest Desktop v<version>" (verified by the integration test).
+        // "SongRequest Desktop v<version> (<platform>)" (verified by the integration test).
         Assert.Contains("SongRequest", userAgent);
         Assert.Contains("Desktop", userAgent);
         Assert.Contains("v" + AppInfo.version, userAgent);
+        Assert.Contains("(" + System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier + ")", userAgent);
     }
 
     [Fact]

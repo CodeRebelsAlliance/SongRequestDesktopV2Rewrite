@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -13,7 +14,7 @@ namespace SongRequestDesktopV2Rewrite.IntegrationTests;
 
 /// <summary>
 /// Every request the app makes to the SongRequest backend must carry the
-/// identifying <c>User-Agent</c> ("SongRequest Desktop v&lt;version&gt;").
+/// identifying <c>User-Agent</c> ("SongRequest Desktop v&lt;version&gt; (&lt;platform&gt;)").
 ///
 /// These tests stand up a loopback HTTP listener, point the config at it and
 /// assert the exact wire value the server receives — for the shared
@@ -98,7 +99,9 @@ public class BackendUserAgentTests
         var service = new FetchingService("Bearer test");
         await service.SendRequest("get-bad-words");
 
-        Assert.Equal($"SongRequest Desktop v{AppInfo.version}", await backend.ReceivedUserAgent);
+        Assert.Equal(
+            $"SongRequest Desktop v{AppInfo.version} ({RuntimeInformation.RuntimeIdentifier})",
+            await backend.ReceivedUserAgent);
     }
 
     [Fact]
@@ -115,6 +118,8 @@ public class BackendUserAgentTests
         var message = new JObject { ["type"] = "request", ["id"] = "ua", ["method"] = "getPlayedSongs" };
         interop.HandleMessage(message.ToString(Formatting.None));
 
-        Assert.Equal($"SongRequest Desktop v{AppInfo.version}", await backend.ReceivedUserAgent);
+        Assert.Equal(
+            $"SongRequest Desktop v{AppInfo.version} ({RuntimeInformation.RuntimeIdentifier})",
+            await backend.ReceivedUserAgent);
     }
 }

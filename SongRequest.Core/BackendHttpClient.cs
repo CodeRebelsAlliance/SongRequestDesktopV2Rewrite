@@ -1,21 +1,32 @@
 using System;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 
 namespace SongRequestDesktopV2Rewrite;
 
 /// <summary>
 /// Builds HTTP clients for the **SongRequest backend** so that every request
 /// carries the same identifying <c>User-Agent</c>
-/// (<c>SongRequest Desktop v&lt;version&gt;</c>) and the configured bearer token.
+/// (<c>SongRequest Desktop v&lt;version&gt; (&lt;platform&gt;)</c>) and the configured bearer token.
 ///
-/// The backend uses the User-Agent to tell which app/version is talking to it, so
-/// it must be present on every backend call (the WPF app set it; this keeps the
-/// Photino/interop paths consistent with it).
+/// The backend uses the User-Agent to tell which app/version/platform is talking
+/// to it, so it must be present on every backend call (the WPF app set it; this
+/// keeps the Photino/interop paths consistent with it).
 /// </summary>
 internal static class BackendHttpClient
 {
     /// <summary>The identifying User-Agent sent with every backend request.</summary>
-    public static string UserAgent => $"SongRequest Desktop v{AppInfo.version}";
+    public static string UserAgent => $"SongRequest Desktop v{AppInfo.version} ({Platform})";
+
+    /// <summary>Runtime identifier-style platform string, e.g. <c>linux-x64</c>.</summary>
+    private static string Platform
+    {
+        get
+        {
+            var rid = RuntimeInformation.RuntimeIdentifier;
+            return string.IsNullOrWhiteSpace(rid) ? RuntimeInformation.OSDescription : rid;
+        }
+    }
 
     /// <summary>Applies the identifying User-Agent to an existing client (best effort).</summary>
     public static void ApplyUserAgent(HttpClient client)
