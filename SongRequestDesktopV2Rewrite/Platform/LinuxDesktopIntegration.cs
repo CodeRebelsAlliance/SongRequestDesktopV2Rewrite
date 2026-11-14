@@ -72,6 +72,29 @@ public static class LinuxDesktopIntegration
         }
     }
 
+    /// <summary>
+    /// An AppImage's icon lives in a temporary mount that disappears on exit, so
+    /// copy it to the user's icon theme before writing the .desktop entry.
+    /// </summary>
+    public static string EnsureStableIcon(string iconPath)
+    {
+        if (!IsSupported || !LinuxPackaging.IsAppImage) return iconPath;
+
+        try
+        {
+            var target = Path.Combine(
+                DefaultDataHome(null),
+                "icons", "hicolor", "512x512", "apps", "songrequest.png");
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(iconPath, target, overwrite: true);
+            return target;
+        }
+        catch
+        {
+            return iconPath;
+        }
+    }
+
     // ── Pure builders (unit-tested) ────────────────────────────────────────
 
     internal static string ApplicationEntryPath(string? dataHome = null)

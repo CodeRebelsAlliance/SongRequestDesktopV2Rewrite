@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Formats.Tar;
 using System.IO;
@@ -39,6 +40,9 @@ public static class UpdateInstaller
 
     public static Task InstallAsync(string downloadUrl, Action<UpdateInstallProgress> onProgress)
     {
+        if (LinuxPackaging.IsAppImage)
+            return InstallAppImageAsync(downloadUrl, onProgress);
+
         var platform = UpdateService.CurrentPlatform();
         var extension = ArchiveExtensionFor(platform);
 
@@ -51,6 +55,78 @@ public static class UpdateInstaller
             extract: ExtractArchiveAsync,
             startUpdater: StartUpdater,
             exit: () => Environment.Exit(0));
+    }
+
+    /// <summary>
+    /// AppImage self-update: download the new AppImage, verify it is an ELF, then
+    /// let a detached script replace the original file and relaunch it.
+    /// </summary>
+    private static Task InstallAppImageAsync(string downloadUrl, Action<UpdateInstallProgress> onProgress)
+    {
+        var appImagePath = LinuxPackaging.AppImagePath;
+        if (string.IsNullOrWhiteSpace(appImagePath) || !File.Exists(appImagePath))
+            throw new InvalidOperationException("The running AppImage could not be located.");
+
+        if (!CanReplace(appImagePath))
+            throw new InvalidOperationException(
+                "The AppImage file is not writable. Move it to a writable folder (for example your home folder) and try again.");
+
+        return InstallAppImageCoreAsync(
+            downloadUrl,
+            appImagePath!,
+            onProgress,
+            download: DownloadAsync,
+            verify: VerifyAppImageAsync,
+            startUpdater: StartAppImageUpdater,
+            exit: () => Environment.Exit(0));
+    }
+
+    /// <summary>
+    /// AppImage orchestration with injectable side effects (unit-tested).
+    /// </summary>
+    internal static async Task InstallAppImageCoreAsync(
+        string downloadUrl,
+        string appImagePath,
+        Action<UpdateInstallProgress> onProgress,
+        Func<string, string, Action<double>, Task> download,
+        Func<string, Task> verify,
+        Action<string, string> startUpdater,
+        Action exit)
+    {
+        if (string.IsNullOrWhiteSpace(downloadUrl))
+            throw new InvalidOperationException("No download URL provided.");
+
+        void Report(string stage, double pct, string? message = null) =>
+            onProgress?.Invoke(new UpdateInstallProgress { Stage = stage, Percent = pct, Message = message });
+
+        try
+        {
+            Report(Stages.Starting, 0, "Preparing update...");
+
+            var newAppImage = Path.Combine(Path.GetTempPath(), "songrequest_update.AppImage");
+            TryDeleteFile(newAppImage);
+
+            Report(Stages.Downloading, 0, "Starting download...");
+            await download(downloadUrl, newAppImage, pct =>
+                Report(Stages.Downloading, pct, $"Downloading... {pct:F1}%")).ConfigureAwait(false);
+
+            Report(Stages.Verifying, 100, "Verifying update...");
+            await verify(newAppImage).ConfigureAwait(false);
+
+            Report(Stages.Preparing, 100, "Preparing to install...");
+            startUpdater(appImagePath, newAppImage);
+
+            Report(Stages.Restarting, 100, "Restarting to finish the update...");
+            await Task.Delay(500).ConfigureAwait(false);
+
+            Report(Stages.Done, 100, "Update complete. Restarting...");
+            exit();
+        }
+        catch (Exception ex)
+        {
+            Report(Stages.Error, 0, ex.Message);
+            throw;
+        }
     }
 
     internal static string ArchiveExtensionFor(string platform)
@@ -131,16 +207,37 @@ public static class UpdateInstaller
         var totalBytes = response.Content.Headers.ContentLength ?? -1;
 
         using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-        using var fileStream = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+        using var fileStream = new FileStream(
+            destination, FileMode.Create, FileAccess.Write, FileShare.None,
+            bufferSize: 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        var buffer = new byte[8192];
-        long totalRead = 0;
-        int bytesRead;
-        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+        var buffer = ArrayPool<byte>.Shared.Rent(1 << 20);
+        try
         {
-            await fileStream.WriteAsync(buffer, 0, bytesRead).ConfigureAwait(false);
-            totalRead += bytesRead;
-            if (totalBytes > 0) onProgress?.Invoke((double)totalRead / totalBytes * 100);
+            long totalRead = 0;
+            int lastPercent = -1;
+            int bytesRead;
+            while ((bytesRead = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length)).ConfigureAwait(false)) > 0)
+            {
+                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead)).ConfigureAwait(false);
+                totalRead += bytesRead;
+                if (totalBytes > 0)
+                {
+                    var percent = (double)totalRead / totalBytes * 100;
+                    // One update per whole percent: a 1 MB buffer used to fire
+                    // thousands of bridge events for a large AppImage.
+                    var rounded = (int)percent;
+                    if (rounded != lastPercent)
+                    {
+                        lastPercent = rounded;
+                        onProgress?.Invoke(percent);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -172,6 +269,29 @@ public static class UpdateInstaller
         bool isGzip = magic[0] == 0x1F && magic[1] == 0x8B;  // gzip
         if (!isZip && !isGzip)
             throw new InvalidOperationException("The downloaded update file is not a valid zip or tar.gz archive.");
+    }
+
+    internal static Task VerifyAppImageAsync(string appImagePath)
+    {
+        VerifyAppImage(appImagePath);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Throws when the downloaded file is not an executable ELF/AppImage.</summary>
+    internal static void VerifyAppImage(string appImagePath)
+    {
+        if (!File.Exists(appImagePath))
+            throw new InvalidOperationException("The downloaded AppImage is missing.");
+
+        var info = new FileInfo(appImagePath);
+        if (info.Length < 16)
+            throw new InvalidOperationException("The downloaded AppImage is empty or truncated.");
+
+        Span<byte> magic = stackalloc byte[4];
+        using var stream = File.OpenRead(appImagePath);
+        int read = stream.Read(magic);
+        if (read < 4 || magic[0] != 0x7F || magic[1] != 0x45 || magic[2] != 0x4C || magic[3] != 0x46)
+            throw new InvalidOperationException("The downloaded file is not a valid AppImage (missing ELF header).");
     }
 
     internal static async Task ExtractArchiveAsync(string archivePath, string destination)
@@ -239,6 +359,116 @@ public static class UpdateInstaller
                 Process.Start(new ProcessStartInfo { FileName = scriptPath, UseShellExecute = true });
             }
         }
+    }
+
+    /// <summary>True when the current user may replace the file at <paramref name="path"/>.</summary>
+    internal static bool CanReplace(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+            return stream.CanWrite;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Launches a detached script that replaces the running AppImage (after this
+    /// process exits), rolls back a failed copy, and relaunches the AppImage.
+    /// </summary>
+    private static void StartAppImageUpdater(string appImagePath, string newAppImagePath)
+    {
+        var backupPath = Path.Combine(Path.GetTempPath(), "songrequest_update.backup.AppImage");
+        var logPath = Path.Combine(Path.GetTempPath(), "songrequest_update.log");
+        var scriptPath = Path.Combine(Path.GetTempPath(), "update_songrequest_appimage.sh");
+
+        File.WriteAllText(
+            scriptPath,
+            BuildAppImageUpdaterScript(appImagePath, newAppImagePath, backupPath, logPath, scriptPath));
+        MakeExecutable(scriptPath);
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "/bin/sh",
+                Arguments = $"\"{scriptPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+        }
+        catch
+        {
+            Process.Start(new ProcessStartInfo { FileName = scriptPath, UseShellExecute = true });
+        }
+    }
+
+    private static void MakeExecutable(string path)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try
+        {
+            File.SetUnixFileMode(path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+        catch { }
+    }
+
+    /// <summary>Builds the AppImage replacement script (extracted for testing).</summary>
+    internal static string BuildAppImageUpdaterScript(
+        string appImagePath,
+        string newAppImagePath,
+        string backupPath,
+        string logPath,
+        string scriptPath)
+    {
+        var lines = new[]
+        {
+            "#!/bin/sh",
+            $"APPIMAGE=\"{appImagePath}\"",
+            $"NEW=\"{newAppImagePath}\"",
+            $"BACKUP=\"{backupPath}\"",
+            $"LOG=\"{logPath}\"",
+            $"SELF=\"{scriptPath}\"",
+            "",
+            "log() { echo \"$(date '+%Y-%m-%d %H:%M:%S') $*\" >> \"$LOG\"; }",
+            "log \"SongRequest AppImage updater starting\"",
+            "",
+            "# Wait (bounded) for the application to exit",
+            "i=0",
+            "while pgrep -f \"$APPIMAGE\" >/dev/null 2>&1 && [ \"$i\" -lt 60 ]; do",
+            "  sleep 0.5",
+            "  i=$((i + 1))",
+            "done",
+            "",
+            "pkill -f \"$APPIMAGE\" >/dev/null 2>&1",
+            "",
+            "# Keep the previous AppImage so a failed replacement can roll back",
+            "cp -f \"$APPIMAGE\" \"$BACKUP\" >> \"$LOG\" 2>&1",
+            "",
+            "# Replace atomically: write next to the target, then rename over it",
+            "if cp -f \"$NEW\" \"$APPIMAGE.new\" >> \"$LOG\" 2>&1 && chmod +x \"$APPIMAGE.new\" >> \"$LOG\" 2>&1 && mv -f \"$APPIMAGE.new\" \"$APPIMAGE\" >> \"$LOG\" 2>&1; then",
+            "  log \"AppImage replaced\"",
+            "else",
+            "  log \"Replacement failed - restoring backup\"",
+            "  rm -f \"$APPIMAGE.new\"",
+            "  cp -f \"$BACKUP\" \"$APPIMAGE\" >> \"$LOG\" 2>&1",
+            "  chmod +x \"$APPIMAGE\" >> \"$LOG\" 2>&1",
+            "fi",
+            "",
+            "# Relaunch",
+            "nohup \"$APPIMAGE\" >/dev/null 2>&1 &",
+            "",
+            "# Cleanup",
+            "rm -f \"$NEW\" \"$BACKUP\" \"$SELF\"",
+        };
+
+        return string.Join("\n", lines);
     }
 
     /// <summary>The published launcher executable for this platform.</summary>

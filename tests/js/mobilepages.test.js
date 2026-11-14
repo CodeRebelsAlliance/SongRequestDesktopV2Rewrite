@@ -67,6 +67,36 @@ test('Android CI keeps one fallback signing key between workflow runs', () => {
     'the old cache path is not where .NET Android stores its debug key');
 });
 
+test('Linux releases build AppImage and Flatpak packages', () => {
+  const root = path.join(__dirname, '..', '..');
+  const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'release.yml'), 'utf8');
+  const installer = fs.readFileSync(path.join(root, 'SongRequest.Core', 'UpdateInstaller.cs'), 'utf8');
+
+  assert.match(workflow, /SongRequest-linux-x64\.AppImage/);
+  assert.match(workflow, /SongRequest-linux-x64\.flatpak/);
+  assert.match(workflow, /flatpak-builder/);
+  assert.match(workflow, /org\.gnome\.Platform\/\/51/);
+
+  // AppImage is the only Linux package that replaces itself; the script writes
+  // next to the target and renames atomically so a failed copy can roll back.
+  assert.match(installer, /BuildAppImageUpdaterScript/);
+  assert.match(installer, /mv -f \\"\$APPIMAGE\.new\\"/);
+  assert.match(installer, /Restoring backup|restoring backup/);
+});
+
+test('startup update checks are capped and flatpak updates stay managed', () => {
+  const app = read('app.js');
+  const interop = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+
+  // Both launch flows race the GitHub check against a short deadline instead of
+  // awaiting the full network timeout while the intro is on screen.
+  assert.match(app, /Promise\.race\(\[updateCheck, delay\(1000\)\.then\(\(\) => updateTimeout\)\]\)/);
+  assert.match(app, /Promise\.race\(\[updateCheck, delay\(1300\)\.then\(\(\) => updateTimeout\)\]\)/);
+  assert.match(app, /installKind === 'flatpak'/);
+  assert.match(app, /flatpak update /);
+  assert.match(interop, /timeout = startup \? TimeSpan\.FromSeconds\(3\)/);
+});
+
 test('startup is not replayed when a page is recreated', () => {
   const root = path.join(__dirname, '..', '..');
   const app = fs.readFileSync(path.join(ui, 'app.js'), 'utf8');

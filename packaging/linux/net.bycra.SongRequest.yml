@@ -1,0 +1,43 @@
+app-id: net.bycra.SongRequest
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: songrequest
+
+# The app is published self-contained for linux-x64 before flatpak-builder runs.
+# GNOME provides GTK3, WebKitGTK 4.1, OpenAL and the audio stack; FFmpeg/yt-dlp
+# are bundled in the publish output under tools/.
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  # MIDI/soundboard hardware (RtMidi/ALSA); the user explicitly enables this.
+  - --device=all
+  # Music library, downloads, custom folders and browser cookie import.
+  - --filesystem=home
+  # Tray (AppIndicator) and MPRIS media controls.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --own-name=org.mpris.MediaPlayer2.songrequest
+  - --talk-name=org.freedesktop.Notifications
+
+modules:
+  - name: songrequest
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/songrequest /app/bin /app/share/applications /app/share/metainfo /app/share/icons/hicolor/512x512/apps
+      - cp -a publish/. /app/songrequest/
+      - install -Dm755 songrequest.sh /app/bin/songrequest
+      - install -Dm644 net.bycra.SongRequest.desktop /app/share/applications/net.bycra.SongRequest.desktop
+      - install -Dm644 net.bycra.SongRequest.metainfo.xml /app/share/metainfo/net.bycra.SongRequest.metainfo.xml
+      - install -Dm644 publish/SRappIcon.png /app/share/icons/hicolor/512x512/apps/net.bycra.SongRequest.png
+    sources:
+      - type: dir
+        path: ../../publish
+      - type: file
+        path: songrequest.sh
+      - type: file
+        path: net.bycra.SongRequest.desktop
+      - type: file
+        path: net.bycra.SongRequest.metainfo.xml

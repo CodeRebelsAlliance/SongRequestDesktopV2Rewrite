@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SongRequest Desktop
+Comment=Song request queue, soundboard and playback for live events.
+Exec=songrequest %U
+Icon=net.bycra.SongRequest
+Terminal=false
+StartupNotify=true
+StartupWMClass=songrequest
+Categories=AudioVideo;Audio;Player;

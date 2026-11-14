@@ -108,7 +108,14 @@ public class NewUiWindow : IUiShell
             {
                 var png = Path.Combine(baseDir, LinuxDesktopIntegration.IconFileName);
                 LinuxDesktopIntegration.ApplyWindowIcon(png);
-                LinuxDesktopIntegration.EnsureApplicationEntry(AutoStart.LauncherPath(), png);
+
+                // The Flatpak manifest installs the exported .desktop entry; writing
+                // one from inside the sandbox would point at an app-bundle path.
+                if (!LinuxPackaging.IsFlatpak)
+                {
+                    var stableIcon = LinuxDesktopIntegration.EnsureStableIcon(png);
+                    LinuxDesktopIntegration.EnsureApplicationEntry(AutoStart.LauncherPath(), stableIcon);
+                }
             }
         }
         catch

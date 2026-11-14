@@ -330,6 +330,13 @@
   document.getElementById('btn-about-close').addEventListener('click', () => { aboutModal.style.display = 'none'; });
   aboutModal.addEventListener('click', e => { if (e.target === aboutModal) aboutModal.style.display = 'none'; });
   let _availableUpdate = null;
+  function isFlatpakUpdate(info) {
+    return !!(info && info.installKind === 'flatpak');
+  }
+  function flatpakUpdateHint(info) {
+    var id = (info && info.flatpakId) || 'net.bycra.SongRequest';
+    return 'Use your software center or run: flatpak update ' + id;
+  }
   document.getElementById('btn-check-updates').addEventListener('click', async function() {
     const statusEl = document.getElementById('about-update-status');
     const installBtn = document.getElementById('btn-install-update');
@@ -344,10 +351,15 @@
       if (result.error) {
         statusEl.textContent = 'Check failed: ' + result.error;
       } else if (result.updateAvailable) {
-        statusEl.textContent = 'Update available: ' + result.latestVersion + ' (current: ' + result.currentVersion + ')';
+        const flatpakManaged = isFlatpakUpdate(result);
+        statusEl.textContent = 'Update available: ' + result.latestVersion +
+          ' (current: ' + result.currentVersion + ')' +
+          (flatpakManaged ? ' — ' + flatpakUpdateHint(result) : '');
         toast('Update available: ' + result.latestVersion, 'info');
-        _availableUpdate = result;
-        installBtn.style.display = '';
+        if (!flatpakManaged) {
+          _availableUpdate = result;
+          installBtn.style.display = '';
+        }
         if (notesWrap && notesEl && result.releaseNotes) {
           notesEl.innerHTML = renderMarkdown(result.releaseNotes);
           notesWrap.style.display = '';
@@ -2360,7 +2372,8 @@
     updatePanel.style.display = 'flex';
 
     document.getElementById('startup-update-info').textContent =
-      'Version ' + updateInfo.latestVersion + ' available (current: ' + updateInfo.currentVersion + ')';
+      'Version ' + updateInfo.latestVersion + ' available (current: ' + updateInfo.currentVersion + ')' +
+      (isFlatpakUpdate(updateInfo) ? ' — ' + flatpakUpdateHint(updateInfo) : '');
     var startupNotes = document.getElementById('startup-update-notes');
     if (startupNotes) {
       var notesHtml = renderMarkdown(updateInfo.releaseNotes || '');
@@ -2371,8 +2384,9 @@
     document.getElementById('startup-update-progress').style.display = 'none';
     const laterButton = document.getElementById('startup-update-later');
     const nowButton = document.getElementById('startup-update-now');
-    laterButton.textContent = 'Remind Me Later';
-    nowButton.style.display = '';
+    const flatpakManaged = isFlatpakUpdate(updateInfo);
+    laterButton.textContent = flatpakManaged ? 'Continue' : 'Remind Me Later';
+    nowButton.style.display = flatpakManaged ? 'none' : '';
     laterButton.onclick = null;
     nowButton.onclick = null;
 
@@ -2493,11 +2507,26 @@
     const animationComplete = delay(2000);
 
     // The updater still gets first refusal, but it runs during the animation and
-    // only shows its prompt once the cinematic has played through.
+    // only shows its prompt once the cinematic has played through. A slow GitHub
+    // response is capped so the intro can never sit on "checking" for 15 seconds.
+    const updateCheck = send('checkForUpdates', { startup: true }).catch(() => null);
+    const updateTimeout = {};
+    let updateHandled = false;
+    let lateUpdate = null;
+
     const updateTask = (async () => {
-      let info = null;
-      try { info = await send('checkForUpdates'); } catch (_) { }
+      const info = await Promise.race([updateCheck, delay(1300).then(() => updateTimeout)]);
+      if (info === updateTimeout) {
+        // Let the app start; surface a late result as a toast instead.
+        updateCheck.then(late => {
+          if (!late || !late.updateAvailable) return;
+          if (overlay.style.display === 'none') toast('Update available: ' + late.latestVersion, 'info');
+          else lateUpdate = late;
+        });
+        return;
+      }
       if (info && info.updateAvailable) {
+        updateHandled = true;
         await animationComplete;
         cinematic.classList.add('is-paused');
         await promptForUpdate(info);
@@ -2536,6 +2565,9 @@
     overlay.style.display = 'none';
     try { cinematic.remove(); } catch (_) { }
     try { window.focus(); } catch (_) { }
+    if (lateUpdate && !updateHandled) {
+      toast('Update available: ' + lateUpdate.latestVersion, 'info');
+    }
   }
 
   async function runStartupSequence() {
@@ -2604,6 +2636,15 @@
     // Classic flow: reveal the old splash now that we know it is wanted.
     document.documentElement.classList.remove('sr-boot');
 
+    // Start the check immediately and give it only a short slice of the intro.
+    // The old code awaited the full network call (up to 15 s) at 34%.
+    const updateCheck = send('checkForUpdates', { startup: true }).catch(() => null);
+    const updateTimeout = {};
+    let lateClassicUpdate = null;
+    updateCheck.then(info => {
+      if (info && info.updateAvailable) lateClassicUpdate = info;
+    });
+
     // Loading phase: progress to 35%, then check for updates. Delays are short:
     // the old 400–500 ms pauses added more than two seconds to every launch.
     setProgress(12, 'Initializing...');
@@ -2612,12 +2653,10 @@
     await delay(160);
     setProgress(34, 'Checking for updates...');
 
-    let updateInfo = null;
-    try {
-      updateInfo = await send('checkForUpdates');
-    } catch (e) { /* silently fail */ }
+    const updateInfo = await Promise.race([updateCheck, delay(1000).then(() => updateTimeout)]);
 
-    if (updateInfo && updateInfo.updateAvailable) {
+    if (updateInfo !== updateTimeout && updateInfo && updateInfo.updateAvailable) {
+      lateClassicUpdate = null;
       await promptForUpdate(updateInfo);
       showPanel(splash);
     }
@@ -2871,7 +2910,13 @@
     // Dismiss overlay
     stopShimmer();
     overlay.style.opacity = '0';
-    setTimeout(() => { overlay.style.display = 'none'; window.focus(); }, 400);
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      window.focus();
+      if (lateClassicUpdate) {
+        toast('Update available: ' + lateClassicUpdate.latestVersion, 'info');
+      }
+    }, 400);
   }
 
   function delay(ms) {

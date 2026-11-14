@@ -13,6 +13,10 @@ public static class Program
     {
         AppLaunchArgs.Parse(args);
 
+        // AppImage mounts are read-only and Flatpak installs are immutable; move
+        // downloads/library/config to the user's writable XDG data directory.
+        LinuxPackaging.ConfigureAppPaths();
+
         // Must happen before Photino/GTK/WebKitGTK initialise: WebKitGTK reads its
         // configuration (DMA-BUF renderer, explicit sync) at load time.
         var webViewEnvironment = LinuxWebViewEnvironment.Apply();

@@ -28,6 +28,11 @@ public static class AutoStart
     /// <summary>Full path to the launcher that should be started at login.</summary>
     public static string LauncherPath()
     {
+        // An AppImage is mounted under /tmp for each run; the launcher that should
+        // be persisted in autostart/desktop entries is the original .AppImage file.
+        if (LinuxPackaging.IsAppImage && !string.IsNullOrWhiteSpace(LinuxPackaging.AppImagePath))
+            return LinuxPackaging.AppImagePath!;
+
         var name = UpdateInstaller.LauncherName();
         var process = Environment.ProcessPath;
         if (!string.IsNullOrEmpty(process) &&
@@ -106,17 +111,29 @@ public static class AutoStart
 
     internal static string BuildDesktopEntry(string launcherPath, bool startMinimized)
     {
-        var exec = startMinimized ? $"\"{launcherPath}\" {MinimizedFlag}" : $"\"{launcherPath}\"";
         return string.Join("\n", new[]
         {
             "[Desktop Entry]",
             "Type=Application",
             "Name=SongRequest",
             "Comment=SongRequest Desktop",
-            $"Exec={exec}",
+            $"Exec={BuildLinuxExec(launcherPath, startMinimized)}",
             "Terminal=false",
             "X-GNOME-Autostart-enabled=true",
         }) + "\n";
+    }
+
+    /// <summary>
+    /// A Flatpak must be launched through <c>flatpak run</c>; its sandbox has no
+    /// stable executable path to put in an autostart entry.
+    /// </summary>
+    internal static string BuildLinuxExec(string launcherPath, bool startMinimized)
+    {
+        var flag = startMinimized ? " " + MinimizedFlag : string.Empty;
+        if (LinuxPackaging.IsFlatpak && !string.IsNullOrWhiteSpace(LinuxPackaging.FlatpakId))
+            return $"flatpak run {LinuxPackaging.FlatpakId}{flag}";
+
+        return startMinimized ? $"\"{launcherPath}\" {MinimizedFlag}" : $"\"{launcherPath}\"";
     }
 
     internal static string BuildLaunchAgentPlist(string launcherPath, bool startMinimized)

@@ -18,11 +18,24 @@
 
 ## Installation
 
-1. Download the archive for your platform from the Releases page
+1. Download the archive or package for your platform from the Releases page
    (`SongRequest-win-x64.zip`, `SongRequest-linux-x64.tar.gz`,
+   `SongRequest-linux-x64.AppImage`, `SongRequest-linux-x64.flatpak`,
    `SongRequest-osx-arm64.tar.gz`, …)
-2. Extract the archive
+2. Extract the archive (or run/mark the AppImage executable and install the Flatpak)
 3. Run `SongRequest V2.exe` (Windows) or `./SongRequest V2` (Linux/macOS)
+
+### Linux: AppImage and Flatpak
+
+- **AppImage** (`SongRequest-linux-x64.AppImage`): `chmod +x` it and run it. The
+  AppImage is read-only while mounted, so config, downloads, the library and
+  caches live under `~/.local/share/SongRequestDesktopV2Rewrite`. The in-app
+  updater replaces the `.AppImage` file itself; keep it in a writable folder.
+- **Flatpak** (`SongRequest-linux-x64.flatpak`): install it with
+  `flatpak install SongRequest-linux-x64.flatpak`. It uses the GNOME runtime and
+  is updated by Flatpak/your software center
+  (`flatpak update net.bycra.SongRequest`); the in-app check reports when a new
+  release exists but does not try to modify the sandboxed install.
 
 ### Windows: install / uninstall
 

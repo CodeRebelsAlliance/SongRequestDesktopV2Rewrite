@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>net.bycra.SongRequest</id>
+  <name>SongRequest Desktop</name>
+  <summary>Song request queue, soundboard and playback for live events</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <description>
+    <p>
+      SongRequest Desktop manages a YouTube song request queue, plays the local
+      library, provides a soundboard, karaoke and presentation views, and can be
+      remote-controlled from the companion mobile app.
+    </p>
+  </description>
+  <launchable type="desktop-id">net.bycra.SongRequest.desktop</launchable>
+  <url type="homepage">https://github.com/CodeRebelsAlliance/SongRequestDesktopV2Rewrite</url>
+  <url type="bugtracker">https://github.com/CodeRebelsAlliance/SongRequestDesktopV2Rewrite/issues</url>
+  <developer id="net.bycra">
+    <name>CodeRebelsAlliance UG</name>
+  </developer>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+</component>

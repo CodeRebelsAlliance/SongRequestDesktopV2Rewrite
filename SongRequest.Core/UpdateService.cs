@@ -1,6 +1,7 @@
 using System;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
@@ -49,6 +50,13 @@ namespace SongRequestDesktopV2Rewrite
             /// <summary>Release asset that was selected, e.g. <c>SongRequest-linux-x64.tar.gz</c>.</summary>
             public string AssetName { get; set; } = string.Empty;
 
+            /// <summary>
+            /// How the update is applied: <c>archive</c> (desktop tar.gz/zip swap),
+            /// <c>appimage</c> (replace the running AppImage) or <c>flatpak</c>
+            /// (Flatpak/software-center managed, never installed by the app).
+            /// </summary>
+            public string InstallKind { get; set; } = "archive";
+
             /// <summary>Set when the check itself failed, or no package exists for this platform.</summary>
             public string? Error { get; set; }
         }
@@ -78,24 +86,29 @@ namespace SongRequestDesktopV2Rewrite
         }
 
         /// <summary>Release asset name the CI produces for a platform.</summary>
-        internal static string ExpectedAssetName(string platform)
-            => "SongRequest-" + platform + platform switch
+        internal static string ExpectedAssetName(string platform, bool appImage = false)
+        {
+            if (appImage && platform.StartsWith("linux", StringComparison.OrdinalIgnoreCase))
+                return "SongRequest-" + platform + ".AppImage";
+
+            return "SongRequest-" + platform + platform switch
             {
                 _ when platform.StartsWith("win", StringComparison.OrdinalIgnoreCase) => ".zip",
                 _ when platform.Equals("android", StringComparison.OrdinalIgnoreCase) => ".apk",
                 _ when platform.Equals("ios", StringComparison.OrdinalIgnoreCase) => ".ipa",
                 _ => ".tar.gz",
             };
+        }
 
         /// <summary>
         /// Picks the release asset for the platform. Falls back to the legacy
         /// <c>songrequest.zip</c> asset (Windows-only) for old releases.
         /// </summary>
-        internal static (string? Name, string? Url) SelectAsset(JArray? assets, string platform)
+        internal static (string? Name, string? Url) SelectAsset(JArray? assets, string platform, bool appImage = false)
         {
             if (assets == null) return (null, null);
 
-            var expected = ExpectedAssetName(platform);
+            var expected = ExpectedAssetName(platform, appImage);
             foreach (var asset in assets)
             {
                 if (string.Equals(asset["name"]?.ToString(), expected, StringComparison.OrdinalIgnoreCase))
@@ -114,42 +127,83 @@ namespace SongRequestDesktopV2Rewrite
             return (null, null);
         }
 
+        // Reused so repeated checks (startup, About) skip the TCP/TLS handshake.
+        private static readonly HttpClient SharedHttpClient = new();
+
         public static Task<UpdateInfo> CheckForUpdatesAsync()
-            => CheckForUpdatesAsync(null);
+            => CheckForUpdatesAsync(
+                httpClient: null,
+                timeout: TimeSpan.FromSeconds(15),
+                appImage: LinuxPackaging.IsAppImage,
+                flatpak: LinuxPackaging.IsFlatpak);
+
+        /// <summary>Check with a caller-chosen timeout (the startup check uses a short one).</summary>
+        public static Task<UpdateInfo> CheckForUpdatesAsync(TimeSpan timeout)
+            => CheckForUpdatesAsync(
+                httpClient: null,
+                timeout: timeout,
+                appImage: LinuxPackaging.IsAppImage,
+                flatpak: LinuxPackaging.IsFlatpak);
 
         /// <summary>Check for updates with an optional HTTP client (used by tests).</summary>
-        internal static async Task<UpdateInfo> CheckForUpdatesAsync(HttpClient? httpClient)
+        internal static async Task<UpdateInfo> CheckForUpdatesAsync(
+            HttpClient? httpClient,
+            TimeSpan? timeout = null,
+            bool appImage = false,
+            bool flatpak = false)
         {
             var platform = CurrentPlatform();
-            var ownsClient = httpClient == null;
-            var client = httpClient ?? new HttpClient();
+            var client = httpClient ?? SharedHttpClient;
+            using var cts = new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(15));
             try
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("SongRequestApp");
-                client.Timeout = TimeSpan.FromSeconds(15);
+                // Per-request headers keep the shared client safe for concurrent
+                // startup/About checks (and respect an injected test client).
+                using var request = new HttpRequestMessage(HttpMethod.Get, GITHUB_API_URL);
+                request.Headers.UserAgent.ParseAdd("SongRequestApp");
+                request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
-                var response = await client.GetStringAsync(GITHUB_API_URL).ConfigureAwait(false);
-                var json = JObject.Parse(response);
+                using var response = await client
+                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token)
+                    .ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                var json = JObject.Parse(await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false));
 
                 var latestTag = json["tag_name"]?.ToString() ?? string.Empty;
                 var releaseNotes = json["body"]?.ToString() ?? string.Empty;
 
-                var (assetName, downloadUrl) = SelectAsset(json["assets"] as JArray, platform);
+                // A Flatpak cannot replace itself: report the newer release but let
+                // the Flatpak/software-center own the installation.
+                var (assetName, downloadUrl) = flatpak
+                    ? (null, null)
+                    : SelectAsset(json["assets"] as JArray, platform, appImage);
                 var currentVersion = GetCurrentVersion();
                 var updateAvailable = IsNewerVersion(latestTag, currentVersion);
 
                 return new UpdateInfo
                 {
-                    UpdateAvailable = updateAvailable && !string.IsNullOrEmpty(downloadUrl),
+                    UpdateAvailable = updateAvailable && (flatpak || !string.IsNullOrEmpty(downloadUrl)),
                     LatestVersion = latestTag,
                     CurrentVersion = currentVersion,
                     DownloadUrl = downloadUrl ?? string.Empty,
                     ReleaseNotes = releaseNotes,
                     Platform = platform,
                     AssetName = assetName ?? string.Empty,
-                    Error = updateAvailable && string.IsNullOrEmpty(downloadUrl)
+                    InstallKind = flatpak ? "flatpak" : appImage ? "appimage" : "archive",
+                    Error = !flatpak && updateAvailable && string.IsNullOrEmpty(downloadUrl)
                         ? $"No update package is available for {platform}."
                         : null,
+                };
+            }
+            catch (OperationCanceledException)
+            {
+                return new UpdateInfo
+                {
+                    UpdateAvailable = false,
+                    CurrentVersion = GetCurrentVersion(),
+                    Platform = platform,
+                    InstallKind = flatpak ? "flatpak" : appImage ? "appimage" : "archive",
+                    Error = "Update check timed out.",
                 };
             }
             catch (Exception ex)
@@ -159,12 +213,9 @@ namespace SongRequestDesktopV2Rewrite
                     UpdateAvailable = false,
                     CurrentVersion = GetCurrentVersion(),
                     Platform = platform,
+                    InstallKind = flatpak ? "flatpak" : appImage ? "appimage" : "archive",
                     Error = ex.Message,
                 };
-            }
-            finally
-            {
-                if (ownsClient) client.Dispose();
             }
         }
 

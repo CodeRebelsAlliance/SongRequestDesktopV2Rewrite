@@ -48,7 +48,8 @@ Run everything locally:
 | Lyrics | `ParseSyncedLines` (mm:ss + hh:mm:ss), `.lrc` file reading (synced/plain/missing), live fetch via stub `HttpClient` (success + 404); embedded TagLib lyrics (integration) |
 | Server requests | `FetchingService.SendRequest`: endpoint/URL, auth header, multipart field per action (`word`/`sendin-allowed`/`now-playing-*`/`ytid`), error wrapping |
 | Music Share | player warm-up, volume clamp/forwarding, stop; service queue/status transitions (`buffering`↔`streaming`), receive events, drain, stop |
-| Updates | `UpdateService` version + platform/asset selection (per-RID `.zip`/`.tar.gz`); `UpdateInstaller` verify (magic/truncation), extract (zip + tar.gz), staged progress (`starting`…`done`/`error`), backup+rollback+relaunch script content, `DownloadAsync` streaming |
+| Updates | `UpdateService` version + platform/asset selection (per-RID `.zip`/`.tar.gz`, AppImage self-replace, Flatpak-managed); `UpdateInstaller` verify (magic/truncation/ELF), extract (zip + tar.gz), AppImage replacement script, staged progress (`starting`…`done`/`error`), backup+rollback+relaunch script content, `DownloadAsync` streaming |
+| Linux packaging | AppImage data-root selection (read-only mount → XDG data), Flatpak data-root/detection, stable AppImage icon + autostart path, `flatpak run` autostart command |
 | Startup / window | `AutoStart` builders (Windows command, Linux `.desktop`, macOS plist) + paths; `AppLaunchArgs` `--minimized`; `Config` startup/window defaults + persistence |
 | Tray | `TrayMenu` commands, `NullTrayIcon`, `TrayIconFactory` support |
 | Global hotkeys | gesture parse/normalize + key tables (Windows VK, X11 keysym), action map, `GlobalHotkeyService` registration/dispatch, `RemoteControlService` hotkey → action |

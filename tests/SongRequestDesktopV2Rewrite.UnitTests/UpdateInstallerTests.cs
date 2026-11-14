@@ -72,6 +72,26 @@ public class UpdateInstallerTests
         Assert.Throws<InvalidOperationException>(() => UpdateInstaller.VerifyArchive(path));
     }
 
+    [Fact]
+    public void VerifyAppImage_AcceptsAnElfPayload()
+    {
+        var path = Path.Combine(TestSupport.NewTempDir(), "SongRequest.AppImage");
+        var bytes = new byte[64];
+        bytes[0] = 0x7F; bytes[1] = 0x45; bytes[2] = 0x4C; bytes[3] = 0x46;
+        File.WriteAllBytes(path, bytes);
+
+        UpdateInstaller.VerifyAppImage(path); // no throw
+    }
+
+    [Fact]
+    public void VerifyAppImage_RejectsGarbage()
+    {
+        var path = Path.Combine(TestSupport.NewTempDir(), "SongRequest.AppImage");
+        File.WriteAllBytes(path, new byte[64]);
+
+        Assert.Throws<InvalidOperationException>(() => UpdateInstaller.VerifyAppImage(path));
+    }
+
     // ── Extract ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -204,6 +224,36 @@ public class UpdateInstallerTests
             () => { }));
     }
 
+    [Fact]
+    public async Task InstallAppImageCore_DownloadsVerifiesAndStartsTheUpdater()
+    {
+        var stages = new List<string>();
+        string? downloadedUrl = null;
+        string? verifiedPath = null;
+        string? updaterAppImage = null;
+        string? updaterNewImage = null;
+        bool exited = false;
+
+        await UpdateInstaller.InstallAppImageCoreAsync(
+            "https://example.com/SongRequest-linux-x64.AppImage",
+            "/home/user/SongRequest.AppImage",
+            progress => stages.Add(progress.Stage),
+            download: (url, destination, progress) => { downloadedUrl = url; progress?.Invoke(50); return Task.CompletedTask; },
+            verify: path => { verifiedPath = path; return Task.CompletedTask; },
+            startUpdater: (appImage, newImage) => { updaterAppImage = appImage; updaterNewImage = newImage; },
+            exit: () => exited = true);
+
+        Assert.Equal("https://example.com/SongRequest-linux-x64.AppImage", downloadedUrl);
+        Assert.EndsWith(".AppImage", verifiedPath);
+        Assert.Equal("/home/user/SongRequest.AppImage", updaterAppImage);
+        Assert.Equal(verifiedPath, updaterNewImage);
+        Assert.True(exited);
+        Assert.Equal(UpdateInstaller.Stages.Starting, stages.First());
+        Assert.Equal(UpdateInstaller.Stages.Done, stages.Last());
+        Assert.Contains(UpdateInstaller.Stages.Verifying, stages);
+        Assert.DoesNotContain(UpdateInstaller.Stages.Extracting, stages);
+    }
+
     // ── Download ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -274,5 +324,26 @@ public class UpdateInstallerTests
         Assert.Contains("rolling back", script);
         Assert.Contains("nohup", script);
         Assert.Contains("rm -f \"$SELF\"", script);
+    }
+
+    [Fact]
+    public void AppImageUpdaterScript_ReplacesTheImageAndRelaunchesIt()
+    {
+        var script = UpdateInstaller.BuildAppImageUpdaterScript(
+            appImagePath: "/home/user/SongRequest.AppImage",
+            newAppImagePath: "/tmp/songrequest_update.AppImage",
+            backupPath: "/tmp/songrequest_update.backup.AppImage",
+            logPath: "/tmp/update.log",
+            scriptPath: "/tmp/update_songrequest_appimage.sh");
+
+        Assert.StartsWith("#!/bin/sh", script);
+        Assert.Contains("/home/user/SongRequest.AppImage", script);
+        Assert.Contains("/tmp/songrequest_update.AppImage", script);
+        Assert.Contains("cp -f \"$NEW\" \"$APPIMAGE.new\"", script);
+        Assert.Contains("mv -f \"$APPIMAGE.new\" \"$APPIMAGE\"", script);
+        Assert.Contains("restoring backup", script);
+        Assert.Contains("chmod +x", script);
+        Assert.Contains("nohup \"$APPIMAGE\"", script);
+        Assert.Contains("rm -f \"$NEW\" \"$BACKUP\" \"$SELF\"", script);
     }
 }

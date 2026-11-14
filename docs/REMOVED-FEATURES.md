@@ -89,10 +89,14 @@ restart/force-close action exposed anywhere now.
   there.
 
 ### 6. Updates
-- Windows uses a generated `.bat`; Linux a generated `.sh`. The **macOS update
-  path is unverified** (app bundles / `.dmg` are not handled).
-- Release assets are per-platform: `SongRequest-<rid>.zip` (Windows) /
-  `SongRequest-<rid>.tar.gz` (Linux/macOS).
+- Windows uses a generated `.bat`; Linux a generated `.sh`. An AppImage is
+  replaced in place by a generated script (the old file is backed up and rolled
+  back on failure). Flatpak installs are **managed by Flatpak** and are not
+  self-updated by the app. The **macOS update path is unverified** (app bundles /
+  `.dmg` are not handled).
+- Release assets are per-platform: `SongRequest-<rid>.zip` (Windows),
+  `SongRequest-<rid>.tar.gz` (Linux/macOS), plus `SongRequest-linux-x64.AppImage`
+  and `SongRequest-linux-x64.flatpak` for the Linux packages.
 
 ### 7. Thumbnails
 - The old WPF `Image`-based thumbnails are gone. Thumbnails now come from TagLib

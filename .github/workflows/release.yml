@@ -107,6 +107,69 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path publish/* -DestinationPath "SongRequest-${{ matrix.rid }}.zip" -Force
 
+      - name: Install Linux packaging tools
+        if: matrix.rid == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          curl -fsSL -o /tmp/appimagetool.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool.AppImage
+
+      - name: Build AppImage (linux-x64)
+        if: matrix.rid == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          appdir="$RUNNER_TEMP/SongRequest.AppDir"
+          rm -rf "$appdir"
+          mkdir -p \
+            "$appdir/usr/bin" \
+            "$appdir/usr/share/applications" \
+            "$appdir/usr/share/metainfo" \
+            "$appdir/usr/share/icons/hicolor/512x512/apps"
+
+          cp -a publish/. "$appdir/usr/bin/"
+          install -m755 packaging/linux/AppRun "$appdir/AppRun"
+          install -m644 packaging/linux/songrequest.desktop "$appdir/songrequest.desktop"
+          install -m644 packaging/linux/songrequest.desktop "$appdir/usr/share/applications/songrequest.desktop"
+          install -m644 packaging/linux/net.bycra.SongRequest.metainfo.xml \
+            "$appdir/usr/share/metainfo/songrequest.metainfo.xml"
+          install -m644 SongRequestDesktopV2Rewrite/SRappIcon.png "$appdir/songrequest.png"
+          install -m644 SongRequestDesktopV2Rewrite/SRappIcon.png \
+            "$appdir/usr/share/icons/hicolor/512x512/apps/songrequest.png"
+
+          # dotnet publish can leave payload files at 0744; AppImages must be
+          # readable/executable for every user who runs the image.
+          chmod -R a+rX "$appdir"
+
+          ARCH=x86_64 /tmp/appimagetool.AppImage --appimage-extract-and-run \
+            "$appdir" "SongRequest-linux-x64.AppImage"
+          ls -lh SongRequest-linux-x64.AppImage
+
+      - name: Build Flatpak (linux-x64)
+        if: matrix.rid == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          flatpak remote-add --user --if-not-exists flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.gnome.Platform//51 org.gnome.Sdk//51
+
+          flatpak-builder --user --force-clean --disable-rofiles-fuse \
+            --repo="$RUNNER_TEMP/flatpak-repo" \
+            "$RUNNER_TEMP/flatpak-build" \
+            packaging/linux/net.bycra.SongRequest.yml
+
+          flatpak build-bundle \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            "$RUNNER_TEMP/flatpak-repo" \
+            "SongRequest-linux-x64.flatpak" \
+            net.bycra.SongRequest
+          ls -lh SongRequest-linux-x64.flatpak
+
       - name: Package (Unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -467,10 +530,10 @@ jobs:
           ls -la dist/
           count=$(ls dist/SongRequest-* 2>/dev/null | wc -l)
           if [ "$count" -lt 6 ]; then
-            echo "::error title=Missing release archives::Expected the 6 desktop platform archives (plus the mobile APK) in dist/, found $count."
+            echo "::error title=Missing release archives::Expected at least the 6 desktop platform archives (plus the mobile APK and optional Linux packages) in dist/, found $count."
             exit 1
           fi
-          echo "Found $count release archives."
+          echo "Found $count release assets."
 
       - name: Generate changelog
         id: changelog

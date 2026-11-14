@@ -33,6 +33,27 @@ public class UpdateServiceTests
         => Assert.Equal(expected, UpdateService.ExpectedAssetName(platform));
 
     [Fact]
+    public void ExpectedAssetName_UsesABuildSpecificAppImage()
+    {
+        Assert.Equal("SongRequest-linux-x64.AppImage", UpdateService.ExpectedAssetName("linux-x64", appImage: true));
+        // The flag is ignored where AppImages do not exist.
+        Assert.Equal("SongRequest-win-x64.zip", UpdateService.ExpectedAssetName("win-x64", appImage: true));
+    }
+
+    [Fact]
+    public void SelectAsset_MatchesTheAppImageAsset()
+    {
+        var assets = JArray.Parse(
+            "[{\"name\":\"SongRequest-linux-x64.tar.gz\",\"browser_download_url\":\"https://x/linux\"}," +
+            " {\"name\":\"SongRequest-linux-x64.AppImage\",\"browser_download_url\":\"https://x/appimage\"}]");
+
+        var (name, url) = UpdateService.SelectAsset(assets, "linux-x64", appImage: true);
+
+        Assert.Equal("SongRequest-linux-x64.AppImage", name);
+        Assert.Equal("https://x/appimage", url);
+    }
+
+    [Fact]
     public void SelectAsset_MatchesThePlatformAsset()
     {
         var assets = JArray.Parse(
@@ -112,6 +133,35 @@ public class UpdateServiceTests
         var info = await UpdateService.CheckForUpdatesAsync(client);
 
         Assert.False(info.UpdateAvailable);
+    }
+
+    [Fact]
+    public async Task CheckForUpdatesAsync_AppImageSelectsTheReplaceableImage()
+    {
+        var json = "{\"tag_name\":\"v99.0\",\"assets\":[" +
+                   "{\"name\":\"SongRequest-linux-x64.tar.gz\",\"browser_download_url\":\"https://x/tar\"}," +
+                   "{\"name\":\"SongRequest-linux-x64.AppImage\",\"browser_download_url\":\"https://x/appimage\"}]}";
+        using var client = new HttpClient(new StubHttpHandler(HttpStatusCode.OK, json));
+
+        var info = await UpdateService.CheckForUpdatesAsync(client, appImage: true);
+
+        Assert.True(info.UpdateAvailable);
+        Assert.Equal("appimage", info.InstallKind);
+        Assert.Equal("SongRequest-linux-x64.AppImage", info.AssetName);
+        Assert.Equal("https://x/appimage", info.DownloadUrl);
+    }
+
+    [Fact]
+    public async Task CheckForUpdatesAsync_FlatpakReportsTheReleaseWithoutAnAsset()
+    {
+        using var client = new HttpClient(new StubHttpHandler(HttpStatusCode.OK, "{\"tag_name\":\"v99.0\",\"assets\":[]}"));
+
+        var info = await UpdateService.CheckForUpdatesAsync(client, flatpak: true);
+
+        Assert.True(info.UpdateAvailable);
+        Assert.Equal("flatpak", info.InstallKind);
+        Assert.True(string.IsNullOrEmpty(info.DownloadUrl));
+        Assert.Null(info.Error);
     }
 
     [Fact]

@@ -1,0 +1,6 @@
+#!/bin/sh
+# AppImage entry point. The payload lives in usr/bin so the same publish output
+# can also be used for the tar.gz and Flatpak packages.
+set -eu
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/SongRequest V2" "$@"

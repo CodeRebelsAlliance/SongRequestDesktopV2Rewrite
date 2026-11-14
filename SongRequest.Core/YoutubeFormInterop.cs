@@ -1000,7 +1000,7 @@ public class YoutubeFormInterop
                     result = new { version = AppInfo.version };
                     break;
                 case "checkForUpdates":
-                    result = await CheckForUpdatesAsync();
+                    result = await CheckForUpdatesAsync(msg);
                     break;
                 case "getSettings":
                     result = GetFullConfig();
@@ -4413,6 +4413,9 @@ public class YoutubeFormInterop
             if (!UpdateService.SelfUpdateSupported)
                 return new { error = "This platform updates through the app store, not in-app." };
 
+            if (LinuxPackaging.IsFlatpak)
+                return new { error = "This Flatpak is updated with 'flatpak update' or your software center, not from inside the app." };
+
             var downloadUrl = msg["downloadUrl"]?.ToString();
             if (string.IsNullOrEmpty(downloadUrl))
                 return new { error = "No download URL" };
@@ -4462,7 +4465,7 @@ public class YoutubeFormInterop
         }
     }
 
-    private async Task<object> CheckForUpdatesAsync()
+    private async Task<object> CheckForUpdatesAsync(JObject? msg = null)
     {
         // Mobile hosts install updates through the store / a new APK: the release
         // assets are desktop archives, so offering them here would be wrong (and
@@ -4480,7 +4483,11 @@ public class YoutubeFormInterop
 
         try
         {
-            var info = await UpdateService.CheckForUpdatesAsync().ConfigureAwait(false);
+            // The startup prompt must not hold the intro hostage if GitHub is slow.
+            var startup = msg?["startup"]?.ToObject<bool>() == true;
+            var timeout = startup ? TimeSpan.FromSeconds(3) : TimeSpan.FromSeconds(15);
+
+            var info = await UpdateService.CheckForUpdatesAsync(timeout).ConfigureAwait(false);
             return new
             {
                 updateAvailable = info.UpdateAvailable,
@@ -4491,8 +4498,12 @@ public class YoutubeFormInterop
                 platform = info.Platform,
                 assetName = info.AssetName,
                 // How the update would be applied: the platform installer (the APK
-                // on Android) or the desktop's archive swap + relaunch.
-                installKind = UpdateService.PackageInstaller != null ? "package" : "archive",
+                // on Android), a replaced AppImage, a Flatpak-managed update, or the
+                // desktop's archive swap + relaunch.
+                installKind = UpdateService.PackageInstaller != null
+                    ? "package"
+                    : info.InstallKind,
+                flatpakId = LinuxPackaging.IsFlatpak ? LinuxPackaging.FlatpakId : null,
                 error = info.Error
             };
         }
