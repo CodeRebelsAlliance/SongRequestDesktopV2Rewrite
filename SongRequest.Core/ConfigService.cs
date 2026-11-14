@@ -12,7 +12,7 @@ namespace SongRequestDesktopV2Rewrite
     {
         private int _fetchingTimer = 30;
         private int _threads = 5;
-        private string _bearerToken = "Bearer Multicore2024SR";
+        private string _bearerToken = string.Empty;
         private string _address = "http://127.0.0.1:5000";
         private string _defaultSorting = "none";
         private bool _presentationFullscreen = false;
@@ -604,7 +604,6 @@ namespace SongRequestDesktopV2Rewrite
                     var patched = false;
                     if (cfg.FetchingTimer <= 0) { cfg.FetchingTimer = 30; patched = true; }
                     if (cfg.Threads <= 0) { cfg.Threads = 5; patched = true; }
-                    if (string.IsNullOrWhiteSpace(cfg.BearerToken)) { cfg.BearerToken = "DefaultToken"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.Address)) { cfg.Address = "http://127.0.0.1:5000"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.DefaultSorting)) { cfg.DefaultSorting = "none"; patched = true; }
                     if (string.IsNullOrWhiteSpace(cfg.RequestUrl)) { cfg.RequestUrl = "https://example.com/request"; patched = true; }

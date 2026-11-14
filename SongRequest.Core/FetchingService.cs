@@ -33,7 +33,10 @@ namespace SongRequestDesktopV2Rewrite
             {
 
                 var request = new HttpRequestMessage(HttpMethod.Post, _baseUrl + action);
-                request.Headers.Add("Authorization", _secretKey);
+                if (!string.IsNullOrWhiteSpace(_secretKey))
+                {
+                    request.Headers.TryAddWithoutValidation("Authorization", _secretKey);
+                }
                 var content = new MultipartFormDataContent();
                 if (action == "add-bad-word" || action == "delete-bad-word")
                 {

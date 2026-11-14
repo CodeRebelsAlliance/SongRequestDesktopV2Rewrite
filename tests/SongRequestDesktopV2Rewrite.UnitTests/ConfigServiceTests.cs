@@ -68,7 +68,7 @@ public class ConfigServiceTests
         Assert.Equal(5, svc.Current.Threads);
         Assert.Equal(30, svc.Current.FetchingTimer);
         Assert.Equal("http://127.0.0.1:5000", svc.Current.Address);
-        Assert.Equal("DefaultToken", svc.Current.BearerToken);
+        Assert.Equal(string.Empty, svc.Current.BearerToken);
     }
 
     [Fact]
