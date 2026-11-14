@@ -35,6 +35,9 @@ modules:
     sources:
       - type: dir
         path: ../../publish
+        # dir sources copy their *contents* into the build root; keep a publish/
+        # folder so the install commands below have a stable path.
+        dest: publish
       - type: file
         path: songrequest.sh
       - type: file

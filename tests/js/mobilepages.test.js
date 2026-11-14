@@ -76,6 +76,8 @@ test('Linux releases build AppImage and Flatpak packages', () => {
   assert.match(workflow, /SongRequest-linux-x64\.flatpak/);
   assert.match(workflow, /flatpak-builder/);
   assert.match(workflow, /org\.gnome\.Platform\/\/51/);
+  const manifest = fs.readFileSync(path.join(root, 'packaging', 'linux', 'net.bycra.SongRequest.yml'), 'utf8');
+  assert.match(manifest, /dest: publish/);
 
   // AppImage is the only Linux package that replaces itself; the script writes
   // next to the target and renames atomically so a failed copy can roll back.
