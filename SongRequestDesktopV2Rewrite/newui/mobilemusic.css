@@ -846,6 +846,18 @@ input[type="search"] {
 
 .mm-queue-row.is-current .mm-queue-title { color: var(--mm-primary); }
 
+.mm-queue-row.is-history {
+  opacity: 0.42;
+  filter: grayscale(0.9);
+  pointer-events: none;
+}
+.mm-queue-history-head h3 { color: #8f8a9a; }
+.mm-queue-history-separator {
+  height: 1px;
+  margin: 4px 12px 6px;
+  background: rgba(255,255,255,.07);
+}
+
 .mm-queue-text { flex: 1; min-width: 0; }
 
 .mm-queue-title {
@@ -1793,3 +1805,87 @@ input[type="search"] {
   .mm-skeleton, .mm-list.is-fresh .mm-song { animation: none !important; }
   .mm-boot-loader, .mm-boot-loader i { opacity: 1; }
 }
+
+/* ── Album cards, search sections and album detail ───────── */
+.mm-search-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mm-text);
+}
+.mm-search-section i { color: var(--mm-primary); font-size: 12px; }
+.mm-search-section span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mm-muted);
+  background: var(--mm-surface-2);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.mm-album-hero {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px 4px;
+}
+.mm-album-art {
+  width: 96px;
+  height: 96px;
+  flex: 0 0 96px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--mm-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.22);
+  font-size: 34px;
+}
+.mm-album-art img { width: 100%; height: 100%; object-fit: cover; }
+.mm-album-meta {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--mm-muted);
+  min-width: 0;
+}
+
+.mm-album-track-num {
+  width: 24px;
+  flex: 0 0 24px;
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--mm-muted);
+  font-variant-numeric: tabular-nums;
+}
+.mm-song.is-missing {
+  opacity: 0.48;
+  cursor: default;
+}
+.mm-song.is-missing:active { background: transparent; }
+.mm-song.is-missing .mm-song-title { color: var(--mm-muted); }
+.mm-album-missing { font-style: italic; color: #b4816b; }
+
+/* ── Artist cards and artist detail ──────────────────────── */
+.mm-card-art.mm-artist-art,
+.mm-thumb.mm-artist-thumb { border-radius: 50%; }
+.mm-artist-art { border-radius: 50%; }
+.mm-artist-bio {
+  margin: 2px 16px 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--mm-surface-2);
+  color: var(--mm-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.mm-card.mm-album-card.is-missing {
+  opacity: 0.5;
+}
+.mm-card.mm-album-card.is-missing:active { background: transparent; }

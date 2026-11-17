@@ -93,6 +93,28 @@
             <div class="home-scroller" id="home-playlists"></div>
           </section>
 
+          <section class="home-row" id="home-row-albums" style="display:none">
+            <div class="home-row-head">
+              <div class="home-row-title"><i class="fas fa-compact-disc"></i> Albums in your library</div>
+              <div class="home-row-nav">
+                <button class="home-scroll-btn" data-dir="-1" title="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                <button class="home-scroll-btn" data-dir="1" title="Scroll right"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+            <div class="home-scroller" id="home-albums"></div>
+          </section>
+
+          <section class="home-row" id="home-row-artists" style="display:none">
+            <div class="home-row-head">
+              <div class="home-row-title"><i class="fas fa-user-music"></i> Artists in your library</div>
+              <div class="home-row-nav">
+                <button class="home-scroll-btn" data-dir="-1" title="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                <button class="home-scroll-btn" data-dir="1" title="Scroll right"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+            <div class="home-scroller" id="home-artists"></div>
+          </section>
+
           <section class="home-row" id="home-row-recommended" style="display:none">
             <div class="home-row-head">
               <div class="home-row-title"><i class="fas fa-wand-magic-sparkles"></i> Recommended for you</div>
@@ -102,6 +124,28 @@
               </div>
             </div>
             <div class="home-scroller" id="home-recommended"></div>
+          </section>
+
+          <section class="home-row" id="home-row-album-recommended" style="display:none">
+            <div class="home-row-head">
+              <div class="home-row-title"><i class="fas fa-star"></i> Albums for you</div>
+              <div class="home-row-nav">
+                <button class="home-scroll-btn" data-dir="-1" title="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                <button class="home-scroll-btn" data-dir="1" title="Scroll right"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+            <div class="home-scroller" id="home-album-recommended"></div>
+          </section>
+
+          <section class="home-row" id="home-row-artist-recommended" style="display:none">
+            <div class="home-row-head">
+              <div class="home-row-title"><i class="fas fa-user-star"></i> Artists for you</div>
+              <div class="home-row-nav">
+                <button class="home-scroll-btn" data-dir="-1" title="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                <button class="home-scroll-btn" data-dir="1" title="Scroll right"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+            <div class="home-scroller" id="home-artist-recommended"></div>
           </section>
 
           <section class="home-row" id="home-row-recent" style="display:none">
@@ -137,6 +181,52 @@
         <div class="view-header">Playlists</div>
         <div id="playlist-grid"></div>
         <div id="playlist-empty" class="library-empty" style="display:none"><i class="fas fa-list"></i><p>No playlists yet. Create one to get started.</p></div>
+      </div>
+      <div id="view-artist-detail" class="view">
+        <div class="view-header artist-detail-header">
+          <button id="artist-detail-back" class="top-btn" style="padding:6px 10px;font-size:13px" title="Back"><i class="fas fa-arrow-left"></i></button>
+          <div id="artist-detail-art" class="artist-detail-art"><i class="fas fa-user-music"></i></div>
+          <div class="artist-detail-heading">
+            <div id="artist-detail-title">Artist</div>
+            <div id="artist-detail-meta" class="artist-detail-meta"></div>
+          </div>
+          <div style="flex:1"></div>
+          <button id="artist-detail-play" class="top-btn" style="padding:6px 12px;font-size:13px;color:#1db954" title="Play artist"><i class="fas fa-play"></i> Play</button>
+          <button id="artist-detail-shuffle" class="top-btn" style="padding:6px 12px;font-size:13px;color:#1db954" title="Shuffle artist"><i class="fas fa-shuffle"></i> Shuffle</button>
+          <button id="artist-detail-queue" class="top-btn" style="padding:6px 12px;font-size:13px;color:#8af" title="Add artist to queue"><i class="fas fa-list"></i> Queue</button>
+          <button id="artist-detail-refresh" class="top-btn" style="padding:6px 10px;font-size:12px" title="Refresh artist information"><i class="fas fa-rotate"></i></button>
+        </div>
+        <div id="artist-detail-loading" class="library-loading"><i class="fas fa-circle-notch fa-spin"></i><span>Loading artist...</span></div>
+        <div id="artist-detail-body" style="display:none">
+          <div id="artist-detail-bio" class="artist-detail-bio" style="display:none"></div>
+          <section class="artist-detail-section">
+            <div class="search-section-title"><i class="fas fa-compact-disc"></i> Albums <span id="artist-detail-album-count"></span></div>
+            <div id="artist-detail-albums" class="search-card-grid"></div>
+          </section>
+          <section class="artist-detail-section">
+            <div class="search-section-title"><i class="fas fa-music"></i> Songs <span id="artist-detail-track-count"></span></div>
+            <div id="artist-detail-tracks"></div>
+          </section>
+        </div>
+        <div id="artist-detail-empty" class="library-empty" style="display:none"><i class="fas fa-user-music"></i><p>No tracks found for this artist.</p></div>
+      </div>
+      <div id="view-album-detail" class="view">
+        <div class="view-header album-detail-header">
+          <button id="album-detail-back" class="top-btn" style="padding:6px 10px;font-size:13px" title="Back"><i class="fas fa-arrow-left"></i></button>
+          <div id="album-detail-art" class="album-detail-art"><i class="fas fa-compact-disc"></i></div>
+          <div class="album-detail-heading">
+            <div id="album-detail-title">Album</div>
+            <div id="album-detail-meta" class="album-detail-meta"></div>
+          </div>
+          <div style="flex:1"></div>
+          <button id="album-detail-play" class="top-btn" style="padding:6px 12px;font-size:13px;color:#1db954" title="Play album"><i class="fas fa-play"></i> Play</button>
+          <button id="album-detail-shuffle" class="top-btn" style="padding:6px 12px;font-size:13px;color:#1db954" title="Shuffle album"><i class="fas fa-shuffle"></i> Shuffle</button>
+          <button id="album-detail-queue" class="top-btn" style="padding:6px 12px;font-size:13px;color:#8af" title="Add album to queue"><i class="fas fa-list"></i> Queue</button>
+          <button id="album-detail-refresh" class="top-btn" style="padding:6px 10px;font-size:12px" title="Refresh album information"><i class="fas fa-rotate"></i></button>
+        </div>
+        <div id="album-detail-loading" class="library-loading"><i class="fas fa-circle-notch fa-spin"></i><span>Loading album...</span></div>
+        <div id="album-detail-tracks"></div>
+        <div id="album-detail-empty" class="library-empty" style="display:none"><i class="fas fa-compact-disc"></i><p>No tracks in this album.</p></div>
       </div>
       <div id="view-playlist-detail" class="view">
         <div class="view-header" style="display:flex;align-items:center;gap:12px">
@@ -339,6 +429,8 @@
   <!-- Context menu -->
   <div id="context-menu" class="context-menu" style="display:none" data-source="">
     <button class="context-menu-item" data-action="play"><i class="fas fa-play"></i> Play</button>
+    <button class="context-menu-item" data-action="goToArtist"><i class="fas fa-user-music"></i> Go to Artist</button>
+    <button class="context-menu-item" data-action="goToAlbum"><i class="fas fa-compact-disc"></i> Go to Album</button>
     <button class="context-menu-item" data-action="editMetadata"><i class="fas fa-pen-to-square"></i> Edit Metadata…</button>
     <button class="context-menu-item" data-action="analyze"><i class="fas fa-chart-line"></i> Analyse Track</button>
     <button class="context-menu-item" data-action="karaoke"><i class="fas fa-microphone-slash"></i> Create Karaoke Version</button>

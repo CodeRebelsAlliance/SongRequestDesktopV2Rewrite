@@ -18,7 +18,7 @@ namespace SongRequestDesktopV2Rewrite;
 /// Cover Art Archive, the iTunes Search API and Deezer's public API. No API key
 /// or account is required, and no audio is uploaded.
 /// </summary>
-public sealed class MetadataOnlineService
+public sealed class MetadataOnlineService : IAlbumMetadataProvider, IArtistMetadataProvider
 {
     private static readonly HttpClient SharedHttpClient = new()
     {
@@ -613,6 +613,601 @@ public sealed class MetadataOnlineService
         }
         catch { }
         return null;
+    }
+
+    // ── Album lookup (tracks + metadata) ──────────────────────────────────
+
+    /// <summary>
+    /// Finds an album and its ordered track list using the enabled providers in the
+    /// user's priority order. The first provider returning a track list wins; the
+    /// album service caches this result.
+    /// </summary>
+    public async Task<AlbumProviderResult> FindAlbumAsync(
+        string album,
+        string artist,
+        uint year,
+        CancellationToken ct = default)
+    {
+        AlbumProviderResult? fallback = null;
+        foreach (var provider in MetadataProviderSettings.NormalizePriority(_providers.Priority))
+        {
+            AlbumProviderResult? result = provider switch
+            {
+                "MusicBrainz" when _providers.MusicBrainz => await MusicBrainzAlbumAsync(album, artist, ct).ConfigureAwait(false),
+                "iTunes" when _providers.ITunes => await ITunesAlbumAsync(album, artist, ct).ConfigureAwait(false),
+                "Deezer" when _providers.Deezer => await DeezerAlbumAsync(album, artist, ct).ConfigureAwait(false),
+                "Discogs" when _providers.Discogs => await DiscogsAlbumAsync(album, artist, ct).ConfigureAwait(false),
+                _ => null,
+            };
+
+            if (result == null) continue;
+            if (!string.IsNullOrWhiteSpace(result.Error))
+            {
+                fallback ??= result;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.Title) || result.Tracks.Count > 0)
+            {
+                if (result.Tracks.Count > 0) return result;
+                fallback ??= result;
+            }
+        }
+
+        return fallback ?? new AlbumProviderResult { Error = "No album match found." };
+    }
+
+    private async Task<AlbumProviderResult?> MusicBrainzAlbumAsync(string album, string artist, CancellationToken ct)
+    {
+        await MusicBrainzGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var query = $"release:\"{album}\"";
+            if (!string.IsNullOrWhiteSpace(artist)) query += $" AND artist:\"{artist}\"";
+            var searchUrl = "https://musicbrainz.org/ws/2/release?query=" +
+                            Uri.EscapeDataString(query) + "&fmt=json&limit=3";
+            using var searchRequest = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+            searchRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+            searchRequest.Headers.Accept.ParseAdd("application/json");
+            using var searchResponse = await SendAsync("MusicBrainz", searchRequest, false, ct).ConfigureAwait(false);
+            _lastMusicBrainzUtc = DateTime.UtcNow;
+            if (searchResponse == null || !searchResponse.IsSuccessStatusCode) return null;
+
+            var searchJson = JObject.Parse(await searchResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            var release = (searchJson["releases"] as JArray)?.FirstOrDefault();
+            var releaseId = release?["id"]?.ToString();
+            if (string.IsNullOrWhiteSpace(releaseId)) return null;
+
+            var detailUrl = "https://musicbrainz.org/ws/2/release/" + releaseId +
+                            "?inc=recordings+artist-credits+release-groups&fmt=json";
+            using var detailRequest = new HttpRequestMessage(HttpMethod.Get, detailUrl);
+            detailRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+            detailRequest.Headers.Accept.ParseAdd("application/json");
+            using var detailResponse = await SendAsync("MusicBrainz", detailRequest, false, ct).ConfigureAwait(false);
+            _lastMusicBrainzUtc = DateTime.UtcNow;
+            if (detailResponse == null || !detailResponse.IsSuccessStatusCode) return null;
+
+            var json = JObject.Parse(await detailResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            var result = new AlbumProviderResult
+            {
+                Provider = "MusicBrainz",
+                Title = json["title"]?.ToString() ?? album,
+                Artist = string.Join(", ", (json["artist-credit"] as JArray ?? new JArray())
+                    .Select(a => a["name"]?.ToString()).Where(n => !string.IsNullOrWhiteSpace(n))),
+                Year = ParseYear(json["date"]?.ToString()),
+                Genre = (json["tags"] as JArray ?? new JArray()).FirstOrDefault()?["name"]?.ToString() ?? string.Empty,
+            };
+
+            int disc = 0;
+            foreach (var medium in json["media"] as JArray ?? new JArray())
+            {
+                disc++;
+                foreach (var track in medium["tracks"] as JArray ?? new JArray())
+                {
+                    var length = track["length"]?.ToObject<long?>() ?? 0;
+                    var trackPosition = TryUInt(track["number"]?.ToString());
+                    var mediumPosition = TryUInt(medium["position"]?.ToString());
+                    result.Tracks.Add(new AlbumTrackInfo
+                    {
+                        Title = track["title"]?.ToString() ?? string.Empty,
+                        Artist = result.Artist,
+                        Track = trackPosition,
+                        Disc = mediumPosition > 0 ? mediumPosition : (uint)disc,
+                        Duration = length > 0 ? TimeSpan.FromMilliseconds(length) : TimeSpan.Zero,
+                    });
+                }
+            }
+
+            if (_providers.CoverArtArchive && !string.IsNullOrWhiteSpace(releaseId))
+                result.ArtworkUrl = $"https://coverartarchive.org/release/{releaseId}/front-500";
+            return result;
+        }
+        catch (Exception ex)
+        {
+            return new AlbumProviderResult { Provider = "MusicBrainz", Error = ex.Message };
+        }
+        finally
+        {
+            MusicBrainzGate.Release();
+        }
+    }
+
+    private async Task<AlbumProviderResult?> ITunesAlbumAsync(string album, string artist, CancellationToken ct)
+    {
+        var term = string.Join(" ", new[] { artist, album }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        var searchUrl = "https://itunes.apple.com/search?term=" + Uri.EscapeDataString(term) +
+                        "&media=music&entity=album&limit=3";
+        using var searchRequest = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+        using var searchResponse = await SendAsync("iTunes", searchRequest, false, ct).ConfigureAwait(false);
+        if (searchResponse == null || !searchResponse.IsSuccessStatusCode) return null;
+
+        var searchJson = JObject.Parse(await searchResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var collection = (searchJson["results"] as JArray)?.FirstOrDefault();
+        var collectionId = collection?["collectionId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(collectionId)) return null;
+
+        var lookupUrl = "https://itunes.apple.com/lookup?id=" + collectionId + "&entity=song&limit=200";
+        using var lookupRequest = new HttpRequestMessage(HttpMethod.Get, lookupUrl);
+        using var lookupResponse = await SendAsync("iTunes", lookupRequest, false, ct).ConfigureAwait(false);
+        if (lookupResponse == null || !lookupResponse.IsSuccessStatusCode) return null;
+
+        var json = JObject.Parse(await lookupResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var items = json["results"] as JArray ?? new JArray();
+        var result = new AlbumProviderResult
+        {
+            Provider = "iTunes",
+            Title = collection?["collectionName"]?.ToString() ?? album,
+            Artist = collection?["artistName"]?.ToString() ?? artist,
+            Year = ParseYear(collection?["releaseDate"]?.ToString()),
+            Genre = collection?["primaryGenreName"]?.ToString() ?? string.Empty,
+            ArtworkUrl = UpscaleITunesArtwork(collection?["artworkUrl100"]?.ToString()),
+        };
+
+        foreach (var item in items)
+        {
+            if (!string.Equals(item["wrapperType"]?.ToString(), "track", StringComparison.OrdinalIgnoreCase)) continue;
+            var millis = item["trackTimeMillis"]?.ToObject<long?>() ?? 0;
+            result.Tracks.Add(new AlbumTrackInfo
+            {
+                Title = item["trackName"]?.ToString() ?? string.Empty,
+                Artist = item["artistName"]?.ToString() ?? result.Artist,
+                Track = TryUInt(item["trackNumber"]?.ToString()),
+                Disc = TryUInt(item["discNumber"]?.ToString()),
+                Duration = millis > 0 ? TimeSpan.FromMilliseconds(millis) : TimeSpan.Zero,
+            });
+        }
+
+        return result;
+    }
+
+    private async Task<AlbumProviderResult?> DeezerAlbumAsync(string album, string artist, CancellationToken ct)
+    {
+        var term = string.Join(" ", new[] { artist, album }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        var searchUrl = "https://api.deezer.com/search/album?q=" + Uri.EscapeDataString(term) + "&limit=3";
+        using var searchRequest = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+        using var searchResponse = await SendAsync("Deezer", searchRequest, false, ct).ConfigureAwait(false);
+        if (searchResponse == null || !searchResponse.IsSuccessStatusCode) return null;
+
+        var searchJson = JObject.Parse(await searchResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var albumEntry = (searchJson["data"] as JArray)?.FirstOrDefault();
+        var albumId = albumEntry?["id"]?.ToString();
+        if (string.IsNullOrWhiteSpace(albumId)) return null;
+
+        var detailUrl = "https://api.deezer.com/album/" + albumId;
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, detailUrl);
+        using var detailResponse = await SendAsync("Deezer", detailRequest, false, ct).ConfigureAwait(false);
+        if (detailResponse == null || !detailResponse.IsSuccessStatusCode) return null;
+
+        var json = JObject.Parse(await detailResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var result = new AlbumProviderResult
+        {
+            Provider = "Deezer",
+            Title = json["title"]?.ToString() ?? album,
+            Artist = json["artist"]?["name"]?.ToString() ?? artist,
+            Year = ParseYear(json["release_date"]?.ToString()),
+            Genre = (json["genres"]?["data"] as JArray)?.FirstOrDefault()?["name"]?.ToString() ?? string.Empty,
+            ArtworkUrl = json["cover_xl"]?.ToString() ?? json["cover_big"]?.ToString(),
+        };
+
+        foreach (var track in json["tracks"]?["data"] as JArray ?? new JArray())
+        {
+            var seconds = track["duration"]?.ToObject<int?>() ?? 0;
+            result.Tracks.Add(new AlbumTrackInfo
+            {
+                Title = track["title"]?.ToString() ?? string.Empty,
+                Artist = track["artist"]?["name"]?.ToString() ?? result.Artist,
+                Track = TryUInt(track["track_position"]?.ToString()),
+                Disc = TryUInt(track["disk_number"]?.ToString()),
+                Duration = seconds > 0 ? TimeSpan.FromSeconds(seconds) : TimeSpan.Zero,
+            });
+        }
+
+        return result;
+    }
+
+    private async Task<AlbumProviderResult?> DiscogsAlbumAsync(string album, string artist, CancellationToken ct)
+    {
+        var term = string.Join(" ", new[] { artist, album }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        var url = "https://api.discogs.com/database/search?q=" + Uri.EscapeDataString(term) +
+                  "&type=release&per_page=3";
+        if (!string.IsNullOrWhiteSpace(_providers.DiscogsToken))
+            url += "&token=" + Uri.EscapeDataString(_providers.DiscogsToken);
+
+        using var searchRequest = new HttpRequestMessage(HttpMethod.Get, url);
+        searchRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+        searchRequest.Headers.Accept.ParseAdd("application/json");
+        using var searchResponse = await SendAsync("Discogs", searchRequest, !string.IsNullOrWhiteSpace(_providers.DiscogsToken), ct).ConfigureAwait(false);
+        if (searchResponse == null || !searchResponse.IsSuccessStatusCode) return null;
+
+        var searchJson = JObject.Parse(await searchResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var entry = (searchJson["results"] as JArray)?.FirstOrDefault();
+        var id = entry?["id"]?.ToString();
+        if (string.IsNullOrWhiteSpace(id)) return null;
+
+        var detailUrl = "https://api.discogs.com/releases/" + id;
+        if (!string.IsNullOrWhiteSpace(_providers.DiscogsToken))
+            detailUrl += "?token=" + Uri.EscapeDataString(_providers.DiscogsToken);
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, detailUrl);
+        detailRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+        detailRequest.Headers.Accept.ParseAdd("application/json");
+        using var detailResponse = await SendAsync("Discogs", detailRequest, !string.IsNullOrWhiteSpace(_providers.DiscogsToken), ct).ConfigureAwait(false);
+        if (detailResponse == null || !detailResponse.IsSuccessStatusCode) return null;
+
+        var json = JObject.Parse(await detailResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var result = new AlbumProviderResult
+        {
+            Provider = "Discogs",
+            Title = json["title"]?.ToString() ?? album,
+            Artist = string.Join(", ", (json["artists"] as JArray ?? new JArray())
+                .Select(a => a["name"]?.ToString()).Where(n => !string.IsNullOrWhiteSpace(n))),
+            Year = ParseYear(json["year"]?.ToString()),
+            Genre = string.Join(", ", (json["genres"] as JArray ?? new JArray()).Select(g => g.ToString())),
+            ArtworkUrl = (json["images"] as JArray)?.FirstOrDefault()?["uri"]?.ToString(),
+        };
+
+        // Discogs uses "heading" rows to separate sides/discs. A release that
+        // starts with a heading still has its first group on disc 1.
+        uint disc = 0;
+        foreach (var track in json["tracklist"] as JArray ?? new JArray())
+        {
+            if (string.Equals(track["type_"]?.ToString(), "heading", StringComparison.OrdinalIgnoreCase))
+            {
+                disc++;
+                continue;
+            }
+
+            if (disc == 0) disc = 1;
+            var duration = TryParseDuration(track["duration"]?.ToString());
+            result.Tracks.Add(new AlbumTrackInfo
+            {
+                Title = track["title"]?.ToString() ?? string.Empty,
+                Artist = result.Artist,
+                Track = ParseDiscogsTrack(track["position"]?.ToString()),
+                Disc = disc,
+                Duration = duration,
+            });
+        }
+
+        return result;
+    }
+
+    private static uint ParseDiscogsTrack(string? position)
+    {
+        if (string.IsNullOrWhiteSpace(position)) return 0;
+        var digits = new string(position.Where(char.IsDigit).ToArray());
+        return uint.TryParse(digits, out var value) ? value : 0;
+    }
+
+    private static TimeSpan TryParseDuration(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return TimeSpan.Zero;
+        var parts = text.Split(':');
+        if (parts.Length == 2 &&
+            int.TryParse(parts[0], out var m) && double.TryParse(parts[1], out var s))
+            return TimeSpan.FromSeconds(m * 60 + s);
+        if (parts.Length == 3 &&
+            int.TryParse(parts[0], out var h) && int.TryParse(parts[1], out var mm) && double.TryParse(parts[2], out var ss))
+            return new TimeSpan(0, h, mm, 0) + TimeSpan.FromSeconds(ss);
+        return TimeSpan.Zero;
+    }
+
+    // ── Artist lookup (metadata + artwork) ────────────────────────────────
+
+    /// <summary>
+    /// Finds artist metadata/artwork using the enabled providers in priority
+    /// order. Results are merged so a later provider can supply artwork when the
+    /// first provider only knows the name/genre. The artist service caches this.
+    /// </summary>
+    public async Task<ArtistProviderResult> FindArtistAsync(
+        string artist,
+        CancellationToken ct = default)
+    {
+        ArtistProviderResult? best = null;
+        foreach (var provider in MetadataProviderSettings.NormalizePriority(_providers.Priority))
+        {
+            ArtistProviderResult? result = provider switch
+            {
+                "MusicBrainz" when _providers.MusicBrainz => await MusicBrainzArtistAsync(artist, ct).ConfigureAwait(false),
+                "iTunes" when _providers.ITunes => await ITunesArtistAsync(artist, ct).ConfigureAwait(false),
+                "Deezer" when _providers.Deezer => await DeezerArtistAsync(artist, ct).ConfigureAwait(false),
+                "Discogs" when _providers.Discogs => await DiscogsArtistAsync(artist, ct).ConfigureAwait(false),
+                _ => null,
+            };
+
+            if (result == null || !string.IsNullOrWhiteSpace(result.Error)) continue;
+            if (string.IsNullOrWhiteSpace(result.Name) && string.IsNullOrWhiteSpace(result.ArtworkUrl)) continue;
+
+            if (best == null)
+            {
+                best = result;
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(best.Name)) best.Name = result.Name;
+                if (string.IsNullOrWhiteSpace(best.SortName)) best.SortName = result.SortName;
+                if (string.IsNullOrWhiteSpace(best.Genre)) best.Genre = result.Genre;
+                if (string.IsNullOrWhiteSpace(best.Description)) best.Description = result.Description;
+                if (string.IsNullOrWhiteSpace(best.Country)) best.Country = result.Country;
+                if (string.IsNullOrWhiteSpace(best.ArtworkUrl)) best.ArtworkUrl = result.ArtworkUrl;
+                if (best.Albums.Count == 0 && result.Albums.Count > 0) best.Albums = result.Albums;
+            }
+
+            // Artwork is the expensive gap to fill (MusicBrainz/iTunes do not
+            // provide artist photos). Stop as soon as a provider supplies it;
+            // otherwise keep the best metadata collected so far.
+            if (!string.IsNullOrWhiteSpace(best.ArtworkUrl))
+                break;
+        }
+
+        return best ?? new ArtistProviderResult { Error = "No artist match found." };
+    }
+
+    private async Task<ArtistProviderResult?> MusicBrainzArtistAsync(string artist, CancellationToken ct)
+    {
+        await MusicBrainzGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var searchUrl = "https://musicbrainz.org/ws/2/artist?query=" +
+                            Uri.EscapeDataString($"artist:\"{artist}\"") + "&fmt=json&limit=3";
+            using var searchRequest = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+            searchRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+            searchRequest.Headers.Accept.ParseAdd("application/json");
+            using var searchResponse = await SendAsync("MusicBrainz", searchRequest, false, ct).ConfigureAwait(false);
+            _lastMusicBrainzUtc = DateTime.UtcNow;
+            if (searchResponse == null || !searchResponse.IsSuccessStatusCode) return null;
+
+            var searchJson = JObject.Parse(await searchResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            var hit = (searchJson["artists"] as JArray)?.FirstOrDefault();
+            var artistId = hit?["id"]?.ToString();
+            if (string.IsNullOrWhiteSpace(artistId)) return null;
+
+            var detailUrl = "https://musicbrainz.org/ws/2/artist/" + artistId +
+                            "?inc=genres+tags+release-groups&fmt=json";
+            using var detailRequest = new HttpRequestMessage(HttpMethod.Get, detailUrl);
+            detailRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+            detailRequest.Headers.Accept.ParseAdd("application/json");
+            using var detailResponse = await SendAsync("MusicBrainz", detailRequest, false, ct).ConfigureAwait(false);
+            _lastMusicBrainzUtc = DateTime.UtcNow;
+            if (detailResponse == null || !detailResponse.IsSuccessStatusCode) return null;
+
+            var json = JObject.Parse(await detailResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            var result = new ArtistProviderResult
+            {
+                Provider = "MusicBrainz",
+                Name = json["name"]?.ToString() ?? hit?["name"]?.ToString() ?? artist,
+                SortName = json["sort-name"]?.ToString() ?? string.Empty,
+                Country = json["country"]?.ToString() ?? string.Empty,
+                Description = json["disambiguation"]?.ToString() ?? string.Empty,
+                Genre = (json["genres"] as JArray)?.FirstOrDefault()?["name"]?.ToString()
+                        ?? (json["tags"] as JArray)?.FirstOrDefault()?["name"]?.ToString()
+                        ?? string.Empty,
+            };
+
+            foreach (var group in json["release-groups"] as JArray ?? new JArray())
+            {
+                var type = group["primary-type"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(type) &&
+                    !string.Equals(type, "Album", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var title = group["title"]?.ToString();
+                if (string.IsNullOrWhiteSpace(title)) continue;
+
+                var releaseGroupId = group["id"]?.ToString();
+                result.Albums.Add(new ArtistProviderAlbum
+                {
+                    Title = title!,
+                    Year = ParseYear(group["first-release-date"]?.ToString()),
+                    Provider = "MusicBrainz",
+                    ArtworkUrl = _providers.CoverArtArchive && !string.IsNullOrWhiteSpace(releaseGroupId)
+                        ? $"https://coverartarchive.org/release-group/{releaseGroupId}/front-250"
+                        : null,
+                });
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            return new ArtistProviderResult { Provider = "MusicBrainz", Error = ex.Message };
+        }
+        finally
+        {
+            MusicBrainzGate.Release();
+        }
+    }
+
+    private async Task<ArtistProviderResult?> ITunesArtistAsync(string artist, CancellationToken ct)
+    {
+        var searchUrl = "https://itunes.apple.com/search?term=" + Uri.EscapeDataString(artist) +
+                        "&media=music&entity=musicArtist&limit=3";
+        using var request = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+        using var response = await SendAsync("iTunes", request, false, ct).ConfigureAwait(false);
+        if (response == null || !response.IsSuccessStatusCode) return null;
+
+        var json = JObject.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var hit = (json["results"] as JArray)?.FirstOrDefault();
+        if (hit == null) return null;
+
+        var name = hit["artistName"]?.ToString();
+        if (string.IsNullOrWhiteSpace(name)) return null;
+
+        var result = new ArtistProviderResult
+        {
+            Provider = "iTunes",
+            Name = name!,
+            Genre = hit["primaryGenreName"]?.ToString() ?? string.Empty,
+        };
+
+        var artistId = hit["artistId"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(artistId))
+        {
+            var albumsUrl = "https://itunes.apple.com/lookup?id=" + artistId + "&entity=album&limit=200";
+            using var albumsRequest = new HttpRequestMessage(HttpMethod.Get, albumsUrl);
+            using var albumsResponse = await SendAsync("iTunes", albumsRequest, false, ct).ConfigureAwait(false);
+            if (albumsResponse != null && albumsResponse.IsSuccessStatusCode)
+            {
+                var albumsJson = JObject.Parse(await albumsResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+                foreach (var albumHit in albumsJson["results"] as JArray ?? new JArray())
+                {
+                    if (!string.Equals(albumHit["wrapperType"]?.ToString(), "collection", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (!string.Equals(albumHit["collectionType"]?.ToString(), "Album", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var title = albumHit["collectionName"]?.ToString();
+                    if (string.IsNullOrWhiteSpace(title)) continue;
+                    result.Albums.Add(new ArtistProviderAlbum
+                    {
+                        Title = title!,
+                        Year = ParseYear(albumHit["releaseDate"]?.ToString()),
+                        ArtworkUrl = UpscaleITunesArtwork(albumHit["artworkUrl100"]?.ToString()),
+                        Provider = "iTunes",
+                    });
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<ArtistProviderResult?> DeezerArtistAsync(string artist, CancellationToken ct)
+    {
+        var searchUrl = "https://api.deezer.com/search/artist?q=" +
+                        Uri.EscapeDataString(artist) + "&limit=3";
+        using var request = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+        using var response = await SendAsync("Deezer", request, false, ct).ConfigureAwait(false);
+        if (response == null || !response.IsSuccessStatusCode) return null;
+
+        var json = JObject.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var hit = (json["data"] as JArray)?.FirstOrDefault();
+        if (hit == null) return null;
+
+        var name = hit["name"]?.ToString();
+        if (string.IsNullOrWhiteSpace(name)) return null;
+
+        var result = new ArtistProviderResult
+        {
+            Provider = "Deezer",
+            Name = name!,
+            ArtworkUrl = hit["picture_xl"]?.ToString() ?? hit["picture_big"]?.ToString(),
+        };
+
+        var artistId = hit["id"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(artistId))
+        {
+            var albumsUrl = "https://api.deezer.com/artist/" + artistId + "/albums?limit=100";
+            using var albumsRequest = new HttpRequestMessage(HttpMethod.Get, albumsUrl);
+            using var albumsResponse = await SendAsync("Deezer", albumsRequest, false, ct).ConfigureAwait(false);
+            if (albumsResponse != null && albumsResponse.IsSuccessStatusCode)
+            {
+                var albumsJson = JObject.Parse(await albumsResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+                foreach (var albumHit in albumsJson["data"] as JArray ?? new JArray())
+                {
+                    var recordType = albumHit["record_type"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(recordType) &&
+                        !string.Equals(recordType, "album", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var title = albumHit["title"]?.ToString();
+                    if (string.IsNullOrWhiteSpace(title)) continue;
+                    result.Albums.Add(new ArtistProviderAlbum
+                    {
+                        Title = title!,
+                        Year = ParseYear(albumHit["release_date"]?.ToString()),
+                        ArtworkUrl = albumHit["cover_big"]?.ToString() ?? albumHit["cover_medium"]?.ToString(),
+                        Provider = "Deezer",
+                    });
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<ArtistProviderResult?> DiscogsArtistAsync(string artist, CancellationToken ct)
+    {
+        var url = "https://api.discogs.com/database/search?q=" + Uri.EscapeDataString(artist) +
+                  "&type=artist&per_page=3";
+        if (!string.IsNullOrWhiteSpace(_providers.DiscogsToken))
+            url += "&token=" + Uri.EscapeDataString(_providers.DiscogsToken);
+
+        using var searchRequest = new HttpRequestMessage(HttpMethod.Get, url);
+        searchRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+        searchRequest.Headers.Accept.ParseAdd("application/json");
+        using var searchResponse = await SendAsync("Discogs", searchRequest, !string.IsNullOrWhiteSpace(_providers.DiscogsToken), ct).ConfigureAwait(false);
+        if (searchResponse == null || !searchResponse.IsSuccessStatusCode) return null;
+
+        var searchJson = JObject.Parse(await searchResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var hit = (searchJson["results"] as JArray)?.FirstOrDefault();
+        var id = hit?["id"]?.ToString();
+        if (string.IsNullOrWhiteSpace(id)) return null;
+
+        var detailUrl = "https://api.discogs.com/artists/" + id;
+        if (!string.IsNullOrWhiteSpace(_providers.DiscogsToken))
+            detailUrl += "?token=" + Uri.EscapeDataString(_providers.DiscogsToken);
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, detailUrl);
+        detailRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+        detailRequest.Headers.Accept.ParseAdd("application/json");
+        using var detailResponse = await SendAsync("Discogs", detailRequest, !string.IsNullOrWhiteSpace(_providers.DiscogsToken), ct).ConfigureAwait(false);
+        if (detailResponse == null || !detailResponse.IsSuccessStatusCode) return null;
+
+        var json = JObject.Parse(await detailResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var result = new ArtistProviderResult
+        {
+            Provider = "Discogs",
+            Name = json["name"]?.ToString() ?? hit?["title"]?.ToString() ?? artist,
+            Description = json["profile"]?.ToString() ?? string.Empty,
+            ArtworkUrl = (json["images"] as JArray)?.FirstOrDefault()?["uri"]?.ToString(),
+        };
+
+        var releasesUrl = "https://api.discogs.com/artists/" + id + "/releases?per_page=100&sort=year&sort_order=desc";
+        if (!string.IsNullOrWhiteSpace(_providers.DiscogsToken))
+            releasesUrl += "&token=" + Uri.EscapeDataString(_providers.DiscogsToken);
+        using var releasesRequest = new HttpRequestMessage(HttpMethod.Get, releasesUrl);
+        releasesRequest.Headers.UserAgent.ParseAdd(SongRequestDesktopV2Rewrite.BackendHttpClient.UserAgent);
+        releasesRequest.Headers.Accept.ParseAdd("application/json");
+        using var releasesResponse = await SendAsync("Discogs", releasesRequest, !string.IsNullOrWhiteSpace(_providers.DiscogsToken), ct).ConfigureAwait(false);
+        if (releasesResponse != null && releasesResponse.IsSuccessStatusCode)
+        {
+            var releasesJson = JObject.Parse(await releasesResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            foreach (var release in releasesJson["releases"] as JArray ?? new JArray())
+            {
+                if (!string.Equals(release["role"]?.ToString(), "Main", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!string.Equals(release["type"]?.ToString(), "master", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(release["type"]?.ToString(), "release", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var title = release["title"]?.ToString();
+                if (string.IsNullOrWhiteSpace(title)) continue;
+                result.Albums.Add(new ArtistProviderAlbum
+                {
+                    Title = title!,
+                    Year = ParseYear(release["year"]?.ToString()),
+                    ArtworkUrl = release["thumb"]?.ToString(),
+                    Provider = "Discogs",
+                });
+            }
+        }
+
+        return result;
     }
 
     // ── Matching / helpers ────────────────────────────────────────────────

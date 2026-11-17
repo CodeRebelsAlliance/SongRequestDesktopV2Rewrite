@@ -282,8 +282,25 @@ The player (desktop and mobile) shares the same three audio tools:
 - **Player settings tab**: the music player now owns every playback, lyrics,
   audio-output, karaoke/AI, library-analysis and online-metadata preference on both
   desktop and mobile.
+- **Session restore and previous history**: the queue, playlist queue, current
+  track, progress, volume, output device and repeat mode are restored after a
+  restart (paused at the saved position). The Previous button walks back through
+  up to three played tracks; they appear greyed above now playing when the queue
+  is scrolled up. Session writes are atomic and corruption-safe. See
+  [`docs/PLAYER-SESSION.md`](docs/PLAYER-SESSION.md).
+- **Albums in search, home and recommendations**: search returns matching
+  albums and playlists alongside songs, home has album rows, and
+  “Go to album” opens an album view with provider metadata, ordered tracks and
+  greyed-out tracks that are not in the library. Provider results are fetched
+  once and cached. See [`docs/ALBUMS.md`](docs/ALBUMS.md).
+- **Artists in search, home and recommendations**: artist rows appear on Home,
+  search groups Artists/Albums/Playlists/Songs, “Go to artist” opens an artist
+  page with cached provider metadata/photo, local albums, all local tracks and
+  greyed provider albums that are not in the library. Album cards on the artist
+  page open the normal album view. See
+  [`docs/ARTISTS.md`](docs/ARTISTS.md).
 
-All three are exposed through the command dispatcher (and therefore the HTTP
+These features are exposed through the command dispatcher (and therefore the HTTP
 API, WebSocket events and MCP) — see
 [`docs/API-AND-MCP.md`](docs/API-AND-MCP.md#advanced-audio-equalizer-sleep-timer-and-analysis).
 

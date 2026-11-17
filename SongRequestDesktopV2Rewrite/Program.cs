@@ -8,6 +8,8 @@ namespace SongRequestDesktopV2Rewrite;
 /// </summary>
 public static class Program
 {
+    private static PlayerSessionService? _playerSession;
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -45,6 +47,10 @@ public static class Program
         host.Music.InvokeOnUi = a => a();
         // Remembered output device (speaker button in the music player).
         host.Music.OutputDeviceNumber = ConfigService.Instance.Current?.AudioOutputDeviceNumber ?? -1;
+        // Remember the queue, current track/progress, volume and previous-track
+        // history across restarts. A corrupt snapshot is ignored by the service.
+        _playerSession = new PlayerSessionService(host.Music);
+        _ = _playerSession.RestoreAsync();
         RemoteControlService.Instance.RegisterMusicEngine(host.Music);
 
         var interop = new YoutubeFormInterop(host, host.YoutubeService);
@@ -71,6 +77,10 @@ public static class Program
     /// </summary>
     internal static void ExitApplication()
     {
+        // Persist the latest queue/progress before the player is torn down.
+        try { _playerSession?.Dispose(); } catch { }
+        _playerSession = null;
+
         // Stops MIDI/remote control and flushes anything left.
         try { AppBootstrap.Shutdown(); } catch { }
 

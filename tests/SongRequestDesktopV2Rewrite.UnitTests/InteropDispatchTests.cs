@@ -71,6 +71,110 @@ public class InteropDispatchTests
         Assert.NotNull(result["stats"]);
     }
 
+    private static void SeedLibrary(YoutubeFormInterop interop, params LibrarySong[] songs)
+    {
+        lock (interop.LibraryService.Data)
+        {
+            interop.LibraryService.Data.Songs.Clear();
+            interop.LibraryService.Data.Playlists.Clear();
+            interop.LibraryService.Data.PlayHistory.Clear();
+            foreach (var song in songs) interop.LibraryService.Data.Songs.Add(song);
+            interop.LibraryService.Data.RebuildIndex();
+        }
+    }
+
+    private static LibrarySong LibrarySong(string id, string title, string album, string artist, uint track)
+        => new()
+        {
+            Id = id,
+            Title = title,
+            Album = album,
+            AlbumArtist = artist,
+            Artist = artist,
+            Track = track,
+            Duration = TimeSpan.FromMinutes(3),
+            FilePath = "/music/" + id + ".mp3",
+            FileStatus = FileStatus.Present,
+        };
+
+    [Fact]
+    public async Task SearchLibrary_ReturnsSongsAlbumsAndPlaylists()
+    {
+        var (_, interop, responses) = Create();
+        SeedLibrary(interop,
+            LibrarySong("a1", "Breathe", "The Dark Side of the Moon", "Pink Floyd", 1),
+            LibrarySong("a2", "Time", "The Dark Side of the Moon", "Pink Floyd", 3));
+        var playlist = interop.LibraryService.CreatePlaylist("Road Trip");
+        interop.LibraryService.AddSongToPlaylist(playlist.Id, "a1");
+
+        var albumResponse = await Request(interop, responses, "searchLibrary", "album-search", msg =>
+            msg["query"] = "dark side");
+        var albumResult = albumResponse["result"]!;
+        Assert.Equal(2, albumResult["results"]!.Children().Count());
+        var albums = albumResult["albums"] as JArray;
+        Assert.NotNull(albums);
+        var album = Assert.Single(albums!);
+        Assert.Equal("The Dark Side of the Moon", album["title"]?.ToString());
+        Assert.Equal("Pink Floyd", album["albumArtist"]?.ToString());
+        Assert.Equal(2, album["localTrackCount"]?.ToObject<int>());
+
+        var playlistResponse = await Request(interop, responses, "searchLibrary", "playlist-search", msg =>
+            msg["query"] = "road trip");
+        var playlists = playlistResponse["result"]!["playlists"] as JArray;
+        Assert.NotNull(playlists);
+        Assert.Contains(playlists!, p => p["name"]?.ToString() == "Road Trip" && p["isDynamic"]?.ToObject<bool>() == false);
+    }
+
+    [Fact]
+    public async Task SearchLibrary_ReturnsArtists()
+    {
+        var (_, interop, responses) = Create();
+        SeedLibrary(interop,
+            LibrarySong("a1", "Breathe", "The Dark Side of the Moon", "Pink Floyd", 1),
+            LibrarySong("b1", "Around the World", "Homework", "Daft Punk", 1));
+
+        var response = await Request(interop, responses, "searchLibrary", "artist-search", msg =>
+            msg["query"] = "pink");
+        var artists = response["result"]!["artists"] as JArray;
+
+        Assert.NotNull(artists);
+        var artist = Assert.Single(artists!);
+        Assert.Equal("Pink Floyd", artist["name"]?.ToString());
+        Assert.Equal(1, artist["localTrackCount"]?.ToObject<int>());
+        Assert.Equal(1, artist["albumCount"]?.ToObject<int>());
+    }
+
+    [Fact]
+    public async Task GetHomeFeed_IncludesAlbumsArtistsAndRecommendations()
+    {
+        var (_, interop, responses) = Create();
+        SeedLibrary(interop,
+            LibrarySong("a1", "Breathe", "The Dark Side of the Moon", "Pink Floyd", 1),
+            LibrarySong("b1", "Around the World", "Homework", "Daft Punk", 1));
+
+        var response = await Request(interop, responses, "getHomeFeed");
+        var result = response["result"]!;
+
+        var albums = result["albums"] as JArray;
+        var recommended = result["recommendedAlbums"] as JArray;
+        var artists = result["artists"] as JArray;
+        var recommendedArtists = result["recommendedArtists"] as JArray;
+        Assert.NotNull(albums);
+        Assert.NotNull(recommended);
+        Assert.NotNull(artists);
+        Assert.NotNull(recommendedArtists);
+        Assert.Equal(2, albums!.Count);
+        Assert.Equal(2, recommended!.Count);
+        Assert.Equal(2, artists!.Count);
+        Assert.Equal(2, recommendedArtists!.Count);
+        Assert.Contains(albums, a => a["title"]?.ToString() == "Homework");
+        Assert.Contains(artists, a => a["name"]?.ToString() == "Pink Floyd");
+        Assert.Equal(2, result["stats"]!["totalAlbums"]?.ToObject<int>());
+        Assert.Equal(2, result["stats"]!["totalArtists"]?.ToObject<int>());
+
+        SeedLibrary(interop);
+    }
+
     [Fact]
     public async Task GetPlaylists_IncludesTheDynamicMixes()
     {

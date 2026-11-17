@@ -64,9 +64,29 @@
             <div class="mm-scroller" id="mm-playlists"></div>
           </section>
 
+          <section class="mm-row" id="mm-row-albums" hidden>
+            <h3>Albums</h3>
+            <div class="mm-scroller" id="mm-albums"></div>
+          </section>
+
+          <section class="mm-row" id="mm-row-artists" hidden>
+            <h3>Artists</h3>
+            <div class="mm-scroller" id="mm-artists"></div>
+          </section>
+
           <section class="mm-row" id="mm-row-recommended" hidden>
             <h3>Recommended</h3>
             <div class="mm-scroller" id="mm-recommended"></div>
+          </section>
+
+          <section class="mm-row" id="mm-row-album-recommended" hidden>
+            <h3>Albums for you</h3>
+            <div class="mm-scroller" id="mm-album-recommended"></div>
+          </section>
+
+          <section class="mm-row" id="mm-row-artist-recommended" hidden>
+            <h3>Artists for you</h3>
+            <div class="mm-scroller" id="mm-artist-recommended"></div>
           </section>
 
           <section class="mm-row" id="mm-row-new" hidden>
@@ -182,6 +202,64 @@
 
       <div class="mm-scroll">
         <div id="mm-playlist-list" class="mm-list"></div>
+      </div>
+    </section>
+
+    <!-- ─────────────── ARTIST DETAIL ─────────────── -->
+    <section class="mm-view" id="mm-view-artist" hidden>
+      <header class="mm-header mm-detail-header">
+        <button id="mm-artist-back" class="mm-icon-btn" aria-label="Back"><i class="fas fa-arrow-left"></i></button>
+        <div class="mm-detail-heading">
+          <h1 id="mm-artist-title">Artist</h1>
+          <div class="mm-sub" id="mm-artist-sub">0 tracks</div>
+        </div>
+        <button id="mm-artist-refresh" class="mm-icon-btn" aria-label="Refresh artist information"><i class="fas fa-rotate"></i></button>
+      </header>
+
+      <div class="mm-album-hero">
+        <div id="mm-artist-art" class="mm-album-art mm-artist-art"><i class="fas fa-user-music"></i></div>
+        <div id="mm-artist-meta" class="mm-album-meta"></div>
+      </div>
+      <div id="mm-artist-bio" class="mm-artist-bio" hidden></div>
+
+      <div class="mm-playlist-actions">
+        <button id="mm-artist-play" class="mm-btn"><i class="fas fa-play"></i> Play</button>
+        <button id="mm-artist-shuffle" class="mm-btn"><i class="fas fa-shuffle"></i> Shuffle</button>
+        <button id="mm-artist-queue" class="mm-btn"><i class="fas fa-list"></i> Queue</button>
+      </div>
+
+      <div class="mm-scroll">
+        <div id="mm-artist-albums-heading" class="mm-search-section"><i class="fas fa-compact-disc"></i> Albums <span id="mm-artist-album-count">0</span></div>
+        <div id="mm-artist-albums" class="mm-list"></div>
+        <div id="mm-artist-tracks-heading" class="mm-search-section"><i class="fas fa-music"></i> Songs <span id="mm-artist-track-count">0</span></div>
+        <div id="mm-artist-tracks" class="mm-list"></div>
+      </div>
+    </section>
+
+    <!-- ─────────────── ALBUM DETAIL ─────────────── -->
+    <section class="mm-view" id="mm-view-album" hidden>
+      <header class="mm-header mm-detail-header">
+        <button id="mm-album-back" class="mm-icon-btn" aria-label="Back"><i class="fas fa-arrow-left"></i></button>
+        <div class="mm-detail-heading">
+          <h1 id="mm-album-title">Album</h1>
+          <div class="mm-sub" id="mm-album-sub">0 tracks</div>
+        </div>
+        <button id="mm-album-refresh" class="mm-icon-btn" aria-label="Refresh album information"><i class="fas fa-rotate"></i></button>
+      </header>
+
+      <div class="mm-album-hero">
+        <div id="mm-album-art" class="mm-album-art"><i class="fas fa-compact-disc"></i></div>
+        <div id="mm-album-meta" class="mm-album-meta"></div>
+      </div>
+
+      <div class="mm-playlist-actions">
+        <button id="mm-album-play" class="mm-btn"><i class="fas fa-play"></i> Play</button>
+        <button id="mm-album-shuffle" class="mm-btn"><i class="fas fa-shuffle"></i> Shuffle</button>
+        <button id="mm-album-queue" class="mm-btn"><i class="fas fa-list"></i> Queue</button>
+      </div>
+
+      <div class="mm-scroll">
+        <div id="mm-album-list" class="mm-list"></div>
       </div>
     </section>
 

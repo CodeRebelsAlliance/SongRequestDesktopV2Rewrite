@@ -425,6 +425,19 @@ body { background: #121212; color: #e0e0e0; }
 }
 .queue-now-playing-header i { font-size: 10px; }
 
+.queue-history-header {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+  color: #777; padding: 8px 10px 2px; display: flex; align-items: center; gap: 5px;
+}
+.queue-item-history {
+  opacity: 0.42;
+  filter: grayscale(0.9);
+  cursor: default;
+}
+.queue-item-history:hover { background: transparent; }
+.queue-item-history .queue-item-thumb { opacity: 0.8; }
+.queue-separator-history { margin-top: 6px; }
+
 /* Separator between now-playing and upcoming */
 .queue-separator {
   height: 1px; background: #2a2a2a; margin: 4px 10px;
@@ -1784,4 +1797,103 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* ── Album cards, search sections and album detail ───────────────── */
+.home-album-card .home-card-thumb > i { color: #4a4a4a; }
+.home-album-card .home-card-meta { min-height: 18px; }
+
+.search-section { margin-bottom: 18px; }
+.search-section-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; color: #e8e8e8;
+  padding: 2px 2px 10px;
+}
+.search-section-title i { color: #5b8def; font-size: 12px; }
+.search-section-title span {
+  font-size: 10.5px; font-weight: 600; color: #888;
+  background: #1e1e1e; border: 1px solid #2e2e2e;
+  border-radius: 999px; padding: 1px 7px;
+}
+.search-card-grid {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  padding: 2px 2px 6px;
+}
+.search-song-list { display: flex; flex-direction: column; }
+
+#view-album-detail .view-header { flex-wrap: wrap; gap: 12px; align-items: center; }
+.album-detail-art {
+  width: 74px; height: 74px; border-radius: 10px; overflow: hidden; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #262626, #1b1b1b);
+  border: 1px solid #2e2e2e; color: #4a4a4a; font-size: 28px;
+}
+.album-detail-art img { width: 100%; height: 100%; object-fit: cover; }
+.album-detail-heading { min-width: 0; max-width: 42%; }
+#album-detail-title {
+  font-size: 21px; font-weight: 700; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.album-detail-meta { font-size: 12px; color: #8c8c8c; margin-top: 3px; line-height: 1.4; }
+
+.album-track {
+  display: flex; align-items: center; gap: 12px;
+  padding: 7px 10px; border-radius: 8px;
+  cursor: pointer; transition: background 0.15s ease;
+}
+.album-track:hover { background: #252525; }
+.album-track-number {
+  width: 30px; flex-shrink: 0; text-align: right;
+  font-size: 11px; color: #777; font-family: Consolas, monospace;
+}
+.album-track-info { flex: 1; min-width: 0; }
+.album-track-title {
+  font-size: 13px; font-weight: 500; color: #ddd;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.album-track-artist {
+  font-size: 11px; color: #888;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.album-track-duration {
+  font-size: 11px; color: #666; font-family: Consolas, monospace;
+  flex-shrink: 0; min-width: 42px; text-align: right;
+}
+.album-track.is-missing {
+  cursor: default; opacity: 0.5;
+}
+.album-track.is-missing:hover { background: transparent; }
+.album-track.is-missing .album-track-title { color: #aaa; }
+.album-track-missing { color: #b4816b; font-style: italic; }
+
+/* ── Artist cards and artist detail ─────────────────────────────── */
+.home-artist-thumb { border-radius: 50%; }
+.home-artist-card .home-card-thumb > i { color: #4a4a4a; }
+#view-artist-detail .view-header { flex-wrap: wrap; gap: 12px; align-items: center; }
+.artist-detail-art {
+  width: 74px; height: 74px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #262626, #1b1b1b);
+  border: 1px solid #2e2e2e; color: #4a4a4a; font-size: 26px;
+}
+.artist-detail-art img { width: 100%; height: 100%; object-fit: cover; }
+.artist-detail-heading { min-width: 0; max-width: 42%; }
+#artist-detail-title {
+  font-size: 21px; font-weight: 700; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.artist-detail-meta { font-size: 12px; color: #8c8c8c; margin-top: 3px; line-height: 1.4; }
+.artist-detail-bio {
+  font-size: 12.5px; line-height: 1.55; color: #a9a9a9;
+  background: #181818; border: 1px solid #272727; border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 16px; white-space: pre-line;
+}
+.artist-detail-section { margin-bottom: 20px; }
+.artist-track .album-track-number { width: 24px; }
+
+.home-album-card.is-missing {
+  opacity: 0.55; cursor: default;
+}
+.home-album-card.is-missing:hover {
+  transform: none; box-shadow: none; background: #1a1a1a; border-color: #2a2a2a;
 }

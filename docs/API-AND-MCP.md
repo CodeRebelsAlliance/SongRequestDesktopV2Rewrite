@@ -180,7 +180,7 @@ file is read-only or its format cannot hold a field, the values are kept in
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/v1/player` | Current track, position, volume, crossfade, repeat, output device, queue counts, audio quality (`fileType`, `bitrateKbps`, `lossless`, `quality`) and lyrics status (`lyricsProvider`, `lyricsAvailable`). |
-| `GET` | `/api/v1/queue` | Play queue and playlist queue. |
+| `GET` | `/api/v1/queue` | Play queue, playlist queue and the last up to three played tracks (`history`). |
 | `POST` | `/api/v1/player/play-pause` | Toggle playback. |
 | `POST` | `/api/v1/player/next` | Next track. |
 | `POST` | `/api/v1/player/previous` | Previous track. |
@@ -391,7 +391,7 @@ Live events include:
 | --- | --- |
 | `requests.new` | A fetch found new send-in requests. Payload: `count` and `requests` (`ytid`, `sentInUtc`, `message`, `isApproved`). |
 | `requests.updated` | A fetch of the send-in list completed. Re-read `/api/v1/requests` or send a command. |
-| `queue.updated` | Queue or playlist queue changed. Payload contains both queues. |
+| `queue.updated` | Queue or playlist queue changed. Payload contains both queues and previous-track history. |
 | `player.progress` | Playback progress (throttled to one per second), including audio-quality and lyrics metadata. |
 | `lyricsUpdate` | Lyrics for the current track were resolved, including the provider (`Embedded`, `LRC File`, `LRCLIB` or `YouTube captions`), chapter markers and, when available, inferred karaoke word timings and long-pause ranges. |
 | `nowPlayingUpdate` | The track changed (forwarded from the app engine). |
@@ -496,7 +496,7 @@ Tool calls return MCP text content containing pretty-printed JSON, plus
 | `songrequest://status` | Application/server status. |
 | `songrequest://capabilities` | Command catalogue and events. |
 | `songrequest://player` | Current player state. |
-| `songrequest://queue` | Both queues. |
+| `songrequest://queue` | Both queues and previous-track history. |
 | `songrequest://requests` | Send-in list with metadata. |
 | `songrequest://library` | Library songs with metadata. |
 | `songrequest://library/stats` | Library statistics. |

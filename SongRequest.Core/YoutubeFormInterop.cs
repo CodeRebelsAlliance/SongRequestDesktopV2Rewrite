@@ -23,6 +23,8 @@ public class YoutubeFormInterop
     private readonly ISongRequestHost _ytForm;
     private readonly YoutubeService _ytService;
     private readonly LibraryService _libraryService;
+    private readonly AlbumCatalogService _albums;
+    private readonly ArtistCatalogService _artists;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _pendingRequests = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<string?>> _commandResponses = new();
 
@@ -122,6 +124,8 @@ public class YoutubeFormInterop
 
     public ISongRequestHost YtForm => _ytForm;
     public LibraryService LibraryService => _libraryService;
+    public AlbumCatalogService Albums => _albums;
+    public ArtistCatalogService Artists => _artists;
 
     /// <summary>
     /// Invoked when the UI asks the app to quit (the Quit buttons). The host window
@@ -222,6 +226,8 @@ public class YoutubeFormInterop
         _ytForm.EventSink = SendEvent;
         _ytForm.SongDownloaded = TryAutoAddDownloadedSong;
         _libraryService = new LibraryService();
+        _albums = new AlbumCatalogService(_libraryService);
+        _artists = new ArtistCatalogService(_libraryService, _albums);
         _libraryAnalysis = new LibraryAnalysisService(_libraryService, _analysis)
         {
             PlaybackActive = () => _ytForm.Music.IsPlaying
@@ -1159,6 +1165,30 @@ public class YoutubeFormInterop
                     break;
                 case "getLibrarySongs":
                     result = GetLibrarySongs(msg);
+                    break;
+                case "getAlbum":
+                    result = await GetAlbumAsync(msg);
+                    break;
+                case "playAlbum":
+                    result = PlayAlbum(msg);
+                    break;
+                case "shuffleAlbum":
+                    result = ShuffleAlbum(msg);
+                    break;
+                case "queueAlbum":
+                    result = QueueAlbum(msg);
+                    break;
+                case "getArtist":
+                    result = await GetArtistAsync(msg);
+                    break;
+                case "playArtist":
+                    result = PlayArtist(msg);
+                    break;
+                case "shuffleArtist":
+                    result = ShuffleArtist(msg);
+                    break;
+                case "queueArtist":
+                    result = QueueArtist(msg);
                     break;
                 case "searchLibrary":
                     result = SearchLibrary(msg);
@@ -2178,6 +2208,7 @@ public class YoutubeFormInterop
         mp.QueueChanged += OnQueueChanged;
         mp.PlaylistQueueChanged += OnQueueChanged;
         mp.QueuesChanged += OnQueueChanged;
+        mp.HistoryChanged += OnQueueChanged;
     }
 
     private void OnNowPlayingTick(object? sender, NowPlayingEventArgs args)
@@ -2280,6 +2311,7 @@ public class YoutubeFormInterop
             RunOnUi(() => { current = mp.Queue?.FirstOrDefault(); });
 
             if (current == null) return;
+            _currentSongPath = current.songPath;
 
             var data = new System.Collections.Generic.Dictionary<string, object>
             {
@@ -2289,6 +2321,14 @@ public class YoutubeFormInterop
                 ["isPlaying"] = mp.IsPlaying,
                 ["isPlaybackActive"] = mp.IsPlaybackActive
             };
+
+            try
+            {
+                data["currentTime"] = mp.CurrentPosition.TotalSeconds;
+                var total = mp.CurrentReader?.TotalTime ?? TimeSpan.Zero;
+                if (total > TimeSpan.Zero) data["totalTime"] = total.TotalSeconds;
+            }
+            catch { }
 
             var thumb = GetThumbnailForSongPath(current.songPath);
             if (thumb != null)
@@ -2401,6 +2441,30 @@ public class YoutubeFormInterop
                 };
             }).ToList();
 
+            var historyData = mp.GetPlaybackHistory().Select(song =>
+            {
+                LibrarySong? lib = null;
+                if (!string.IsNullOrEmpty(song.songPath))
+                    libByPath.TryGetValue(song.songPath, out lib);
+                var thumb = GetThumbnailForSongPath(song.songPath, lib);
+                var ext = !string.IsNullOrEmpty(song.songPath)
+                    ? System.IO.Path.GetExtension(song.songPath).TrimStart('.').ToUpperInvariant()
+                    : null;
+
+                return new
+                {
+                    title = song.Title ?? "",
+                    artist = song.Artist ?? "",
+                    duration = song.length ?? TimeDisplay.Clock(song.Duration),
+                    songPath = song.songPath ?? "",
+                    thumbnail = thumb,
+                    isMissing = lib?.IsMissing ?? false,
+                    bitrateKbps = lib?.BitrateKbps ?? 0,
+                    fileType = ext,
+                    isHistory = true
+                };
+            }).ToList();
+
             var playlistQueueData = mp.PlaylistQueue.Select((song, i) =>
             {
                 LibrarySong? lib = null;
@@ -2437,6 +2501,7 @@ public class YoutubeFormInterop
                 {
                     queue = queueData,
                     playlistQueue = playlistQueueData,
+                    history = historyData,
                     currentSongPath = _currentSongPath,
                     isPlaying = mp.IsPlaybackActive,
                     repeatEnabled = mp.RepeatEnabled
@@ -4947,6 +5012,7 @@ public class YoutubeFormInterop
                 mp.QueueChanged -= OnQueueChanged;
                 mp.PlaylistQueueChanged -= OnQueueChanged;
                 mp.QueuesChanged -= OnQueueChanged;
+                mp.HistoryChanged -= OnQueueChanged;
             }
             _musicPlayerSubscribed = false;
         }
@@ -5096,6 +5162,50 @@ public class YoutubeFormInterop
         var query = msg["query"]?.ToString() ?? "";
         var maxResults = msg["maxResults"]?.ToObject<int>() ?? 50;
         var results = _libraryService.Data.Search(query, maxResults);
+
+        var artists = _artists.Search(query, Math.Min(20, maxResults))
+            .Select(ArtistSummaryPayload)
+            .ToList();
+
+        var albums = _albums.Search(query, Math.Min(20, maxResults))
+            .Select(AlbumSummaryPayload)
+            .ToList();
+
+        var playlists = new List<object>();
+        var data = _libraryService.Data;
+        var presentCount = data.Songs.Count(s => !s.IsMissing);
+        foreach (var dynamicPlaylist in DynamicPlaylists)
+        {
+            if (!MatchesSearch(dynamicPlaylist.Name, dynamicPlaylist.Description, query)) continue;
+            playlists.Add(new
+            {
+                id = dynamicPlaylist.Id,
+                name = dynamicPlaylist.Name,
+                icon = dynamicPlaylist.Icon,
+                description = dynamicPlaylist.Description,
+                songCount = Math.Min(100, presentCount),
+                isDynamic = true,
+                thumbnail = (string?)null
+            });
+        }
+        playlists.AddRange(data.Playlists
+            .Where(p => MatchesSearch(p.Name, p.Description, query))
+            .Take(maxResults)
+            .Select(p => new
+            {
+                id = p.Id,
+                name = p.Name,
+                icon = p.Icon ?? "",
+                description = p.Description ?? "",
+                songCount = p.Entries.Count,
+                isDynamic = false,
+                thumbnail = p.Entries
+                    .Select(e => data.FindSong(e.SongId))
+                    .Where(s => s != null && !string.IsNullOrEmpty(s!.ThumbnailPath))
+                    .Select(s => GetLibrarySongThumbnail(s!))
+                    .FirstOrDefault(t => t != null)
+            }));
+
         return new
         {
             results = results.Select(s => new
@@ -5121,8 +5231,173 @@ public class YoutubeFormInterop
                 metadataDuplicateCount = s.MetadataDuplicateIds.Count,
                 playCount = s.PlayCount
             }).ToList(),
-            total = results.Count
+            artists,
+            albums,
+            playlists,
+            total = results.Count,
+            totalArtists = artists.Count,
+            totalAlbums = albums.Count,
+            totalPlaylists = playlists.Count
         };
+    }
+
+    private static bool MatchesSearch(string? primary, string? secondary, string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return false;
+        return (primary ?? "").Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               (secondary ?? "").Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private object AlbumSummaryPayload(AlbumInfo album) => new
+    {
+        id = album.Id,
+        title = album.Title,
+        artist = album.Artist,
+        albumArtist = album.AlbumArtist,
+        year = album.Year,
+        genre = album.Genre,
+        artwork = ArtworkValue(album.ArtworkPath, album.ArtworkUrl),
+        localTrackCount = album.LocalTrackCount,
+        missingTrackCount = album.MissingTrackCount,
+        isComplete = album.IsComplete,
+        provider = album.Provider,
+        lastPlayedUtc = album.LastPlayedUtc,
+        dateAddedUtc = album.DateAddedUtc,
+        score = album.Score,
+        reason = album.Reason
+    };
+
+    private object ArtistSummaryPayload(ArtistInfo artist) => new
+    {
+        id = artist.Id,
+        name = artist.Name,
+        sortName = artist.SortName,
+        genre = artist.Genre,
+        country = artist.Country,
+        artwork = ArtworkValue(artist.ArtworkPath, artist.ArtworkUrl),
+        localTrackCount = artist.LocalTrackCount,
+        albumCount = artist.AlbumCount,
+        playCount = artist.PlayCount,
+        provider = artist.Provider,
+        lastPlayedUtc = artist.LastPlayedUtc,
+        dateAddedUtc = artist.DateAddedUtc,
+        score = artist.Score,
+        reason = artist.Reason
+    };
+
+    private object ArtistPayload(ArtistInfo artist) => new
+    {
+        id = artist.Id,
+        name = artist.Name,
+        sortName = artist.SortName,
+        genre = artist.Genre,
+        description = artist.Description,
+        country = artist.Country,
+        artwork = ArtworkValue(artist.ArtworkPath, artist.ArtworkUrl),
+        provider = artist.Provider,
+        cachedUtc = artist.CachedUtc,
+        localTrackCount = artist.LocalTrackCount,
+        albumCount = artist.AlbumCount,
+        missingAlbumCount = artist.MissingAlbumCount,
+        playCount = artist.PlayCount,
+        tracks = artist.Tracks.Select(t => new
+        {
+            title = t.Title,
+            artist = t.Artist,
+            album = t.Album,
+            year = t.Year,
+            track = t.Track,
+            disc = t.Disc,
+            duration = t.Duration.TotalSeconds,
+            durationDisplay = TimeDisplay.Clock(t.Duration),
+            songId = t.SongId,
+            filePath = t.FilePath,
+            thumbnail = ArtworkValue(t.ThumbnailPath, null),
+            playCount = t.PlayCount,
+            isMissing = t.IsMissing
+        }).ToList(),
+        albums = artist.CatalogAlbums.Select(ArtistAlbumPayload).ToList()
+    };
+
+    private object ArtistAlbumPayload(ArtistAlbumInfo album) => new
+    {
+        id = album.Id,
+        title = album.Title,
+        year = album.Year,
+        artwork = ArtworkValue(album.ArtworkPath, album.ArtworkUrl),
+        provider = album.Provider,
+        isLocal = album.IsLocal,
+        hideArtist = true,
+        localTrackCount = album.LocalTrackCount,
+        missingTrackCount = album.MissingTrackCount,
+        isComplete = album.IsComplete,
+    };
+
+    private object AlbumPayload(AlbumInfo album) => new
+    {
+        id = album.Id,
+        title = album.Title,
+        artist = album.Artist,
+        albumArtist = album.AlbumArtist,
+        year = album.Year,
+        genre = album.Genre,
+        artwork = ArtworkValue(album.ArtworkPath, album.ArtworkUrl),
+        provider = album.Provider,
+        cachedUtc = album.CachedUtc,
+        localTrackCount = album.LocalTrackCount,
+        missingTrackCount = album.MissingTrackCount,
+        isComplete = album.IsComplete,
+        tracks = album.Tracks.Select(t => new
+        {
+            title = t.Title,
+            artist = t.Artist,
+            track = t.Track,
+            disc = t.Disc,
+            duration = t.Duration.TotalSeconds,
+            durationDisplay = TimeDisplay.Clock(t.Duration),
+            songId = t.SongId,
+            filePath = t.FilePath,
+            thumbnail = ArtworkValue(t.ThumbnailPath, null),
+            isLocal = t.IsLocal,
+            isMissing = t.IsMissing
+        }).ToList()
+    };
+
+    private string? ArtworkValue(string? localPath, string? remoteUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(localPath) && File.Exists(localPath))
+        {
+            try { return Thumbnails.GetDataUrl(localPath); } catch { }
+        }
+        return remoteUrl;
+    }
+
+    private async Task<object> GetAlbumAsync(JObject msg)
+    {
+        var albumId = msg["albumId"]?.ToString();
+        var songId = msg["songId"]?.ToString();
+        var refresh = msg["refresh"]?.ToObject<bool>() ?? false;
+
+        AlbumInfo? album = !string.IsNullOrWhiteSpace(songId)
+            ? await _albums.GetAlbumForSongAsync(songId!, refresh).ConfigureAwait(false)
+            : await _albums.GetAlbumAsync(albumId ?? string.Empty, refresh).ConfigureAwait(false);
+
+        if (album == null) return new { error = "Album not found" };
+        return AlbumPayload(album);
+    }
+
+    private async Task<object> GetArtistAsync(JObject msg)
+    {
+        var artistId = msg["artistId"]?.ToString();
+        var songId = msg["songId"]?.ToString();
+        var refresh = msg["refresh"]?.ToObject<bool>() ?? false;
+
+        ArtistInfo? artist = !string.IsNullOrWhiteSpace(songId)
+            ? await _artists.GetArtistForSongAsync(songId!, refresh).ConfigureAwait(false)
+            : await _artists.GetArtistAsync(artistId ?? string.Empty, refresh).ConfigureAwait(false);
+
+        if (artist == null) return new { error = "Artist not found" };
+        return ArtistPayload(artist);
     }
 
     private object DeleteLibrarySong(JObject msg)
@@ -5288,6 +5563,8 @@ public class YoutubeFormInterop
         var (artwork, artworkMime) = DecodeArtwork(msg["artworkDataUrl"]?.ToString());
         var result = _libraryService.SaveSongMetadata(songId!, edit, artwork, artworkMime, removeArtwork);
         if (result == null) return new { error = "Song not found" };
+        try { _albums.InvalidateForSong(songId!); } catch { }
+        try { _artists.InvalidateForSong(songId!); } catch { }
 
         // The lyrics cache is keyed by path + artist/title. A metadata/lyrics edit
         // must not leave the old copy playing until the next track.
@@ -5920,6 +6197,16 @@ public class YoutubeFormInterop
             })
             .ToList();
 
+        // ── Albums/artists: recently played/added, plus recommendations ──
+        var albums = _albums.HomeAlbums(count).Select(AlbumSummaryPayload).ToList();
+        var recommendedAlbums = recommendedEnabled
+            ? _albums.RecommendedAlbums(count).Select(AlbumSummaryPayload).ToList()
+            : new List<object>();
+        var artists = _artists.HomeArtists(count).Select(ArtistSummaryPayload).ToList();
+        var recommendedArtists = recommendedEnabled
+            ? _artists.RecommendedArtists(count).Select(ArtistSummaryPayload).ToList()
+            : new List<object>();
+
         return new
         {
             playlists,
@@ -5927,11 +6214,17 @@ public class YoutubeFormInterop
             recommendedEnabled,
             recentlyPlayed,
             newlyAdded,
+            albums,
+            recommendedAlbums,
+            artists,
+            recommendedArtists,
             stats = new
             {
                 totalSongs = data.Songs.Count,
                 presentSongs = data.Songs.Count(s => s.FileStatus == FileStatus.Present),
                 totalPlaylists = data.Playlists.Count,
+                totalAlbums = _albums.CountAlbums(),
+                totalArtists = _artists.CountArtists(),
                 totalPlays = data.PlayHistory.Count
             }
         };
@@ -6705,6 +6998,128 @@ public class YoutubeFormInterop
                 // buffer. Move the first track into the queue and begin playback.
                 mp.AdvanceFromPlaylistQueue();
             }
+        });
+        return new { success = true, count = songs.Count };
+    }
+
+    private List<Song> ResolveAlbumToSongs(string albumId)
+        => _albums.GetLocalSongs(albumId).Select(CreateSongFromLibrary).ToList();
+
+    private object PlayAlbum(JObject msg)
+    {
+        var albumId = msg["albumId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(albumId)) return new { error = "No albumId" };
+        var songs = ResolveAlbumToSongs(albumId);
+        if (songs.Count == 0) return new { error = "Album has no local songs" };
+
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            if (mp == null) return;
+            using (mp.BeginBulkUpdate())
+            {
+                mp.ClearQueue();
+                mp.LoadPlaylist(songs, false);
+                mp.AdvanceFromPlaylistQueue();
+            }
+        });
+        return new { success = true, count = songs.Count };
+    }
+
+    private object ShuffleAlbum(JObject msg)
+    {
+        var albumId = msg["albumId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(albumId)) return new { error = "No albumId" };
+        var songs = ResolveAlbumToSongs(albumId);
+        if (songs.Count == 0) return new { error = "Album has no local songs" };
+
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            if (mp == null) return;
+            using (mp.BeginBulkUpdate())
+            {
+                mp.ClearQueue();
+                mp.LoadPlaylist(songs, true);
+                mp.AdvanceFromPlaylistQueue();
+            }
+        });
+        return new { success = true, count = songs.Count };
+    }
+
+    private List<Song> ResolveArtistToSongs(string artistId)
+        => _artists.GetLocalSongs(artistId).Select(CreateSongFromLibrary).ToList();
+
+    private object PlayArtist(JObject msg)
+    {
+        var artistId = msg["artistId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(artistId)) return new { error = "No artistId" };
+        var songs = ResolveArtistToSongs(artistId);
+        if (songs.Count == 0) return new { error = "Artist has no local songs" };
+
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            if (mp == null) return;
+            using (mp.BeginBulkUpdate())
+            {
+                mp.ClearQueue();
+                mp.LoadPlaylist(songs, false);
+                mp.AdvanceFromPlaylistQueue();
+            }
+        });
+        return new { success = true, count = songs.Count };
+    }
+
+    private object ShuffleArtist(JObject msg)
+    {
+        var artistId = msg["artistId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(artistId)) return new { error = "No artistId" };
+        var songs = ResolveArtistToSongs(artistId);
+        if (songs.Count == 0) return new { error = "Artist has no local songs" };
+
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            if (mp == null) return;
+            using (mp.BeginBulkUpdate())
+            {
+                mp.ClearQueue();
+                mp.LoadPlaylist(songs, true);
+                mp.AdvanceFromPlaylistQueue();
+            }
+        });
+        return new { success = true, count = songs.Count };
+    }
+
+    private object QueueArtist(JObject msg)
+    {
+        var artistId = msg["artistId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(artistId)) return new { error = "No artistId" };
+        var songs = ResolveArtistToSongs(artistId);
+        if (songs.Count == 0) return new { error = "Artist has no local songs" };
+
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            if (mp == null) return;
+            mp.AddSongs(songs);
+        });
+        return new { success = true, count = songs.Count };
+    }
+
+    private object QueueAlbum(JObject msg)
+    {
+        var albumId = msg["albumId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(albumId)) return new { error = "No albumId" };
+        var songs = ResolveAlbumToSongs(albumId);
+        if (songs.Count == 0) return new { error = "Album has no local songs" };
+
+        PostToUi(() =>
+        {
+            var mp = _ytForm.Music;
+            if (mp == null) return;
+            mp.AddSongs(songs);
         });
         return new { success = true, count = songs.Count };
     }

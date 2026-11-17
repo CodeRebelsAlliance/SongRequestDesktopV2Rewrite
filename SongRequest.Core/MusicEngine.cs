@@ -57,6 +57,25 @@ public sealed class MusicEngine
 
     public bool RepeatEnabled { get; set; }
 
+    private const int MaxPlaybackHistory = 3;
+    private readonly List<Song> _playbackHistory = new();
+    private Song? _currentPlaybackSong;
+
+    /// <summary>Current playing/loaded track, or the first queued track when idle.</summary>
+    public Song? CurrentSong => _currentPlaybackSong ?? Queue.FirstOrDefault();
+
+    /// <summary>Current playback position (zero when no reader is open).</summary>
+    public TimeSpan CurrentPosition
+    {
+        get
+        {
+            try { return CurrentReader?.CurrentTime ?? TimeSpan.Zero; }
+            catch { return TimeSpan.Zero; }
+        }
+    }
+
+    public bool CurrentIsPlaying => IsPlaying;
+
     /// <summary>Common mixer format (44.1 kHz stereo float).</summary>
     public WaveFormat Format { get; } = WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
 
@@ -639,6 +658,7 @@ public sealed class MusicEngine
     public event EventHandler<float[]>? AudioSamplesCaptured;
     public event EventHandler? QueueChanged;
     public event EventHandler? PlaylistQueueChanged;
+    public event EventHandler? HistoryChanged;
 
     /// <summary>
     /// Raised once by a bulk update that changed both queues (instead of one event
@@ -713,11 +733,37 @@ public sealed class MusicEngine
     }
 
     public void StartPlayback(IAudioSource reader)
+        => StartPlayback(reader, null, autoPlay: true, fromHistory: false);
+
+    /// <summary>
+    /// Builds the playback pipeline. <paramref name="startPosition"/> restores a
+    /// saved session; <paramref name="autoPlay"/> false keeps the track paused at
+    /// that position so reopening the app never starts audio unexpectedly.
+    /// </summary>
+    public void StartPlayback(
+        IAudioSource reader,
+        TimeSpan? startPosition,
+        bool autoPlay,
+        bool fromHistory)
     {
+        var nextSong = Queue.Count > 0 ? Queue[0] : null;
+        if (!fromHistory && _currentPlaybackSong != null && nextSong != null &&
+            !SameSong(_currentPlaybackSong, nextSong))
+            PushHistory(_currentPlaybackSong);
+
         StopPlayback();
 
         Mixer = new MixingSampleProvider(Format) { ReadFully = true };
         CurrentReader = reader;
+        if (startPosition is { } position && position > TimeSpan.Zero)
+        {
+            try
+            {
+                var total = reader.TotalTime;
+                CurrentReader.CurrentTime = position > total ? total : position;
+            }
+            catch { }
+        }
 
         float targetVolume = Volume;
         if (Queue.Count > 0)
@@ -750,19 +796,29 @@ public sealed class MusicEngine
         Output.Init(CapturingProvider);
         Output.Volume = System.Math.Clamp(AnnouncementOutputFactor * SleepFadeFactor, 0f, 1f);
         Output.PlaybackStopped += Output_PlaybackStopped;
-        Output.Play();
+        if (autoPlay)
+        {
+            Output.Play();
+            EnsureTickTimer();
+        }
 
+        _currentPlaybackSong = nextSong;
         ComputeQueueTimings();
-        PlayStateChanged?.Invoke(true);
-        NowPlayingChanged?.Invoke(Queue.Count > 0 ? Queue[0] : null);
-        EnsureTickTimer();
+        PlayStateChanged?.Invoke(autoPlay);
+        NowPlayingChanged?.Invoke(nextSong);
 
-        var current = Queue.Count > 0 ? Queue[0] : null;
-        if (current != null && CurrentReader != null)
-            NowPlayingTick?.Invoke(this, new NowPlayingEventArgs { Current = current, CurrentTime = CurrentReader.CurrentTime, TotalTime = CurrentReader.TotalTime });
+        if (nextSong != null && CurrentReader != null)
+            NowPlayingTick?.Invoke(this, new NowPlayingEventArgs
+            {
+                Current = nextSong,
+                CurrentTime = CurrentReader.CurrentTime,
+                TotalTime = CurrentReader.TotalTime
+            });
     }
 
-    public void PlaySong(Song s)
+    public void PlaySong(Song s) => PlaySong(s, fromHistory: false);
+
+    private void PlaySong(Song s, bool fromHistory)
     {
         if (s == null || !System.IO.File.Exists(s.songPath)) return;
 
@@ -771,10 +827,10 @@ public sealed class MusicEngine
         var previous = System.Threading.Interlocked.Exchange(ref _playPrepareCts, cts);
         try { previous?.Cancel(); previous?.Dispose(); } catch { }
 
-        _ = PlaySongPreparedAsync(s, request, cts);
+        _ = PlaySongPreparedAsync(s, request, cts, fromHistory);
     }
 
-    private async Task PlaySongPreparedAsync(Song song, int request, CancellationTokenSource cts)
+    private async Task PlaySongPreparedAsync(Song song, int request, CancellationTokenSource cts, bool fromHistory)
     {
         try
         {
@@ -784,13 +840,38 @@ public sealed class MusicEngine
             if (!System.IO.File.Exists(path)) return;
 
             var reader = AudioSourceFactory.Open(path);
-            StartPlayback(reader);
+            StartPlayback(reader, null, autoPlay: true, fromHistory: fromHistory);
         }
         catch (OperationCanceledException) { }
         catch { }
         finally
         {
             try { cts.Dispose(); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Restores a saved session: opens the current track at the saved position but
+    /// leaves it paused. Failures are swallowed so a broken session can never
+    /// prevent the app from starting.
+    /// </summary>
+    public async Task<bool> RestoreCurrentSongAsync(Song song, TimeSpan position, bool autoPlay = false)
+    {
+        if (song == null || string.IsNullOrWhiteSpace(song.songPath) || !System.IO.File.Exists(song.songPath))
+            return false;
+
+        try
+        {
+            var path = await ResolvePlaybackPathAsync(song, CancellationToken.None).ConfigureAwait(false);
+            if (!System.IO.File.Exists(path)) return false;
+            var reader = AudioSourceFactory.Open(path);
+            StartPlayback(reader, position, autoPlay, fromHistory: true);
+            return true;
+        }
+        catch
+        {
+            try { StopPlayback(); } catch { }
+            return false;
         }
     }
 
@@ -827,6 +908,7 @@ public sealed class MusicEngine
         else
         {
             Output.Play();
+            EnsureTickTimer();
             PlayStateChanged?.Invoke(true);
         }
     }
@@ -849,9 +931,74 @@ public sealed class MusicEngine
 
     public void Previous()
     {
+        // Standard player behavior: more than three seconds in, Previous restarts
+        // the current track. Near the beginning it goes back through the bounded
+        // playback history (up to three songs).
+        if (CurrentReader != null && CurrentReader.CurrentTime > TimeSpan.FromSeconds(3))
+        {
+            CurrentReader.CurrentTime = TimeSpan.Zero;
+            ComputeQueueTimings();
+            return;
+        }
+
+        if (_playbackHistory.Count > 0)
+        {
+            var previous = _playbackHistory[^1];
+            _playbackHistory.RemoveAt(_playbackHistory.Count - 1);
+            if (Queue.Count > 0)
+                Queue[0] = previous;
+            else
+                Queue.Add(previous);
+            HistoryChanged?.Invoke(this, EventArgs.Empty);
+            PlaySong(previous, fromHistory: true);
+            return;
+        }
+
         if (CurrentReader != null) CurrentReader.CurrentTime = TimeSpan.Zero;
+        if (CurrentReader == null && Queue.Count > 0)
+            PlaySong(Queue[0]);
         ComputeQueueTimings();
     }
+
+    /// <summary>The last up to three tracks that finished/were replaced, oldest first.</summary>
+    public IReadOnlyList<Song> GetPlaybackHistory() => _playbackHistory.Select(CloneSong).ToList();
+
+    /// <summary>Restores previous-track history from a saved session.</summary>
+    public void RestorePlaybackHistory(IEnumerable<Song>? songs)
+    {
+        _playbackHistory.Clear();
+        if (songs != null)
+        {
+            foreach (var song in songs)
+            {
+                if (song == null || string.IsNullOrWhiteSpace(song.songPath)) continue;
+                if (_playbackHistory.Any(s => SameSong(s, song))) continue;
+                _playbackHistory.Add(CloneSong(song));
+                if (_playbackHistory.Count >= MaxPlaybackHistory) break;
+            }
+        }
+        HistoryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void PushHistory(Song? song)
+    {
+        if (song == null || string.IsNullOrWhiteSpace(song.songPath)) return;
+        if (_playbackHistory.Count > 0 && SameSong(_playbackHistory[^1], song)) return;
+
+        _playbackHistory.Add(CloneSong(song));
+        while (_playbackHistory.Count > MaxPlaybackHistory)
+            _playbackHistory.RemoveAt(0);
+        HistoryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static bool SameSong(Song? a, Song? b)
+        => a != null && b != null &&
+           string.Equals(a.songPath, b.songPath, StringComparison.OrdinalIgnoreCase);
+
+    private static Song CloneSong(Song song) => new(song.Title, song.Artist, null, song.Duration, song.songPath)
+    {
+        PerceivedLoudness = song.PerceivedLoudness,
+    };
 
     public void Stop()
     {
@@ -1133,6 +1280,12 @@ public sealed class MusicEngine
         }
 
         PlayStateChanged?.Invoke(true);
+
+        // The crossfade path bypasses StartPlayback, so record the outgoing track
+        // in the previous-track history here.
+        if (!SameSong(_currentPlaybackSong, nextSong))
+            PushHistory(_currentPlaybackSong);
+        _currentPlaybackSong = nextSong;
     }
 
     private async System.Threading.Tasks.Task AdvanceToNextImmediate()

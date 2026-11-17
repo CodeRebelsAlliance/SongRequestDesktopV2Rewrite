@@ -119,7 +119,15 @@ public static class CommandCatalog
         Add("cancelLibraryScan", "Library", "Cancel a running library scan.", null);
         Add("getLibraryStatus", "Library", "Read library status and scan configuration.", null);
         Add("getLibrarySongs", "Library", "Page through library songs.", new[] { "page", "pageSize", "sortBy", "descending", "filterMissing", "filterDuplicates" });
-        Add("searchLibrary", "Library", "Search library songs.", new[] { "query", "maxResults" });
+        Add("searchLibrary", "Library", "Search library songs, artists, albums and playlists.", new[] { "query", "maxResults" });
+        Add("getArtist", "Library", "Read an artist with local tracks, albums and cached provider metadata. Pass artistId, or songId to open the artist of a song.", new[] { "artistId", "songId", "refresh" });
+        Add("playArtist", "Library", "Play an artist's local tracks in album/track order.", new[] { "artistId" });
+        Add("shuffleArtist", "Library", "Shuffle an artist's local tracks into the queue and start playing.", new[] { "artistId" });
+        Add("queueArtist", "Library", "Append an artist's local tracks to the queue.", new[] { "artistId" });
+        Add("getAlbum", "Library", "Read an album with its tracks, provider metadata and missing-track markers. Pass albumId, or songId to open the album that contains a song.", new[] { "albumId", "songId", "refresh" });
+        Add("playAlbum", "Library", "Play an album's local tracks in track order.", new[] { "albumId" });
+        Add("shuffleAlbum", "Library", "Shuffle an album's local tracks into the queue and start playing.", new[] { "albumId" });
+        Add("queueAlbum", "Library", "Append an album's local tracks to the queue.", new[] { "albumId" });
         Add("deleteLibrarySong", "Library", "Delete a library song.", new[] { "songId", "deleteFile" }, true);
         Add("updateLibrarySongMetadata", "Library", "Edit a library song's basic metadata.", new[] { "songId", "title", "artist", "album", "genre", "tags" });
         Add("openMetadataEditor", "Library", "Open the metadata editor for a library song.", new[] { "songId" });
@@ -137,7 +145,7 @@ public static class CommandCatalog
         Add("importToLibrary", "Library", "Register an existing file or downloaded video in the library.", new[] { "filePath", "youTubeId", "videoUrl", "title", "artist" });
         Add("getLibraryStats", "Library", "Library totals, duplicates and sources.", null);
         Add("flagLibrarySongMissing", "Library", "Mark a library song's file as missing.", new[] { "songId" });
-        Add("getHomeFeed", "Library", "Home feed: playlists, recommendations, recently played and new additions.", new[] { "count" });
+        Add("getHomeFeed", "Library", "Home feed: playlists, artist/album/song recommendations, recent, new and collection rows.", new[] { "count" });
         Add("getThumbnails", "Library", "Resolve artwork data URLs for library songs.", new[] { "songIds" });
 
         // ── Playlists ─────────────────────────────────────────────────────

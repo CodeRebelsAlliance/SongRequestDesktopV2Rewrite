@@ -133,6 +133,36 @@ test('metadata editor is a shared desktop window and a hidden mobile page', () =
   assert.match(mobile, /openMetadataEditor/);
 });
 
+test('player state and previous-track history survive restarts', () => {
+  const root = path.join(__dirname, '..', '..');
+  const session = fs.readFileSync(path.join(root, 'SongRequest.Core', 'PlayerSessionService.cs'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'SongRequest.Core', 'MusicEngine.cs'), 'utf8');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  const desktop = read('musicplayer.js');
+  const mobile = read('mobilemusic.js');
+
+  assert.match(session, /PlayerSessionState/);
+  assert.match(session, /player-session\.json/);
+  assert.match(session, /File\.Move\(temp, FilePath, overwrite: true\)/);
+  assert.match(session, /RestoreCurrentSongAsync/);
+  assert.match(session, /autoPlay: false/);
+  assert.match(session, /GetPlaybackHistory/);
+  assert.match(engine, /MaxPlaybackHistory = 3/);
+  assert.match(engine, /GetPlaybackHistory/);
+  assert.match(engine, /RestorePlaybackHistory/);
+  assert.match(engine, /public void Previous\(\)/);
+  assert.match(interop, /history = historyData/);
+
+  // Greyed previous rows above now playing, and the queue starts at the current
+  // track so history is only seen by scrolling up.
+  assert.match(desktop, /queue-history-header/);
+  assert.match(desktop, /queue-item-history/);
+  assert.match(desktop, /queueScrollPending/);
+  assert.match(mobile, /queueHistory/);
+  assert.match(mobile, /is-history/);
+  assert.match(mobile, /queueScrollPending/);
+});
+
 test('player settings are consolidated into a shared tab on both platforms', () => {
   const root = path.join(__dirname, '..', '..');
   const settings = read('playersettings.js');
@@ -702,4 +732,90 @@ test('reopening the presentation window resumes the live data channel', () => {
   const restore = window.indexOf('PresentationSendMessage = _presentationSend;', reopen);
   assert.ok(reopen >= 0 && clear > reopen && restore > clear,
     'reopen must clear _presentationClosing before restoring the send channel');
+});
+
+test('album search, home rows and detail views are wired on desktop and mobile', () => {
+  const root = path.join(__dirname, '..', '..');
+  const desktopHtml = read('musicplayer.html');
+  const desktopJs = read('musicplayer.js');
+  const desktopCss = read('musicplayer.css');
+  const mobileHtml = read('mobilemusic.html');
+  const mobileJs = read('mobilemusic.js');
+  const mobileCss = read('mobilemusic.css');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  const catalog = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'CommandCatalog.cs'), 'utf8');
+
+  for (const id of ['home-row-albums', 'home-row-album-recommended', 'view-album-detail',
+    'album-detail-title', 'album-detail-tracks', 'album-detail-play']) {
+    assert.ok(desktopHtml.includes(`id="${id}"`), `missing desktop album element #${id}`);
+  }
+  assert.match(desktopHtml, /data-action="goToAlbum"/);
+  assert.match(desktopJs, /function albumCardHtml/);
+  assert.match(desktopJs, /function openAlbumDetail/);
+  assert.match(desktopJs, /search-section-title/);
+  assert.match(desktopJs, /feed\.recommendedAlbums/);
+  assert.match(desktopJs, /hostSend\('playAlbum'/);
+  assert.match(desktopCss, /\.album-track\.is-missing/);
+
+  for (const id of ['mm-row-albums', 'mm-row-album-recommended', 'mm-view-album',
+    'mm-album-title', 'mm-album-list', 'mm-album-play']) {
+    assert.ok(mobileHtml.includes(`id="${id}"`), `missing mobile album element #${id}`);
+  }
+  assert.match(mobileJs, /function openAlbum/);
+  assert.match(mobileJs, /function albumTrackRow/);
+  assert.match(mobileJs, /data-song-action="goToAlbum"/);
+  // YouTube search mode keeps the flat provider list; the mixed library
+  // sections only render for a library search.
+  assert.match(mobileJs, /if \(youtubeSearchMode\) \{\s*searchYoutubeFor\(query\);\s*return;/);
+  assert.match(mobileJs, /searchSectionHeader\('fa-compact-disc', 'Albums'/);
+  assert.match(mobileCss, /\.mm-song\.is-missing/);
+
+  assert.match(interop, /case "getAlbum":/);
+  assert.match(interop, /case "playAlbum":/);
+  assert.match(interop, /recommendedAlbums/);
+  assert.match(catalog, /Add\("getAlbum"/);
+  assert.match(catalog, /Add\("playAlbum"/);
+});
+
+test('artist search, home rows and detail views are wired on desktop and mobile', () => {
+  const root = path.join(__dirname, '..', '..');
+  const desktopHtml = read('musicplayer.html');
+  const desktopJs = read('musicplayer.js');
+  const desktopCss = read('musicplayer.css');
+  const mobileHtml = read('mobilemusic.html');
+  const mobileJs = read('mobilemusic.js');
+  const mobileCss = read('mobilemusic.css');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+  const catalog = fs.readFileSync(path.join(root, 'SongRequest.Core', 'Integration', 'CommandCatalog.cs'), 'utf8');
+
+  for (const id of ['home-row-artists', 'home-row-artist-recommended', 'view-artist-detail',
+    'artist-detail-title', 'artist-detail-albums', 'artist-detail-tracks', 'artist-detail-play']) {
+    assert.ok(desktopHtml.includes(`id="${id}"`), `missing desktop artist element #${id}`);
+  }
+  assert.match(desktopHtml, /data-action="goToArtist"/);
+  assert.match(desktopJs, /function artistCardHtml/);
+  assert.match(desktopJs, /function openArtistDetail/);
+  assert.match(desktopJs, /feed\.recommendedArtists/);
+  assert.match(desktopJs, /hostSend\('playArtist'/);
+  assert.match(desktopJs, /data-missingalbum/);
+  assert.match(desktopCss, /\.artist-detail-art/);
+  assert.match(desktopCss, /\.home-album-card\.is-missing/);
+
+  for (const id of ['mm-row-artists', 'mm-row-artist-recommended', 'mm-view-artist',
+    'mm-artist-title', 'mm-artist-albums', 'mm-artist-tracks', 'mm-artist-play']) {
+    assert.ok(mobileHtml.includes(`id="${id}"`), `missing mobile artist element #${id}`);
+  }
+  assert.match(mobileJs, /function openArtist/);
+  assert.match(mobileJs, /function artistTrackRow/);
+  assert.match(mobileJs, /data-song-action="goToArtist"/);
+  assert.match(mobileJs, /searchSectionHeader\('fa-user-music', 'Artists'/);
+  assert.match(mobileJs, /data-missing-album/);
+  assert.match(mobileCss, /\.mm-artist-art/);
+  assert.match(mobileCss, /\.mm-album-card\.is-missing/);
+
+  assert.match(interop, /case "getArtist":/);
+  assert.match(interop, /case "playArtist":/);
+  assert.match(interop, /recommendedArtists/);
+  assert.match(catalog, /Add\("getArtist"/);
+  assert.match(catalog, /Add\("playArtist"/);
 });

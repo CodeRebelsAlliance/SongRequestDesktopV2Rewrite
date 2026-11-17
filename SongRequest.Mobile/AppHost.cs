@@ -23,6 +23,7 @@ public sealed class AppHost : IDisposable
 
     public HeadlessHost Host { get; }
     public YoutubeFormInterop Interop { get; }
+    public PlayerSessionService PlayerSession { get; }
 
     /// <summary>The shell page (used by the activity to react to memory pressure).</summary>
     public MainPage Page => _page;
@@ -37,6 +38,8 @@ public sealed class AppHost : IDisposable
         Host = new HeadlessHost { NewUiRef = Shell };
         Host.Music.InvokeOnUi = RunOnUi;
         Host.Music.OutputDeviceNumber = ConfigService.Instance.Current?.AudioOutputDeviceNumber ?? -1;
+        PlayerSession = new PlayerSessionService(Host.Music);
+        _ = PlayerSession.RestoreAsync();
 
         Interop = new YoutubeFormInterop(Host, Host.YoutubeService)
         {
@@ -481,6 +484,7 @@ public sealed class AppHost : IDisposable
 
     public void Dispose()
     {
+        try { PlayerSession.Dispose(); } catch { }
         try { Interop.QuitRequested = null; } catch { }
         try { AppBootstrap.Shutdown(); } catch { }
     }

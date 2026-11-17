@@ -555,6 +555,7 @@ public sealed partial class AppIntegrationServer : IDisposable
         var music = _host?.Music;
         var queue = new JArray();
         var playlistQueue = new JArray();
+        var history = new JArray();
 
         try
         {
@@ -588,6 +589,18 @@ public sealed partial class AppIntegrationServer : IDisposable
                         ["songPath"] = song.songPath ?? ""
                     });
                 }
+
+                foreach (var song in music.GetPlaybackHistory())
+                {
+                    history.Add(new JObject
+                    {
+                        ["title"] = song.Title ?? "",
+                        ["artist"] = song.Artist ?? "",
+                        ["duration"] = song.Duration.TotalSeconds,
+                        ["durationDisplay"] = song.length ?? "",
+                        ["songPath"] = song.songPath ?? ""
+                    });
+                }
             }
         }
         catch (Exception ex)
@@ -596,6 +609,7 @@ public sealed partial class AppIntegrationServer : IDisposable
             {
                 ["queue"] = queue,
                 ["playlistQueue"] = playlistQueue,
+                ["history"] = history,
                 ["error"] = ex.Message
             };
         }
@@ -604,8 +618,10 @@ public sealed partial class AppIntegrationServer : IDisposable
         {
             ["queue"] = queue,
             ["playlistQueue"] = playlistQueue,
+            ["history"] = history,
             ["queueCount"] = queue.Count,
             ["playlistQueueCount"] = playlistQueue.Count,
+            ["historyCount"] = history.Count,
             ["isPlaying"] = music?.IsPlaying ?? false,
             ["isPlaybackActive"] = music?.IsPlaybackActive ?? false,
             ["repeatEnabled"] = music?.RepeatEnabled ?? false
