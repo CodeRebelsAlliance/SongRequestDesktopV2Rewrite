@@ -40,6 +40,12 @@ public interface IUiShell
     void CloseAnnouncementWindow();
     Action<string>? AnnouncementSendMessage { get; set; }
 
+    // ── Song metadata editor ─────────────────────────────────────────────────
+    /// <summary>Opens the metadata editor window/page for the song selected in the interop.</summary>
+    void ShowMetadataEditorWindow();
+    void CloseMetadataEditorWindow();
+    Action<string>? MetadataEditorSendMessage { get; set; }
+
     /// <summary>
     /// Applies native fullscreen to a sub-window. <paramref name="windowName"/> is
     /// the view name used by the web UI ("musicplayer", "visualization", …).

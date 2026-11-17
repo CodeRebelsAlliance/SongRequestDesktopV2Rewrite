@@ -110,6 +110,9 @@ public class YoutubeFormInterop
     /// <summary>Same for individually picked files; returns the folder to scan.</summary>
     public Func<string[], Task<string?>>? PrepareImportFiles { get; set; }
 
+    /// <summary>Picks one image file for the metadata editor; returns a readable local path.</summary>
+    public Func<Task<string?>>? PickArtworkFile { get; set; }
+
     /// <summary>
     /// Turns one picked file into a readable local path. Mobile pickers hand out
     /// <c>content://</c> URIs, which the soundboard editor used to pass straight to
@@ -128,6 +131,7 @@ public class YoutubeFormInterop
     public Action? QuitRequested { get; set; }
 
     private string? _currentSongPath;
+    private string? _metadataEditorSongId;
 
     // Artwork already pushed via queueUpdate / queueThumbnails, keyed by song path.
     // Bulk queue loading removes the repeated queue updates that used to act as
@@ -142,6 +146,7 @@ public class YoutubeFormInterop
     private const int MaxQueueThumbnailRefreshes = 120;
     private bool _musicPlayerSubscribed;
     private bool _pendingMusicShareOpen;
+    private bool _pendingPlayerSettingsOpen;
     private LyricsService? _musicPlayerLyricsService;
     private readonly object _musicPlayerLyricsCacheLock = new();
     private readonly System.Collections.Generic.Dictionary<string, LyricsResult> _musicPlayerLyricsCache = new(StringComparer.OrdinalIgnoreCase);
@@ -495,6 +500,12 @@ public class YoutubeFormInterop
                     ShowMusicPlayer();
                     SendResponse(id, new { success = true });
                     return;
+                case "showPlayerSettings":
+                    ShowMusicPlayer();
+                    _pendingPlayerSettingsOpen = true;
+                    MusicPlayerSendEvent("openPlayerSettings", null);
+                    SendResponse(id, new { success = true });
+                    return;
                 case "closeMusicPlayer":
                     CloseNewMusicPlayer();
                     SendResponse(id, new { success = true });
@@ -659,6 +670,11 @@ public class YoutubeFormInterop
                         {
                             _pendingMusicShareOpen = false;
                             MusicPlayerSendEvent("openMusicShare", null);
+                        }
+                        if (_pendingPlayerSettingsOpen)
+                        {
+                            _pendingPlayerSettingsOpen = false;
+                            MusicPlayerSendEvent("openPlayerSettings", null);
                         }
                     });
                     return;
@@ -1161,6 +1177,36 @@ public class YoutubeFormInterop
                     break;
                 case "updateLibrarySongMetadata":
                     result = UpdateLibrarySongMetadata(msg);
+                    break;
+                case "openMetadataEditor":
+                    result = OpenMetadataEditor(msg);
+                    break;
+                case "closeMetadataEditor":
+                    result = CloseMetadataEditor();
+                    break;
+                case "getSongMetadata":
+                    result = GetSongMetadata(msg);
+                    break;
+                case "saveSongMetadata":
+                    result = SaveSongMetadata(msg);
+                    break;
+                case "identifySongMetadata":
+                    result = await IdentifySongMetadataAsync(msg);
+                    break;
+                case "searchSongMetadata":
+                    result = await SearchSongMetadataAsync(msg);
+                    break;
+                case "fetchSongArtwork":
+                    result = await FetchSongArtworkAsync(msg);
+                    break;
+                case "pickSongArtwork":
+                    result = await PickSongArtworkAsync();
+                    break;
+                case "fetchSongLyrics":
+                    result = await FetchSongLyricsAsync(msg);
+                    break;
+                case "getMetadataProviderStatus":
+                    result = GetMetadataProviderStatus();
                     break;
                 case "addLibraryScanFolder":
                     result = AddLibraryScanFolder(msg);
@@ -3341,6 +3387,17 @@ public class YoutubeFormInterop
             presentationZoom = Math.Clamp(cfg.PresentationZoom, 0.5, 2.0),
             libraryRemoveMissingOnScan = cfg.LibraryRemoveMissingOnScan,
             libraryRecommendationsEnabled = cfg.LibraryRecommendationsEnabled,
+            lyricsFontScale = (double)cfg.LyricsFontScale,
+            lyricsHidden = cfg.LyricsHidden,
+            metadataProviderMusicBrainz = cfg.MetadataProviderMusicBrainz,
+            metadataProviderITunes = cfg.MetadataProviderITunes,
+            metadataProviderDeezer = cfg.MetadataProviderDeezer,
+            metadataProviderCoverArtArchive = cfg.MetadataProviderCoverArtArchive,
+            metadataProviderAcoustId = cfg.MetadataProviderAcoustId,
+            acoustIdApiKey = cfg.AcoustIdApiKey ?? "",
+            metadataProviderDiscogs = cfg.MetadataProviderDiscogs,
+            discogsToken = cfg.DiscogsToken ?? "",
+            metadataProviderPriority = cfg.MetadataProviderPriority ?? new List<string>(),
             logPlayback = cfg.LogPlayback,
             useNewUI = cfg.UseNewUI,
             autoStart = cfg.AutoStart,
@@ -3699,6 +3756,16 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("libraryAutoAddDownloads", out var lad)) cfg.LibraryAutoAddDownloads = lad.ToObject<bool>();
                 if (settings.TryGetValue("libraryRemoveMissingOnScan", out var lrm)) cfg.LibraryRemoveMissingOnScan = lrm.ToObject<bool>();
                 if (settings.TryGetValue("libraryRecommendationsEnabled", out var lre)) cfg.LibraryRecommendationsEnabled = lre.ToObject<bool>();
+                if (settings.TryGetValue("metadataProviderMusicBrainz", out var mpMb)) cfg.MetadataProviderMusicBrainz = mpMb.ToObject<bool>();
+                if (settings.TryGetValue("metadataProviderITunes", out var mpIt)) cfg.MetadataProviderITunes = mpIt.ToObject<bool>();
+                if (settings.TryGetValue("metadataProviderDeezer", out var mpDz)) cfg.MetadataProviderDeezer = mpDz.ToObject<bool>();
+                if (settings.TryGetValue("metadataProviderCoverArtArchive", out var mpCaa)) cfg.MetadataProviderCoverArtArchive = mpCaa.ToObject<bool>();
+                if (settings.TryGetValue("metadataProviderAcoustId", out var mpAcoust)) cfg.MetadataProviderAcoustId = mpAcoust.ToObject<bool>();
+                if (settings.TryGetValue("acoustIdApiKey", out var acoustKey)) cfg.AcoustIdApiKey = acoustKey.ToString();
+                if (settings.TryGetValue("metadataProviderDiscogs", out var mpDiscogs)) cfg.MetadataProviderDiscogs = mpDiscogs.ToObject<bool>();
+                if (settings.TryGetValue("discogsToken", out var discogsToken)) cfg.DiscogsToken = discogsToken.ToString();
+                if (settings.TryGetValue("metadataProviderPriority", out var mpPriority) && mpPriority is JArray priorityArray)
+                    cfg.MetadataProviderPriority = MetadataProviderSettings.NormalizePriority(priorityArray.Select(t => t.ToString()));
                 if (settings.TryGetValue("logPlayback", out var lp)) cfg.LogPlayback = lp.ToObject<bool>();
                 if (settings.TryGetValue("useNewUI", out var un)) cfg.UseNewUI = un.ToObject<bool>();
                 if (settings.TryGetValue("autoStart", out var asu)) cfg.AutoStart = asu.ToObject<bool>();
@@ -3739,6 +3806,14 @@ public class YoutubeFormInterop
                 if (settings.TryGetValue("normalizeVolume", out var nv2) && !nv2.ToObject<bool>())
                 {
                     cfg.NormalizationActive = false;
+                }
+
+                if (settings.Properties().Any(p =>
+                        p.Name.StartsWith("metadataProvider", StringComparison.OrdinalIgnoreCase) ||
+                        p.Name is "acoustIdApiKey" or "discogsToken"))
+                {
+                    foreach (var provider in MetadataProviderGovernor.ProviderNames)
+                        MetadataProviderGovernor.Reset(provider);
                 }
             });
 
@@ -4977,8 +5052,13 @@ public class YoutubeFormInterop
             id = s.Id,
             title = s.Title,
             artist = s.Artist,
+            albumArtist = s.AlbumArtist,
             album = s.Album,
             genre = s.Genre,
+            year = s.Year,
+            track = s.Track,
+            disc = s.Disc,
+            bpm = s.Bpm,
             duration = s.Duration.TotalSeconds,
             durationDisplay = s.DurationDisplay,
             thumbnail = GetLibrarySongThumbnail(s),
@@ -5023,7 +5103,13 @@ public class YoutubeFormInterop
                 id = s.Id,
                 title = s.Title,
                 artist = s.Artist,
+                albumArtist = s.AlbumArtist,
                 album = s.Album,
+                genre = s.Genre,
+                year = s.Year,
+                track = s.Track,
+                disc = s.Disc,
+                bpm = s.Bpm,
                 duration = s.Duration.TotalSeconds,
                 durationDisplay = s.DurationDisplay,
                 thumbnail = GetLibrarySongThumbnail(s),
@@ -5119,6 +5205,390 @@ public class YoutubeFormInterop
         _libraryService.Save();
         return new { success = true };
     }
+
+    // ── Song metadata editor ───────────────────────────────────────────────
+
+    private object OpenMetadataEditor(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(songId)) return new { error = "No songId" };
+        _metadataEditorSongId = songId;
+
+        _ytForm.NewUiRef?.ShowMetadataEditorWindow();
+        SendMetadataEditorSong();
+        return new { success = true, songId };
+    }
+
+    private object CloseMetadataEditor()
+    {
+        _ytForm.NewUiRef?.CloseMetadataEditorWindow();
+        return new { success = true };
+    }
+
+    private void SendMetadataEditorSong()
+    {
+        try
+        {
+            var shell = _ytForm.NewUiRef;
+            if (shell?.MetadataEditorSendMessage == null || string.IsNullOrWhiteSpace(_metadataEditorSongId)) return;
+            var payload = new
+            {
+                type = "event",
+                eventName = "metadataEditorSong",
+                data = new { songId = _metadataEditorSongId }
+            };
+            shell.MetadataEditorSendMessage(Newtonsoft.Json.JsonConvert.SerializeObject(payload));
+        }
+        catch { }
+    }
+
+    /// <summary>Re-sends the selected song to a newly created metadata editor window.</summary>
+    public void SendMetadataEditorSongFromShell() => SendMetadataEditorSong();
+
+    private object GetSongMetadata(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(songId)) songId = _metadataEditorSongId;
+        if (string.IsNullOrWhiteSpace(songId)) return new { error = "No songId" };
+
+        var snapshot = _libraryService.GetSongMetadata(songId!);
+        if (snapshot == null) return new { error = "Song not found" };
+        _metadataEditorSongId = songId;
+        return BuildMetadataPayload(snapshot);
+    }
+
+    private object SaveSongMetadata(JObject msg)
+    {
+        var songId = msg["songId"]?.ToString() ?? _metadataEditorSongId;
+        if (string.IsNullOrWhiteSpace(songId)) return new { error = "No songId" };
+
+        var edit = new SongMetadataEdit
+        {
+            Title = Str(msg, "title"),
+            Artist = Str(msg, "artist"),
+            AlbumArtist = Str(msg, "albumArtist"),
+            Album = Str(msg, "album"),
+            Genre = Str(msg, "genre"),
+            Year = UInt(msg, "year"),
+            Track = UInt(msg, "track"),
+            Disc = UInt(msg, "disc"),
+            Bpm = UInt(msg, "bpm"),
+            Comment = Str(msg, "comment"),
+            Composer = Str(msg, "composer"),
+            Lyricist = Str(msg, "lyricist"),
+            Conductor = Str(msg, "conductor"),
+            Publisher = Str(msg, "publisher"),
+            Copyright = Str(msg, "copyright"),
+            Isrc = Str(msg, "isrc"),
+            Grouping = Str(msg, "grouping"),
+            Lyrics = msg["lyrics"]?.ToString() ?? string.Empty,
+        };
+
+        var removeArtwork = msg["removeArtwork"]?.ToObject<bool>() == true;
+        var (artwork, artworkMime) = DecodeArtwork(msg["artworkDataUrl"]?.ToString());
+        var result = _libraryService.SaveSongMetadata(songId!, edit, artwork, artworkMime, removeArtwork);
+        if (result == null) return new { error = "Song not found" };
+
+        // The lyrics cache is keyed by path + artist/title. A metadata/lyrics edit
+        // must not leave the old copy playing until the next track.
+        try
+        {
+            var song = _libraryService.Data.FindSong(songId!);
+            if (song != null)
+            {
+                lock (_musicPlayerLyricsCacheLock)
+                {
+                    foreach (var key in _musicPlayerLyricsCache.Keys
+                                 .Where(k => k.StartsWith(song.FilePath + "|", StringComparison.OrdinalIgnoreCase))
+                                 .ToList())
+                        _musicPlayerLyricsCache.Remove(key);
+                }
+            }
+        }
+        catch { }
+
+        try { SendEvent("libraryChanged", new { songId, metadata = true }); } catch { }
+        try { MusicPlayerSendEvent("libraryChanged", new { songId, metadata = true }); } catch { }
+        try { SendMetadataEditorSong(); } catch { }
+
+        return new
+        {
+            success = result.Success,
+            storedInLibrary = result.Target == MetadataWriteTarget.Library,
+            target = result.Target == MetadataWriteTarget.File ? "file" : "library",
+            warning = result.Warning,
+            metadata = BuildMetadataPayload(result.Metadata!),
+        };
+    }
+
+    private async Task<object> IdentifySongMetadataAsync(JObject msg)
+    {
+        var song = ResolveMetadataSong(msg, out var error);
+        if (song == null) return new { error };
+
+        var snapshot = SongMetadataService.Read(song);
+        var service = new MetadataOnlineService(
+            providers: MetadataProviderSettings.FromConfig(ConfigService.Instance.Current));
+        var result = await service.IdentifyAsync(
+            snapshot.Title,
+            snapshot.Artist,
+            snapshot.Album,
+            snapshot.Duration,
+            snapshot.FilePath).ConfigureAwait(false);
+        return BuildOnlineResult(result);
+    }
+
+    private async Task<object> SearchSongMetadataAsync(JObject msg)
+    {
+        var query = msg["query"]?.ToString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            var song = ResolveMetadataSong(msg, out var error);
+            if (song == null) return new { error };
+            query = $"{song.Artist} {song.Title}".Trim();
+        }
+
+        var duration = TimeSpan.Zero;
+        var songForDuration = ResolveMetadataSong(msg, out _);
+        if (songForDuration != null) duration = songForDuration.Duration;
+
+        var service = new MetadataOnlineService(
+            providers: MetadataProviderSettings.FromConfig(ConfigService.Instance.Current));
+        var result = await service.SearchAsync(query, duration).ConfigureAwait(false);
+        return BuildOnlineResult(result);
+    }
+
+    private async Task<object> FetchSongArtworkAsync(JObject msg)
+    {
+        var url = msg["url"]?.ToString();
+        var service = new MetadataOnlineService(
+            providers: MetadataProviderSettings.FromConfig(ConfigService.Instance.Current));
+        var result = await service.FetchArtworkAsync(url ?? string.Empty).ConfigureAwait(false);
+        if (result.Bytes is not { Length: > 0 })
+            return new { error = result.Error ?? "No artwork returned." };
+        return new
+        {
+            success = true,
+            mimeType = result.MimeType,
+            dataUrl = ToDataUrl(result.Bytes, result.MimeType),
+        };
+    }
+
+    private async Task<object> PickSongArtworkAsync()
+    {
+        try
+        {
+            if (PickArtworkFile == null) return new { error = "Image picking is not available on this host." };
+            var path = await PickArtworkFile().ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(path)) return new { cancelled = true };
+            if (!File.Exists(path)) return new { error = "The selected image could not be read." };
+
+            var info = new FileInfo(path);
+            if (info.Length > SongMetadataService.MaxArtworkBytes)
+                return new { error = "The selected image is larger than 20 MB." };
+
+            var bytes = await File.ReadAllBytesAsync(path).ConfigureAwait(false);
+            var mime = MetadataOnlineService.DetectImageMimeOrNull(bytes);
+            if (mime == null) return new { error = "The selected file is not a supported image." };
+            return new { success = true, mimeType = mime, dataUrl = ToDataUrl(bytes, mime) };
+        }
+        catch (Exception ex)
+        {
+            return new { error = ex.Message };
+        }
+    }
+
+    private async Task<object> FetchSongLyricsAsync(JObject msg)
+    {
+        var song = ResolveMetadataSong(msg, out var error);
+        if (song == null) return new { error };
+
+        var snapshot = SongMetadataService.Read(song);
+        if (string.IsNullOrWhiteSpace(snapshot.Title))
+            return new { found = false, error = "The song has no title to search for." };
+
+        var service = new LyricsService();
+        var result = await service.GetLyricsAsync(
+            snapshot.Artist,
+            snapshot.Title,
+            snapshot.Duration,
+            snapshot.Album).ConfigureAwait(false);
+
+        return new
+        {
+            found = result.Found,
+            syncedLyrics = result.SyncedLyrics ?? string.Empty,
+            plainLyrics = result.PlainLyrics ?? string.Empty,
+            provider = result.Provider.ToString(),
+            error = result.Found ? null : "No lyrics found for this song.",
+        };
+    }
+
+    private LibrarySong? ResolveMetadataSong(JObject msg, out string? error)
+    {
+        error = null;
+        var songId = msg["songId"]?.ToString() ?? _metadataEditorSongId;
+        if (string.IsNullOrWhiteSpace(songId))
+        {
+            error = "No songId";
+            return null;
+        }
+
+        var song = _libraryService.Data.FindSong(songId);
+        if (song == null) error = "Song not found";
+        return song;
+    }
+
+    private object BuildMetadataPayload(SongMetadataSnapshot snapshot)
+    {
+        return new
+        {
+            songId = snapshot.SongId,
+            filePath = snapshot.FilePath,
+            fileExists = snapshot.FileExists,
+            canWriteToFile = snapshot.CanWriteToFile,
+            fileFormat = snapshot.FileFormat,
+            title = snapshot.Title,
+            artist = snapshot.Artist,
+            albumArtist = snapshot.AlbumArtist,
+            album = snapshot.Album,
+            genre = snapshot.Genre,
+            year = snapshot.Year,
+            track = snapshot.Track,
+            disc = snapshot.Disc,
+            bpm = snapshot.Bpm,
+            comment = snapshot.Comment,
+            composer = snapshot.Composer,
+            lyricist = snapshot.Lyricist,
+            conductor = snapshot.Conductor,
+            publisher = snapshot.Publisher,
+            copyright = snapshot.Copyright,
+            isrc = snapshot.Isrc,
+            grouping = snapshot.Grouping,
+            duration = snapshot.Duration.TotalSeconds,
+            lyrics = snapshot.Lyrics,
+            lyricsAreSynced = snapshot.LyricsAreSynced,
+            artworkDataUrl = snapshot.ArtworkBytes is { Length: > 0 }
+                ? ToDataUrl(snapshot.ArtworkBytes, snapshot.ArtworkMimeType)
+                : null,
+            artworkMimeType = snapshot.ArtworkMimeType,
+            metadataStoredInLibrary = snapshot.MetadataStoredInLibrary,
+            lyricsStoredInLibrary = snapshot.LyricsStoredInLibrary,
+            artworkStoredInLibrary = snapshot.ArtworkStoredInLibrary,
+            warning = snapshot.Warning,
+            providers = new
+            {
+                musicBrainz = snapshot.Providers.MusicBrainz,
+                iTunes = snapshot.Providers.ITunes,
+                deezer = snapshot.Providers.Deezer,
+                coverArtArchive = snapshot.Providers.CoverArtArchive,
+                acoustId = snapshot.Providers.AcoustId,
+                acoustIdApiKey = snapshot.Providers.AcoustIdApiKey,
+                discogs = snapshot.Providers.Discogs,
+                discogsToken = snapshot.Providers.DiscogsToken,
+                priority = snapshot.Providers.Priority,
+            }
+        };
+    }
+
+    private static object BuildOnlineResult(MetadataSearchResult result)
+    {
+        return new
+        {
+            query = result.Query,
+            error = result.Error,
+            best = result.Best == null ? null : MetadataCandidateObject(result.Best),
+            candidates = result.Candidates.Select(MetadataCandidateObject).ToList(),
+        };
+    }
+
+    private static object MetadataCandidateObject(MetadataCandidate c) => new
+    {
+        provider = c.Provider,
+        providerId = c.ProviderId,
+        title = c.Title,
+        artist = c.Artist,
+        albumArtist = c.AlbumArtist,
+        album = c.Album,
+        genre = c.Genre,
+        year = c.Year,
+        track = c.Track,
+        disc = c.Disc,
+        duration = c.Duration.TotalSeconds,
+        artworkUrl = c.ArtworkUrl,
+        sourceUrl = c.SourceUrl,
+        score = c.Score,
+        confidence = c.Score >= 0.8 ? "high" : c.Score >= 0.55 ? "medium" : "low",
+    };
+
+    private object GetMetadataProviderStatus()
+    {
+        var cfg = ConfigService.Instance.Current;
+        var enabled = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["MusicBrainz"] = cfg?.MetadataProviderMusicBrainz ?? true,
+            ["iTunes"] = cfg?.MetadataProviderITunes ?? true,
+            ["Deezer"] = cfg?.MetadataProviderDeezer ?? true,
+            ["CoverArtArchive"] = cfg?.MetadataProviderCoverArtArchive ?? true,
+            ["AcoustID"] = cfg?.MetadataProviderAcoustId ?? false,
+            ["Discogs"] = cfg?.MetadataProviderDiscogs ?? false,
+        };
+
+        return new
+        {
+            priority = MetadataProviderSettings.FromConfig(cfg).Priority,
+            providers = MetadataProviderGovernor.GetStatuses().Select(s => new
+            {
+                name = s.Name,
+                state = s.State,
+                available = s.Available && enabled.TryGetValue(s.Name, out var on) && on,
+                enabled = enabled.TryGetValue(s.Name, out var isOn) && isOn,
+                requestsInWindow = s.RequestsInWindow,
+                maxRequests = s.MaxRequests,
+                windowSeconds = s.WindowSeconds,
+                minIntervalSeconds = s.MinIntervalSeconds,
+                lastRequestUtc = s.LastRequestUtc,
+                nextAllowedUtc = s.NextAllowedUtc,
+                cooldownUntilUtc = s.CooldownUntilUtc,
+                lastError = s.LastError,
+                limitLabel = s.LimitLabel,
+            }).ToList()
+        };
+    }
+
+    private static string Str(JObject msg, string key)
+        => msg[key]?.ToString() ?? string.Empty;
+
+    private static uint UInt(JObject msg, string key)
+    {
+        var text = msg[key]?.ToString();
+        return uint.TryParse(text, out var value) ? value : 0;
+    }
+
+    private static (byte[]? Bytes, string? MimeType) DecodeArtwork(string? dataUrl)
+    {
+        if (string.IsNullOrWhiteSpace(dataUrl)) return (null, null);
+        try
+        {
+            var comma = dataUrl.IndexOf(',');
+            var header = comma > 0 ? dataUrl[..comma] : string.Empty;
+            var base64 = comma > 0 ? dataUrl[(comma + 1)..] : dataUrl;
+            var mime = header.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+                ? header[5..].Split(';')[0]
+                : null;
+            var bytes = Convert.FromBase64String(base64);
+            if (bytes.Length > SongMetadataService.MaxArtworkBytes) return (null, null);
+            return (bytes, mime);
+        }
+        catch
+        {
+            return (null, null);
+        }
+    }
+
+    private static string ToDataUrl(byte[] bytes, string? mimeType)
+        => "data:" + (string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType) +
+           ";base64," + Convert.ToBase64String(bytes);
 
     private object AddLibraryScanFolder(JObject msg)
     {

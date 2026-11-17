@@ -33,6 +33,9 @@ public sealed class MainPage : ContentPage
     /// <summary>The mobile stage console (presentation controls + preview).</summary>
     public const string MobileStageFile = "mobilestage.html";
 
+    /// <summary>The shared song metadata editor, shown as a hidden full-screen page.</summary>
+    public const string MetadataEditorFile = "metadataeditor.html";
+
     /// <summary>
     /// How many web views stay alive. All tabs (and the alternate stage pages)
     /// stay resident, so switching never reloads a page and loses its state.
@@ -59,6 +62,7 @@ public sealed class MainPage : ContentPage
     private string _activeKey = "requests";
     private string _baseKey = "requests";
     private string _currentFile = MobileRequestsFile;
+    private string? _metadataReturnKey;
     private bool _suppressNextPlayerOpen;
     private bool _navigationVisible;
 
@@ -427,6 +431,44 @@ public sealed class MainPage : ContentPage
         if (!_destinationFile.ContainsKey(tabKey)) return;
         _destinationFile[tabKey] = file;
         Select(tabKey);
+    }
+
+    /// <summary>
+    /// Opens the metadata editor as a hidden full-screen page (it has no native
+    /// navigation tab, so the tab bar is hidden while it is open).
+    /// </summary>
+    public void ShowMetadataEditorPage()
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(ShowMetadataEditorPage);
+            return;
+        }
+
+        if (!string.Equals(_activeKey, "metadata", StringComparison.Ordinal))
+            _metadataReturnKey = _activeKey;
+
+        _destinationFile["metadata"] = MetadataEditorFile;
+        Select("metadata");
+        SetImmersive(true);
+    }
+
+    /// <summary>Returns from the hidden metadata editor to the tab that opened it.</summary>
+    public void CloseMetadataEditorPage()
+    {
+        if (!MainThread.IsMainThread)
+        {
+            MainThread.BeginInvokeOnMainThread(CloseMetadataEditorPage);
+            return;
+        }
+
+        _destinationFile.Remove("metadata");
+        SetImmersive(false);
+        var key = _metadataReturnKey;
+        _metadataReturnKey = null;
+        if (string.IsNullOrEmpty(key) || !_destinationFile.ContainsKey(key) || !_tabs.ContainsKey(key))
+            key = _tabs.Keys.FirstOrDefault() ?? _baseKey;
+        Select(key);
     }
 
     /// <summary>Sends a JSON message to the page with this file name, if it is resident.</summary>

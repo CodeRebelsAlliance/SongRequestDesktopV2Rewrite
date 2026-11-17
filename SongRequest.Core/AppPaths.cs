@@ -106,6 +106,20 @@ public static class AppPaths
 
     public static string ThumbnailCachePath => Path.Combine(DownloadPath, "thumbnail-cache");
 
+    /// <summary>Cached library artwork for one song, with an extension matching its MIME type.</summary>
+    public static string LibraryDataThumbnailPath(string songId, string? mimeType = null)
+    {
+        var extension = (mimeType ?? string.Empty).ToLowerInvariant() switch
+        {
+            "image/png" => ".png",
+            "image/gif" => ".gif",
+            "image/bmp" => ".bmp",
+            "image/webp" => ".webp",
+            _ => ".jpg",
+        };
+        return Path.Combine(LibraryDataDir, "thumbnails", songId + extension);
+    }
+
     /// <summary>Folder where now-playing artwork is cached for the OS media controls.</summary>
     public static string NowPlayingArtworkDir => Path.Combine(AppDataDir, "now-playing-artwork");
 

@@ -50,6 +50,10 @@ Run everything locally:
 | Music Share | player warm-up, volume clamp/forwarding, stop; service queue/status transitions (`buffering`↔`streaming`), receive events, drain, stop |
 | Updates | `UpdateService` version + platform/asset selection (per-RID `.zip`/`.tar.gz`, AppImage self-replace, Flatpak-managed); `UpdateInstaller` verify (magic/truncation/ELF), extract (zip + tar.gz), AppImage replacement script, staged progress (`starting`…`done`/`error`), backup+rollback+relaunch script content, `DownloadAsync` streaming |
 | Linux packaging | AppImage data-root selection (read-only mount → XDG data), Flatpak data-root/detection, stable AppImage icon + autostart path, `flatpak run` autostart command |
+| Song metadata editor | TagLib file write (title/artist/album/genre/year/track/disc/BPM/comment/credits/lyrics/artwork), LRC build/parse round-trip, library fallback for missing/read-only files, fallback flags survive reads/scans, interop get/save/open/close, artwork data-URL handling |
+| Online metadata | iTunes/Deezer/MusicBrainz/Discogs/Cover Art Archive parsing, provider toggles, provider priority, filename-based identification, duration/title/artist scoring, artwork download + MIME detection |
+| Provider governor | sliding-window limits (MusicBrainz 1.1 s, iTunes 18/min, Deezer 40/5 s, AcoustID 2/s, Discogs 20/60 unauth + 50/60 auth, polite CAA), minimum intervals, 429/401/403/5xx cooldowns and exponential backoff, status snapshots, skip-while-cooling |
+| Player settings | shared `playersettings.js` on desktop and mobile; playback/lyrics/AI/library-analysis/metadata-provider controls; hidden DOM compatibility for the old main settings cards |
 | Startup / window | `AutoStart` builders (Windows command, Linux `.desktop`, macOS plist) + paths; `AppLaunchArgs` `--minimized`; `Config` startup/window defaults + persistence |
 | Tray | `TrayMenu` commands, `NullTrayIcon`, `TrayIconFactory` support |
 | Global hotkeys | gesture parse/normalize + key tables (Windows VK, X11 keysym), action map, `GlobalHotkeyService` registration/dispatch, `RemoteControlService` hotkey → action |

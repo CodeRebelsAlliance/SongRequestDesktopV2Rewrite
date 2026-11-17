@@ -1031,8 +1031,18 @@
         })();
         break;
       case 'libraryChanged':
-        // An import/scan elsewhere changed the library this feed is built from.
+        // An import/scan/metadata edit elsewhere changed the library this feed is
+        // built from. Reload the home feed and, if it has been opened, the library
+        // list so edited titles and artwork appear immediately.
         refreshLibrarySongCount().then(function() { loadHomeFeed(true); });
+        if (libInitialized) {
+          libPage = 0;
+          libAllLoaded = false;
+          libLoading = false;
+          libListEl.innerHTML = '';
+          loadLibraryPage();
+        }
+        if (recentlyPlayedActive) loadRecentlyPlayed();
         break;
       case 'ytDownloadProgress':
         onYtDownloadProgress(data);
@@ -1046,8 +1056,19 @@
         if (shareBtnEl) shareBtnEl.click();
         break;
       }
+      case 'openPlayerSettings': {
+        var settingsTabEl = document.querySelector('[data-view="settings"]');
+        if (settingsTabEl) settingsTabEl.click();
+        break;
+      }
       case 'aiVocalModeChanged':
         applyAiBadge(data && data.active === true, data && data.modelName);
+        break;
+      case 'aiModelProgress':
+        if (playerSettingsInstance) playerSettingsInstance.onAiProgress(data);
+        break;
+      case 'aiModelStatus':
+        if (playerSettingsInstance) playerSettingsInstance.refreshAi();
         break;
       case 'musicPlayerConfig': {
         var annBtn = document.getElementById('btn-announcement');
@@ -1393,6 +1414,23 @@
     const div = document.createElement('div');
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
+  }
+
+  // Small player toast shared by context actions and the settings panel.
+  function toast(message, type) {
+    var host = document.getElementById('mp-toasts');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'mp-toasts';
+      host.className = 'ps-toasts';
+      document.body.appendChild(host);
+    }
+    var el = document.createElement('div');
+    el.className = 'ps-toast' + (type ? ' is-' + type : '');
+    el.textContent = message;
+    host.appendChild(el);
+    setTimeout(function () { el.classList.add('is-out'); }, 2200);
+    setTimeout(function () { if (el.parentNode) el.remove(); }, 2800);
   }
 
   // --- Host communication ---
@@ -2301,9 +2339,11 @@
     var ytEl = ctxSongYtEl;
     var songEl = ctxSongEl;
     hideContextMenu();
-    if (ytEl && action !== 'analyze') {
+    if (ytEl && action !== 'analyze' && action !== 'editMetadata') {
       var ytAction = action === 'play' ? 'play' : action === 'playNext' ? 'playNext' : 'queue';
       startYouTubeDownload(ytEl, ytAction);
+    } else if (action === 'editMetadata') {
+      hostRequest('openMetadataEditor', { songId: songId }).catch(function (error) { toast(error.message, 'error'); });
     } else if (action === 'analyze') {
       if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openAnalysis({ songId: songId });
     } else if (action === 'karaoke') {
@@ -3292,5 +3332,61 @@
         break;
     }
   });
+
+  // ── Player settings tab ─────────────────────────────────
+  var playerSettingsInstance = null;
+  var playerSettingsTab = document.querySelector('[data-view="settings"]');
+  var settingsTopButton = document.getElementById('btn-settings');
+  if (settingsTopButton) settingsTopButton.addEventListener('click', function () {
+    if (playerSettingsTab) playerSettingsTab.click();
+  });
+  if (playerSettingsTab) {
+    playerSettingsTab.addEventListener('click', function () {
+      var host = document.getElementById('player-settings-desktop');
+      if (!host || !window.SongRequestPlayerSettings) return;
+      if (playerSettingsInstance) { playerSettingsInstance.refresh(); return; }
+
+      playerSettingsInstance = window.SongRequestPlayerSettings.mount({
+        container: host,
+        request: hostRequest,
+        send: hostSend,
+        getPlayback: function () {
+          var cf = document.getElementById('crossfade-slider');
+          return {
+            volume: getCurrentVolume() / 100,
+            crossfade: cf ? parseFloat(cf.value) / 10 : 4,
+          };
+        },
+        onVolume: function (value) {
+          var v = Math.round(value * 100);
+          volSliders.forEach(function (sl) { if (sl) sl.value = v; });
+          var iconName = v === 0 ? 'fa-volume-mute' : v < 50 ? 'fa-volume-down' : 'fa-volume-up';
+          volIcons.forEach(function (ic) { if (ic) ic.className = 'fas ' + iconName; });
+          updateSliderLabels();
+        },
+        onCrossfade: function (value) {
+          cfSliders.forEach(function (sl) { if (sl) sl.value = Math.round(value * 10); });
+          updateSliderLabels();
+        },
+        onKaraokeMode: function (enabled) {
+          if (window.SongRequestKaraoke) window.SongRequestKaraoke.setEnabled(enabled);
+        },
+        onLyricsChanged: function (scale, hidden) {
+          lyricsFontScale = scale;
+          updateFontDisplay();
+          updateLyricFontSizes();
+          setLyricsHidden(!!hidden);
+        },
+        openEqualizer: function () { if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openEqualizer(); },
+        openSleepTimer: function () { if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openSleepTimer(); },
+        openAnalysis: function () { if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openAnalysis({}); },
+        onMusicShare: function () {
+          var shareBtnEl = document.getElementById('btn-share');
+          if (shareBtnEl) shareBtnEl.click();
+        },
+        toast: toast,
+      });
+    });
+  }
 
 })();

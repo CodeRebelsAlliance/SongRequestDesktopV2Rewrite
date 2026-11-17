@@ -272,6 +272,16 @@ The player (desktop and mobile) shares the same three audio tools:
   linked to their source songs, regenerated after algorithm upgrades, deleted
   with the song, and exposed through the API. A progress pill appears while
   generation delays playback.
+- **Library metadata editor**: right-click a library song (long-press on mobile)
+  to edit all tags, embedded artwork and lyrics in a dedicated window/page. A
+  graphical LRC editor handles timed lyrics, and online identification can match
+  empty files against MusicBrainz, iTunes, Deezer and Cover Art Archive. Metadata
+  is written into the file where possible and transparently falls back to the
+  library record for read-only or unsupported files. See
+  [`docs/METADATA-EDITOR.md`](docs/METADATA-EDITOR.md).
+- **Player settings tab**: the music player now owns every playback, lyrics,
+  audio-output, karaoke/AI, library-analysis and online-metadata preference on both
+  desktop and mobile.
 
 All three are exposed through the command dispatcher (and therefore the HTTP
 API, WebSocket events and MCP) — see

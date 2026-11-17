@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="advancedaudio.css">
 <link rel="stylesheet" href="ai.css">
+<link rel="stylesheet" href="playersettings.css">
   <link rel="stylesheet" href="mobile.css">
 </head>
 <body>
@@ -40,7 +41,7 @@
       <button id="btn-analysis" class="top-btn" title="Song analysis"><i class="fas fa-chart-line"></i></button>
       <button id="btn-announcement" class="top-btn" title="Announcements" style="display:none"><i class="fas fa-microphone"></i></button>
       <button id="btn-share" class="top-btn"><i class="fas fa-broadcast-tower"></i> Share</button>
-      <button id="btn-settings" class="top-btn" style="display: none;"><i class="fas fa-cog"></i> Settings</button>
+      <button id="btn-settings" class="top-btn"><i class="fas fa-cog"></i> Settings</button>
     </div>
   </div>
 
@@ -51,6 +52,7 @@
         <button class="sidebar-tab active" data-view="home"><i class="fas fa-home"></i> Home</button>
         <button class="sidebar-tab" data-view="playlists"><i class="fas fa-list"></i> Playlists</button>
         <button class="sidebar-tab" data-view="library"><i class="fas fa-compact-disc"></i> Library</button>
+        <button class="sidebar-tab" data-view="settings" id="sidebar-tab-settings"><i class="fas fa-gear"></i> Settings</button>
         <button class="sidebar-tab" data-view="search" id="sidebar-tab-search" style="display:none"><i class="fas fa-search"></i> Search</button>
       </div>
       <div id="playlist-list">
@@ -189,6 +191,10 @@
         </div>
         <div id="search-results-list"></div>
         <div id="search-no-results" class="library-empty" style="display:none"><i class="fas fa-search"></i><p>No results found.</p></div>
+      </div>
+      <div id="view-settings" class="view">
+        <div class="view-header"><span>Player Settings</span></div>
+        <div id="player-settings-desktop" class="ps-host"></div>
       </div>
     </div>
 
@@ -333,6 +339,7 @@
   <!-- Context menu -->
   <div id="context-menu" class="context-menu" style="display:none" data-source="">
     <button class="context-menu-item" data-action="play"><i class="fas fa-play"></i> Play</button>
+    <button class="context-menu-item" data-action="editMetadata"><i class="fas fa-pen-to-square"></i> Edit Metadata…</button>
     <button class="context-menu-item" data-action="analyze"><i class="fas fa-chart-line"></i> Analyse Track</button>
     <button class="context-menu-item" data-action="karaoke"><i class="fas fa-microphone-slash"></i> Create Karaoke Version</button>
     <button class="context-menu-item" data-action="playNext"><i class="fas fa-step-forward"></i> Play Next</button>
@@ -496,6 +503,7 @@
 <script src="hostbridge.js"></script>
 <script src="playlisticons.js"></script>
 <script src="karaoke.js"></script>
+<script src="playersettings.js"></script>
 <script src="musicplayer.js"></script>
 <script src="advancedaudio.js"></script>
 </body>

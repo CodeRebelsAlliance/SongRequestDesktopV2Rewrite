@@ -152,6 +152,68 @@ namespace SongRequestDesktopV2Rewrite
             return thumbPath;
         }
 
+        /// <summary>Saves artwork with the extension that matches its real image type.</summary>
+        public string SaveSongThumbnail(string songId, byte[] imageBytes, string? mimeType)
+        {
+            var thumbDir = Path.Combine(DataFolder, "thumbnails");
+            Directory.CreateDirectory(thumbDir);
+            var extension = (mimeType ?? string.Empty).ToLowerInvariant() switch
+            {
+                "image/png" => ".png",
+                "image/gif" => ".gif",
+                "image/bmp" => ".bmp",
+                "image/webp" => ".webp",
+                _ => ".jpg",
+            };
+            var thumbPath = Path.Combine(thumbDir, songId + extension);
+
+            foreach (var other in new[] { ".jpg", ".png", ".gif", ".bmp", ".webp" })
+            {
+                if (string.Equals(other, extension, StringComparison.OrdinalIgnoreCase)) continue;
+                try
+                {
+                    var stale = Path.Combine(thumbDir, songId + other);
+                    if (File.Exists(stale)) File.Delete(stale);
+                }
+                catch { }
+            }
+
+            File.WriteAllBytes(thumbPath, imageBytes);
+            return thumbPath;
+        }
+
+        /// <summary>Full editable metadata (file tags + library fallback) for one song.</summary>
+        public SongMetadataSnapshot? GetSongMetadata(string songId)
+        {
+            lock (_lock)
+            {
+                var song = _data.FindSong(songId);
+                return song == null ? null : SongMetadataService.Read(song);
+            }
+        }
+
+        /// <summary>
+        /// Writes edited metadata into the file when possible, otherwise keeps it in
+        /// library.json. Always persists the library record.
+        /// </summary>
+        public SongMetadataSaveResult? SaveSongMetadata(
+            string songId,
+            SongMetadataEdit edit,
+            byte[]? artworkBytes,
+            string? artworkMimeType,
+            bool removeArtwork)
+        {
+            lock (_lock)
+            {
+                var song = _data.FindSong(songId);
+                if (song == null) return null;
+
+                var result = SongMetadataService.Save(song, edit, artworkBytes, artworkMimeType, removeArtwork);
+                Save();
+                return result;
+            }
+        }
+
         // ──────────────────────────────────────────────────
         //  Play history
         // ──────────────────────────────────────────────────
@@ -572,33 +634,83 @@ namespace SongRequestDesktopV2Rewrite
 
                         if (existing != null)
                         {
-                            // Update metadata if changed
-                            if (existing.Title != song.Title ||
-                                existing.Artist != song.Artist ||
-                                existing.Album != song.Album ||
-                                existing.Genre != song.Genre ||
-                                existing.Duration != song.Duration ||
-                                existing.BitrateKbps != song.BitrateKbps)
+                            // Technical properties always come from the file. Editable
+                            // metadata does not when the user's edit had to be kept in
+                            // library.json (read-only/unsupported tag format).
+                            existing.Duration = song.Duration;
+                            existing.BitrateKbps = song.BitrateKbps;
+                            existing.SampleRateHz = song.SampleRateHz;
+                            existing.FileHash = hash;
+                            existing.FileSizeBytes = song.FileSizeBytes;
+                            existing.LastVerifiedUtc = DateTime.UtcNow;
+                            existing.FileStatus = FileStatus.Present;
+
+                            if (!existing.MetadataStoredInLibrary)
                             {
-                                existing.Title = song.Title;
-                                existing.Artist = song.Artist;
-                                existing.Album = song.Album;
-                                existing.Genre = song.Genre;
-                                existing.Duration = song.Duration;
-                                existing.BitrateKbps = song.BitrateKbps;
-                                existing.SampleRateHz = song.SampleRateHz;
-                                existing.FileHash = hash;
-                                existing.FileSizeBytes = song.FileSizeBytes;
-                                existing.LastModifiedUtc = DateTime.UtcNow;
-                                existing.LastVerifiedUtc = DateTime.UtcNow;
-                                existing.FileStatus = FileStatus.Present;
-                                updated = true;
-                                result.SongsUpdated++;
-                            }
-                            else
-                            {
-                                existing.LastVerifiedUtc = DateTime.UtcNow;
-                                existing.FileStatus = FileStatus.Present;
+                                // Keep a non-empty library value when the file format
+                                // cannot represent that field. Formats support different
+                                // subsets of TagLib's fields; clearing them on every scan
+                                // would silently drop user edits.
+                                var mergedTitle = PreferFileValue(song.Title, existing.Title);
+                                var mergedArtist = PreferFileValue(song.Artist, existing.Artist);
+                                var mergedAlbumArtist = PreferFileValue(song.AlbumArtist, existing.AlbumArtist);
+                                var mergedAlbum = PreferFileValue(song.Album, existing.Album);
+                                var mergedGenre = PreferFileValue(song.Genre, existing.Genre);
+                                var mergedYear = song.Year > 0 ? song.Year : existing.Year;
+                                var mergedTrack = song.Track > 0 ? song.Track : existing.Track;
+                                var mergedDisc = song.Disc > 0 ? song.Disc : existing.Disc;
+                                var mergedBpm = song.Bpm > 0 ? song.Bpm : existing.Bpm;
+                                var mergedComment = PreferFileValue(song.Comment, existing.Comment);
+                                var mergedComposer = PreferFileValue(song.Composer, existing.Composer);
+                                var mergedConductor = PreferFileValue(song.Conductor, existing.Conductor);
+                                var mergedPublisher = PreferFileValue(song.Publisher, existing.Publisher);
+                                var mergedCopyright = PreferFileValue(song.Copyright, existing.Copyright);
+                                var mergedIsrc = PreferFileValue(song.Isrc, existing.Isrc);
+                                var mergedGrouping = PreferFileValue(song.Grouping, existing.Grouping);
+                                var mergedLyrics = PreferFileValue(song.Lyrics, existing.Lyrics);
+
+                                bool changed =
+                                    existing.Title != mergedTitle ||
+                                    existing.Artist != mergedArtist ||
+                                    existing.AlbumArtist != mergedAlbumArtist ||
+                                    existing.Album != mergedAlbum ||
+                                    existing.Genre != mergedGenre ||
+                                    existing.Year != mergedYear ||
+                                    existing.Track != mergedTrack ||
+                                    existing.Disc != mergedDisc ||
+                                    existing.Bpm != mergedBpm ||
+                                    existing.Comment != mergedComment ||
+                                    existing.Composer != mergedComposer ||
+                                    existing.Conductor != mergedConductor ||
+                                    existing.Publisher != mergedPublisher ||
+                                    existing.Copyright != mergedCopyright ||
+                                    existing.Isrc != mergedIsrc ||
+                                    existing.Grouping != mergedGrouping ||
+                                    existing.Lyrics != mergedLyrics;
+
+                                if (changed)
+                                {
+                                    existing.Title = mergedTitle;
+                                    existing.Artist = mergedArtist;
+                                    existing.AlbumArtist = mergedAlbumArtist;
+                                    existing.Album = mergedAlbum;
+                                    existing.Genre = mergedGenre;
+                                    existing.Year = mergedYear;
+                                    existing.Track = mergedTrack;
+                                    existing.Disc = mergedDisc;
+                                    existing.Bpm = mergedBpm;
+                                    existing.Comment = mergedComment;
+                                    existing.Composer = mergedComposer;
+                                    existing.Conductor = mergedConductor;
+                                    existing.Publisher = mergedPublisher;
+                                    existing.Copyright = mergedCopyright;
+                                    existing.Isrc = mergedIsrc;
+                                    existing.Grouping = mergedGrouping;
+                                    existing.Lyrics = mergedLyrics;
+                                    existing.LastModifiedUtc = DateTime.UtcNow;
+                                    updated = true;
+                                    result.SongsUpdated++;
+                                }
                             }
                         }
                         else
@@ -842,6 +954,23 @@ namespace SongRequestDesktopV2Rewrite
                 if (!string.IsNullOrWhiteSpace(tagFile.Tag.FirstGenre))
                     song.Genre = tagFile.Tag.FirstGenre;
 
+                // Extended metadata used by the editor. Missing values stay empty,
+                // which keeps old libraries and formats without these tags working.
+                song.AlbumArtist = JoinTagValues(tagFile.Tag.AlbumArtists);
+                song.Year = tagFile.Tag.Year;
+                song.Track = tagFile.Tag.Track;
+                song.Disc = tagFile.Tag.Disc;
+                song.Bpm = tagFile.Tag.BeatsPerMinute;
+                song.Comment = tagFile.Tag.Comment ?? string.Empty;
+                song.Composer = JoinTagValues(tagFile.Tag.Composers);
+                // No cross-format lyricist tag; leave the existing library value.
+                song.Conductor = tagFile.Tag.Conductor ?? string.Empty;
+                song.Publisher = tagFile.Tag.Publisher ?? string.Empty;
+                song.Copyright = tagFile.Tag.Copyright ?? string.Empty;
+                song.Isrc = tagFile.Tag.ISRC ?? string.Empty;
+                song.Grouping = tagFile.Tag.Grouping ?? string.Empty;
+                song.Lyrics = tagFile.Tag.Lyrics ?? string.Empty;
+
                 // Duration — TagLib can read wrong values for webm/opus (common with YouTube
                 // downloads saved as .mp3). Always try NAudio which reads the actual audio stream.
                 song.Duration = tagFile.Properties.Duration;
@@ -900,6 +1029,15 @@ namespace SongRequestDesktopV2Rewrite
                 _ => ".jpg"
             };
         }
+
+        private static string JoinTagValues(string[]? values)
+            => values == null
+                ? string.Empty
+                : string.Join(", ", values.Where(v => !string.IsNullOrWhiteSpace(v)));
+
+        /// <summary>File values win, but an empty file field must not erase a library edit.</summary>
+        private static string PreferFileValue(string fileValue, string libraryValue)
+            => string.IsNullOrWhiteSpace(fileValue) ? (libraryValue ?? string.Empty) : fileValue;
 
         // ──────────────────────────────────────────────────
         //  Helpers

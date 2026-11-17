@@ -122,6 +122,8 @@
   // ── State ────────────────────────────────────────────────
   var currentTab = 'home';
   var lyricsOpen = false;
+  var settingsReturnTab = 'home';
+  var mobilePlayerSettings = null;
 
   var now = { title: '', artist: '', art: '', playing: false, time: 0, total: 0, quality: null, lyricsSource: '' };
   var seekDragging = false;
@@ -200,6 +202,7 @@
     home: $('mm-view-home'),
     library: $('mm-view-library'),
     player: $('mm-view-player'),
+    settings: $('mm-view-settings'),
     share: $('mm-view-share'),
     playlist: $('mm-view-playlist'),
   };
@@ -356,7 +359,42 @@
       }
     }
     if (tab === 'player') { updatePlayer(); markBootReady(); }
+    if (tab === 'settings') openPlayerSettingsTab(false);
     if (tab === 'share') loadShareStatus();
+  }
+
+  function openPlayerSettingsTab(returnToPrevious) {
+    if (returnToPrevious !== false && currentTab !== 'settings') settingsReturnTab = currentTab;
+    if (currentTab !== 'settings') { setTab('settings'); return; }
+    if (!mobilePlayerSettings && window.SongRequestPlayerSettings) {
+      mobilePlayerSettings = window.SongRequestPlayerSettings.mount({
+        container: $('mm-player-settings'),
+        request: request,
+        send: send,
+        toast: toast,
+        getPlayback: function () {
+          return { volume: playback.volume, crossfade: playback.crossfade };
+        },
+        onVolume: function (value) { playback.volume = value; },
+        onCrossfade: function (value) { playback.crossfade = value; },
+        onKaraokeMode: function (enabled) {
+          karaokeSettingFromPayload = true;
+          if (window.SongRequestKaraoke) window.SongRequestKaraoke.setEnabled(enabled);
+        },
+        onLyricsChanged: function (scale, hidden) {
+          lyrics.fontScale = scale;
+          lyrics.hidden = hidden;
+          applyLyricsFontScale();
+          if (hidden && lyricsOpen) toggleLyrics(false);
+        },
+        openEqualizer: function () { if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openEqualizer(); },
+        openSleepTimer: function () { if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openSleepTimer(); },
+        openAnalysis: function () { if (window.SongRequestAdvancedAudio) window.SongRequestAdvancedAudio.openAnalysis({}); },
+        onMusicShare: function () { setTab('share'); },
+      });
+    } else if (mobilePlayerSettings) {
+      mobilePlayerSettings.refresh();
+    }
   }
 
   function openQueue() {
@@ -1726,10 +1764,12 @@
 
       case 'aiModelProgress':
         onMobileAiModelProgress(data);
+        if (mobilePlayerSettings) mobilePlayerSettings.onAiProgress(data);
         break;
 
       case 'aiModelStatus':
         applyMobileAiModelStatus(data);
+        if (mobilePlayerSettings) mobilePlayerSettings.refreshAi();
         break;
 
       case 'aiVocalModeChanged':
@@ -2276,52 +2316,12 @@
       openSheet(
         '<h3>Operating mode</h3>' +
         '<div class="mm-sheet-row"><select id="mm-set-mode">' + modeOptions + '</select></div>' +
+        '<h3>Player</h3>' +
+        '<button id="mm-open-player-settings" class="mm-btn mm-share-primary" style="width:100%"><i class="fas fa-sliders"></i> Open player settings</button>' +
+        '<div class="mm-sheet-note">Playback, lyrics, audio output, karaoke/AI, library analysis and online metadata sources live in the player settings tab.</div>' +
         '<h3>Launch</h3>' +
         '<label class="mm-check"><input type="checkbox" id="mm-set-new-launch"' + (cfg.newLaunchExperience === true ? ' checked' : '') + '> New animated launch experience</label>' +
         '<div class="mm-sheet-note">Starts in your previous mode, skips the mode picker and tries YouTube sign-in quietly in the background.</div>' +
-        '<h3>Playback</h3>' +
-        '<label class="mm-check"><input type="checkbox" id="mm-set-auto-analyze"' + (cfg.autoAnalyzeSongs !== false ? ' checked' : '') + '> Automatically analyze playing songs</label>' +
-        '<label class="mm-check"><input type="checkbox" id="mm-set-karaoke"' + (cfg.karaokeMode === true ? ' checked' : '') + '> Karaoke mode (syllable-by-syllable lyrics and pause bars)</label>' +
-        '<label class="mm-check"><input type="checkbox" id="mm-set-play-karaoke"' + (cfg.playKaraokeVersions === true ? ' checked' : '') + '> Play karaoke (instrumental) versions of songs</label>' +
-        '<div class="mm-ai-settings" id="mm-ai-settings">' +
-        '<h3>Enhanced vocal removal <span class="ai-badge"><i class="fas fa-wand-magic-sparkles"></i> AI</span></h3>' +
-        '<label class="mm-check"><input type="checkbox" id="mm-set-ai-vocal"' + (cfg.enhancedVocalRemoval === true ? ' checked' : '') + '> Use a local AI model for karaoke vocal separation</label>' +
-        '<div id="mm-ai-engine" class="mm-sheet-note">Checking models…</div>' +
-        '<select id="mm-set-ai-model" class="mm-sheet-input"></select>' +
-        '<div id="mm-ai-model-info" class="mm-sheet-note"></div>' +
-        '<div class="mm-sheet-note">AI separation uses more memory and time than the built-in separator; the fast model is best on older devices.</div>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
-          '<button id="mm-ai-download" class="mm-btn"><i class="fas fa-download"></i> Download model</button>' +
-          '<button id="mm-ai-delete" class="mm-btn mm-danger">Delete model</button>' +
-          '<button id="mm-ai-disclaimer-open" class="mm-btn mm-quiet">Read disclaimer</button>' +
-        '</div>' +
-        '<div id="mm-ai-disclaimer" class="mm-ai-disclaimer" hidden>' +
-          '<p><strong>AI vocal removal is experimental, and results vary by song, mix and model.</strong></p>' +
-          '<ul>' +
-            '<li>Vocals may still be audible, or instruments may be removed by mistake.</li>' +
-            '<li>Separation can introduce artifacts, hollow instruments or distorted vocals.</li>' +
-            '<li>Always listen to the generated karaoke version before using it live.</li>' +
-            '<li>Models are downloaded from third-party sources and run locally; no song audio is uploaded.</li>' +
-            '<li>AI versions are versioned and may be regenerated when the model changes.</li>' +
-            '<li>You are responsible for checking the result and for having the rights to use the source song.</li>' +
-          '</ul>' +
-          '<label><input type="checkbox" id="mm-ai-disclaimer-accept"> I have read this and understand that AI vocal removal can be inaccurate and that I must check the result before use.</label>' +
-        '</div>' +
-        '<div id="mm-ai-progress" class="mm-sheet-note"></div>' +
-        '</div>' +
-        '<div class="mm-sheet-note" style="margin-top:4px">Shows BPM, song chapters and drops on the player progress bar from the cached analysis.</div>' +
-        '<h3>Library analysis</h3>' +
-        '<label class="mm-check"><input type="checkbox" id="mm-set-library-analyze-add"' + (cfg.autoAnalyzeLibraryOnAdd !== false ? ' checked' : '') + '> Analyze new library songs automatically</label>' +
-        '<label class="mm-check"><input type="checkbox" id="mm-set-library-analyze-version"' + (cfg.autoAnalyzeLibraryOnAlgorithmUpdate !== false ? ' checked' : '') + '> Re-analyze after algorithm updates</label>' +
-        '<div id="mm-library-analysis-progress" class="mm-import-progress" hidden>' +
-          '<div class="mm-import-head"><span id="mm-library-analysis-status">Idle</span><span id="mm-library-analysis-pct">0%</span></div>' +
-          '<div class="mm-import-track"><div id="mm-library-analysis-fill"></div></div>' +
-          '<div id="mm-library-analysis-current" class="mm-sheet-note" style="margin-top:6px"></div>' +
-        '</div>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
-          '<button id="mm-library-analysis-start" class="mm-btn"><i class="fas fa-play"></i> Analyze library</button>' +
-          '<button id="mm-library-analysis-stop" class="mm-btn mm-danger" hidden><i class="fas fa-stop"></i> Stop</button>' +
-        '</div>' +
         '<h3>Server</h3>' +
         '<input id="mm-set-address" class="mm-sheet-input" placeholder="http://127.0.0.1:5000" value="' + esc(cfg.address || '') + '">' +
         '<input id="mm-set-token" class="mm-sheet-input" type="password" placeholder="Bearer token" value="' + esc(cfg.bearerToken || '') + '" style="margin-top:8px">' +
@@ -2352,7 +2352,6 @@
         '<button id="mm-settings-save" class="mm-btn mm-share-primary" style="width:100%;margin-top:16px">Save</button>'
       );
       wireSettingsSheet();
-      refreshMobileAiModels();
     }).catch(function (error) { toast(error.message, 'error'); });
   }
 
@@ -2548,27 +2547,19 @@
     });
     updateMobileAiActive();
 
+    var openPlayer = $('mm-open-player-settings');
+    if (openPlayer) openPlayer.addEventListener('click', function () {
+      closeSheet();
+      openPlayerSettingsTab();
+    });
+
     var save = $('mm-settings-save');
     if (save) save.addEventListener('click', function () {
-      var aiSaveToggle = $('mm-set-ai-vocal');
-      if (aiSaveToggle && aiSaveToggle.checked && !mobileAiDisclaimerAccepted) {
-        toast('Read and accept the AI disclaimer first', 'error');
-        if (aiDisclaimer) aiDisclaimer.hidden = false;
-        return;
-      }
       var settings = {
         newLaunchExperience: !!($('mm-set-new-launch') && $('mm-set-new-launch').checked),
         address: $('mm-set-address').value.trim(),
         bearerToken: $('mm-set-token').value,
         autoGrabCookies: $('mm-set-auto-yt').checked,
-        autoAnalyzeSongs: $('mm-set-auto-analyze').checked,
-        karaokeMode: $('mm-set-karaoke').checked,
-        playKaraokeVersions: $('mm-set-play-karaoke').checked,
-        enhancedVocalRemoval: $('mm-set-ai-vocal').checked,
-        aiVocalModelId: $('mm-set-ai-model').value || 'uvr-kara-2',
-        aiDisclaimerAccepted: mobileAiDisclaimerAccepted,
-        autoAnalyzeLibraryOnAdd: $('mm-set-library-analyze-add').checked,
-        autoAnalyzeLibraryOnAlgorithmUpdate: $('mm-set-library-analyze-version').checked,
         libraryAutoAddDownloads: $('mm-set-auto-add').checked,
         apiEnabled: $('mm-set-api-enabled').checked,
         apiBindAddress: $('mm-set-api-bind').value.trim() || '127.0.0.1',
@@ -2676,6 +2667,7 @@
       '<button class="mm-sheet-action" data-song-action="play"><i class="fas fa-play"></i> Play now</button>' +
       '<button class="mm-sheet-action" data-song-action="next"><i class="fas fa-forward-step"></i> Play next</button>' +
       '<button class="mm-sheet-action" data-song-action="queue"><i class="fas fa-list"></i> Add to queue</button>' +
+      '<button class="mm-sheet-action" data-song-action="editMetadata"><i class="fas fa-pen-to-square"></i> Edit metadata</button>' +
       '<button class="mm-sheet-action" data-song-action="analyze"><i class="fas fa-chart-line"></i> Analyse track</button>' +
       '<button class="mm-sheet-action" data-song-action="karaoke"><i class="fas fa-microphone-slash"></i> Create karaoke version</button>' +
       '<button class="mm-sheet-action" data-song-action="playlist"><i class="fas fa-plus"></i> Add to playlist</button>' +
@@ -2700,6 +2692,10 @@
       case 'queue':
         send('queueLibrarySong', { songId: songId });
         closeSheet();
+        break;
+      case 'editMetadata':
+        closeSheet();
+        request('openMetadataEditor', { songId: songId }).catch(function (error) { toast(error.message, 'error'); });
         break;
       case 'analyze':
         closeSheet();
@@ -3027,7 +3023,8 @@
   }
 
   // ── Wire the new controls ────────────────────────────────
-  $('mm-more').addEventListener('click', openPlayerMenu);
+  $('mm-more').addEventListener('click', function () { openPlayerSettingsTab(); });
+  $('mm-settings-back').addEventListener('click', function () { setTab(settingsReturnTab || 'home'); });
   $('mm-home-settings').addEventListener('click', openSettingsSheet);
   $('mm-library-settings').addEventListener('click', openSettingsSheet);
 

@@ -163,8 +163,17 @@ returned with a `warning` field.
 
 Library songs additionally include `songId`, `youTubeId`, `tags`, `filePath`,
 `thumbnailPath`, `sourceUrl`, `songSource`, `fileStatus`, `isMissing`,
-`playCount`, `dateAddedUtc`, `lastPlayedUtc`, `fileSizeBytes`, `bitrateKbps`
-and (with `artwork=true`) an `artwork` data URL.
+`playCount`, `dateAddedUtc`, `lastPlayedUtc`, `fileSizeBytes`, `bitrateKbps`,
+`albumArtist`, `year`, `track`, `disc`, `bpm` and (with `artwork=true`) an
+`artwork` data URL.
+
+The full metadata editor is available through `openMetadataEditor`,
+`getSongMetadata`, `saveSongMetadata`, `identifySongMetadata`,
+`searchSongMetadata`, `fetchSongArtwork`, `pickSongArtwork` and
+`fetchSongLyrics`. `saveSongMetadata` writes the file tags when possible; when the
+file is read-only or its format cannot hold a field, the values are kept in
+`library.json` and returned with `storedInLibrary: true`. See
+[`METADATA-EDITOR.md`](METADATA-EDITOR.md).
 
 ### Playback and queue
 

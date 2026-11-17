@@ -111,6 +111,17 @@ public sealed class MobileShell : IUiShell
 
     public Action<string>? AnnouncementSendMessage { get; set; }
 
+    // ── Song metadata editor ─────────────────────────────────────────────────
+    public void ShowMetadataEditorWindow()
+    {
+        _page.ShowMetadataEditorPage();
+        try { MetadataEditorSendMessage = json => _page.SendTo(MainPage.MetadataEditorFile, json); } catch { }
+    }
+
+    public void CloseMetadataEditorWindow() => _page.CloseMetadataEditorPage();
+
+    public Action<string>? MetadataEditorSendMessage { get; set; }
+
     /// <summary>
     /// Fullscreen on mobile = the stage page hides the native tab bar. Only the
     /// page that is actually showing can be made fullscreen, so the request is

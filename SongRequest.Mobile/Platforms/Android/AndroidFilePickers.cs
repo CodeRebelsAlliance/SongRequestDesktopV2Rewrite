@@ -42,6 +42,15 @@ internal static class AndroidFilePickers
             [DevicePlatform.WinUI] = AudioExtensions,
         });
 
+    private static readonly FilePickerFileType ImageFileTypes = new(
+        new Dictionary<DevicePlatform, IEnumerable<string>>
+        {
+            [DevicePlatform.Android] = new[] { "image/*" },
+            [DevicePlatform.iOS] = new[] { "public.image" },
+            [DevicePlatform.MacCatalyst] = new[] { "public.image" },
+            [DevicePlatform.WinUI] = new[] { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" },
+        });
+
     /// <summary>Where imported music lands (and the folder that gets scanned).</summary>
     public static string ImportDirectory => Path.Combine(AppPaths.DataRoot, "music");
 
@@ -118,6 +127,46 @@ internal static class AndroidFilePickers
         catch (Exception ex)
         {
             Android.Util.Log.Debug("SongRequest", $"sound picker failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Picks exactly one image for the metadata editor and returns a readable path.</summary>
+    public static async Task<string?> PickImageAsync(string title)
+    {
+        try
+        {
+            var result = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = title,
+                FileTypes = ImageFileTypes,
+            }).ConfigureAwait(true);
+
+            if (result == null) return null;
+
+            if (!string.IsNullOrWhiteSpace(result.FullPath) && File.Exists(result.FullPath))
+                return result.FullPath;
+
+            var directory = Path.Combine(
+                Android.App.Application.Context.CacheDir?.AbsolutePath ?? AppPaths.DataRoot,
+                "artwork-picks");
+            Directory.CreateDirectory(directory);
+
+            var name = Sanitize(result.FileName ?? "cover.jpg");
+            var extension = Path.GetExtension(name);
+            if (string.IsNullOrEmpty(extension)) extension = ".jpg";
+            var destination = Path.Combine(
+                directory,
+                Path.GetFileNameWithoutExtension(name) + "-" + Guid.NewGuid().ToString("N")[..6] + extension);
+
+            using var input = await result.OpenReadAsync().ConfigureAwait(false);
+            using var output = File.Create(destination);
+            await input.CopyToAsync(output).ConfigureAwait(false);
+            return destination;
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Debug("SongRequest", $"image picker failed: {ex.Message}");
             return null;
         }
     }

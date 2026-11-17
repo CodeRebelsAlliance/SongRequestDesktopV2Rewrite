@@ -184,9 +184,10 @@ test('auto-analysis has a setting on desktop and mobile', () => {
   assert.match(interop, /AutoAnalyzeSongs/);
   assert.match(desktop, /id="s-auto-analyze"/);
   assert.match(desktopJs, /autoAnalyzeSongs/);
-  assert.match(mobile, /mm-menu-auto-analyze/);
-  assert.match(mobile, /mm-set-auto-analyze/);
-  assert.match(mobile, /autoAnalyzeSongs/);
+  const settings = read('playersettings.js');
+  assert.match(settings, /ps-auto-analyze/);
+  assert.match(settings, /autoAnalyzeSongs/);
+  assert.match(mobile, /openPlayerSettingsTab/);
 });
 
 test('analysis result exposes song parts in the panel', () => {
@@ -268,11 +269,12 @@ test('library pre-analysis has controls, progress and auto toggles', () => {
   assert.match(desktopJs, /libraryAnalysisProgress/);
   assert.match(desktopJs, /startLibraryAnalysis/);
   assert.match(desktopJs, /stopLibraryAnalysis/);
-  assert.match(mobileJs, /mm-library-analysis-start/);
-  assert.match(mobileJs, /mm-library-analysis-stop/);
-  assert.match(mobileJs, /startLibraryAnalysis/);
-  assert.match(mobileJs, /updateLibraryAnalysisUi/);
-  assert.match(mobileJs, /mm-set-library-analyze-add/);
+  const settings = read('playersettings.js');
+  assert.match(settings, /ps-lib-start/);
+  assert.match(settings, /ps-lib-stop/);
+  assert.match(settings, /startLibraryAnalysis/);
+  assert.match(settings, /stopLibraryAnalysis/);
+  assert.match(settings, /ps-lib-add/);
 });
 
 test('analysis cache carries an algorithm version', () => {

@@ -59,14 +59,14 @@ test('karaoke toggle is exposed in settings and persisted', () => {
   const desktop = read('index.html');
   const desktopJs = read('app.js');
   const mobile = read('mobilemusic.js');
+  const settings = read('playersettings.js');
   const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
 
   assert.match(config, /KaraokeMode/);
   assert.match(desktop, /id="s-karaoke-mode"/);
   assert.match(desktopJs, /karaokeMode/);
-  assert.match(mobile, /id="mm-menu-karaoke"/);
-  assert.match(mobile, /id="mm-set-karaoke"/);
-  assert.match(mobile, /karaokeMode/);
+  assert.match(settings, /ps-karaoke/);
+  assert.match(mobile, /openPlayerSettingsTab/);
   assert.match(interop, /karaokeModeChanged/);
 });
 
@@ -169,12 +169,13 @@ test('enhanced AI vocal removal is a settings-managed local model feature', () =
   assert.match(desktopJs, /aiDisclaimerAccepted/);
   assert.match(desktopJs, /openAiDisclaimer/);
   assert.match(desktopJs, /getAiVocalModels/);
-  assert.match(mobile, /mm-set-ai-vocal/);
-  assert.match(mobile, /mm-set-ai-model/);
-  assert.match(mobile, /mm-ai-disclaimer-accept/);
-  assert.match(mobile, /mm-ai-settings/);
-  assert.match(mobile, /aiDisclaimerAccepted/);
-  assert.match(mobile, /getAiVocalModels/);
+  const playerSettingsJs = read('playersettings.js');
+  assert.match(playerSettingsJs, /ps-ai-toggle/);
+  assert.match(playerSettingsJs, /ps-ai-model/);
+  assert.match(playerSettingsJs, /ps-ai-accept/);
+  assert.match(playerSettingsJs, /aiDisclaimerAccepted/);
+  assert.match(playerSettingsJs, /getAiVocalModels/);
+  assert.match(mobile, /openPlayerSettingsTab/);
   assert.match(interop, /aiVocalModeChanged/);
 
   const playerHtml = read('musicplayer.html');

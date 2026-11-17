@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Edit Metadata - SongRequest</title>
+<link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="metadataeditor.css">
+</head>
+<body>
+<div id="me-app">
+  <header id="me-header">
+    <button id="me-close" class="me-icon" aria-label="Close metadata editor"><i class="fas fa-arrow-left"></i></button>
+    <div id="me-heading">
+      <h1>Edit metadata</h1>
+      <div id="me-subtitle">Loading…</div>
+    </div>
+    <div id="me-header-actions">
+      <button id="me-save" class="me-primary"><i class="fas fa-save"></i><span>Save</span></button>
+    </div>
+  </header>
+
+  <div id="me-status" class="me-status" hidden></div>
+
+  <main id="me-scroll">
+    <section class="me-card">
+      <div class="me-card-head">
+        <h2><i class="fas fa-compact-disc"></i> Details</h2>
+        <span id="me-file-format" class="me-badge"></span>
+      </div>
+      <div class="me-grid">
+        <label class="me-field me-span2"><span>Title</span><input id="me-title" type="text" autocomplete="off"></label>
+        <label class="me-field me-span2"><span>Creator / artist</span><input id="me-artist" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Album</span><input id="me-album" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Album artist</span><input id="me-album-artist" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Genre</span><input id="me-genre" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Year</span><input id="me-year" type="number" min="0" max="9999" inputmode="numeric"></label>
+        <label class="me-field"><span>Track #</span><input id="me-track" type="number" min="0" inputmode="numeric"></label>
+        <label class="me-field"><span>Disc #</span><input id="me-disc" type="number" min="0" inputmode="numeric"></label>
+        <label class="me-field"><span>BPM</span><input id="me-bpm" type="number" min="0" max="999" inputmode="numeric"></label>
+        <label class="me-field"><span>Composer</span><input id="me-composer" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Lyricist</span><input id="me-lyricist" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Conductor</span><input id="me-conductor" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Publisher</span><input id="me-publisher" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>ISRC</span><input id="me-isrc" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Grouping</span><input id="me-grouping" type="text" autocomplete="off"></label>
+        <label class="me-field"><span>Copyright</span><input id="me-copyright" type="text" autocomplete="off"></label>
+        <label class="me-field me-span2"><span>Comment</span><textarea id="me-comment" rows="2"></textarea></label>
+      </div>
+      <div id="me-storage-note" class="me-note" hidden></div>
+    </section>
+
+    <section class="me-card">
+      <div class="me-card-head">
+        <h2><i class="fas fa-image"></i> Artwork</h2>
+        <span id="me-artwork-source" class="me-badge"></span>
+      </div>
+      <div class="me-artwork-layout">
+        <div id="me-artwork-preview" class="me-artwork-preview"><i class="fas fa-music"></i></div>
+        <div class="me-artwork-actions">
+          <p class="me-hint">Artwork is embedded in the audio file when the format supports it; otherwise it is cached in the library.</p>
+          <div class="me-button-row">
+            <button id="me-artwork-pick" class="me-btn"><i class="fas fa-folder-open"></i> Choose image</button>
+            <button id="me-artwork-remove" class="me-btn me-danger"><i class="fas fa-trash"></i> Remove</button>
+          </div>
+          <div id="me-artwork-results" class="me-artwork-results"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="me-card">
+      <div class="me-card-head">
+        <h2><i class="fas fa-wand-magic-sparkles"></i> Identify &amp; online sources</h2>
+      </div>
+      <p class="me-hint">Matches by title, artist, album and duration against free public catalogues. No audio is uploaded.</p>
+      <div class="me-provider-row">
+        <label><input id="me-prov-mb" type="checkbox"> MusicBrainz</label>
+        <label><input id="me-prov-itunes" type="checkbox"> iTunes</label>
+        <label><input id="me-prov-deezer" type="checkbox"> Deezer</label>
+        <label><input id="me-prov-caa" type="checkbox"> Cover Art Archive</label>
+        <label><input id="me-prov-acoustid" type="checkbox"> AcoustID fingerprint</label>
+        <label><input id="me-prov-discogs" type="checkbox"> Discogs</label>
+      </div>
+      <div class="me-search-row" style="margin-bottom:8px">
+        <input id="me-acoustid-key" type="password" placeholder="AcoustID API key (optional; required for fingerprint identification)" autocomplete="off">
+        <button id="me-acoustid-save" class="me-btn"><i class="fas fa-key"></i> Save key</button>
+      </div>
+      <div class="me-search-row" style="margin-bottom:8px">
+        <input id="me-discogs-token" type="password" placeholder="Discogs personal token (optional; raises the rate limit)" autocomplete="off">
+        <button id="me-discogs-save" class="me-btn"><i class="fas fa-key"></i> Save token</button>
+      </div>
+      <p class="me-hint">Fingerprint identification uses <code>fpcalc</code> locally when available and sends only the fingerprint, never the audio. Get a free key at acoustid.org.</p>
+      <div class="me-priority-title">Lookup priority</div>
+      <div id="me-provider-priority" class="me-priority"></div>
+      <div class="me-search-row">
+        <input id="me-search-query" type="search" placeholder="Search another title or artist" autocomplete="off">
+        <button id="me-identify" class="me-primary"><i class="fas fa-magnifying-glass"></i> Identify</button>
+        <button id="me-search" class="me-btn"><i class="fas fa-search"></i> Search</button>
+      </div>
+      <div id="me-candidates"></div>
+    </section>
+
+    <section class="me-card">
+      <div class="me-card-head">
+        <h2><i class="fas fa-align-left"></i> Lyrics</h2>
+        <div class="me-lyrics-tabs">
+          <button id="me-lyrics-mode-synced" class="me-tab is-active">Timed</button>
+          <button id="me-lyrics-mode-plain" class="me-tab">Plain</button>
+        </div>
+      </div>
+      <p class="me-hint">Timed lyrics are written as LRC and embedded in the file (plus a .lrc sidecar). Plain lyrics are embedded as unsynchronised text.</p>
+      <div class="me-lyrics-toolbar">
+        <button id="me-lyrics-fetch" class="me-btn"><i class="fas fa-cloud-arrow-down"></i> Fetch online</button>
+        <button id="me-lyrics-add" class="me-btn"><i class="fas fa-plus"></i> Add line</button>
+        <button id="me-lyrics-sort" class="me-btn"><i class="fas fa-arrow-down-wide-short"></i> Sort by time</button>
+        <button id="me-lyrics-clear" class="me-btn me-danger"><i class="fas fa-trash"></i> Clear</button>
+      </div>
+      <div id="me-lyrics-synced">
+        <div id="me-lyrics-timeline" class="me-timeline" aria-label="Lyric timeline">
+          <div class="me-timeline-ruler" id="me-timeline-ruler"></div>
+          <div class="me-timeline-track" id="me-timeline-track"></div>
+        </div>
+        <div id="me-lyrics-lines" class="me-lyrics-lines"></div>
+        <div id="me-lyrics-empty" class="me-empty">No timed lyrics yet. Add a line or fetch lyrics online.</div>
+      </div>
+      <div id="me-lyrics-plain-wrap" hidden>
+        <textarea id="me-lyrics-plain" rows="14" placeholder="Paste plain lyrics here…"></textarea>
+      </div>
+      <div class="me-note" id="me-lyrics-source"></div>
+    </section>
+  </main>
+</div>
+<div id="me-toasts"></div>
+<script src="_framework/hybridwebview.js"></script>
+<script src="hostbridge.js"></script>
+<script src="metadataeditor.js"></script>
+</body>
+</html>

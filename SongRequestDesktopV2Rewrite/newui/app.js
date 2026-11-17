@@ -968,6 +968,11 @@
 
   document.getElementById('btn-settings-close').onclick = hideSettings;
   document.getElementById('btn-settings-save').onclick = saveSettings;
+  var openPlayerSettingsBtn = document.getElementById('s-open-player-settings');
+  if (openPlayerSettingsBtn) openPlayerSettingsBtn.addEventListener('click', function () {
+    hideSettings();
+    send('showPlayerSettings');
+  });
   document.getElementById('btn-settings-reload').onclick = async () => {
     try { await send('reloadConfig'); } catch (e) { }
     loadSettings();

@@ -83,9 +83,38 @@ namespace SongRequestDesktopV2Rewrite
 
         public string Title { get; set; } = string.Empty;
         public string Artist { get; set; } = "Unknown";
+        public string AlbumArtist { get; set; } = string.Empty;
         public string Album { get; set; } = string.Empty;
         public string Genre { get; set; } = string.Empty;
+        public uint Year { get; set; }
+        public uint Track { get; set; }
+        public uint Disc { get; set; }
+        public uint Bpm { get; set; }
+        public string Comment { get; set; } = string.Empty;
+        public string Composer { get; set; } = string.Empty;
+        public string Lyricist { get; set; } = string.Empty;
+        public string Conductor { get; set; } = string.Empty;
+        public string Publisher { get; set; } = string.Empty;
+        public string Copyright { get; set; } = string.Empty;
+        public string Isrc { get; set; } = string.Empty;
+        public string Grouping { get; set; } = string.Empty;
         public TimeSpan Duration { get; set; }
+
+        /// <summary>Raw lyrics stored in the library when the file itself cannot hold them.</summary>
+        public string Lyrics { get; set; } = string.Empty;
+
+        /// <summary>
+        /// True when this entry's editable metadata is authoritative in library.json
+        /// instead of the audio file (read-only/unsupported tag format). Older
+        /// libraries deserialize this as false, so file metadata keeps working.
+        /// </summary>
+        public bool MetadataStoredInLibrary { get; set; }
+
+        /// <summary>True when <see cref="Lyrics"/> is authoritative (file write failed).</summary>
+        public bool LyricsStoredInLibrary { get; set; }
+
+        /// <summary>True when the cached artwork is authoritative (file write failed).</summary>
+        public bool ArtworkStoredInLibrary { get; set; }
 
         /// <summary>Free-form tags the user can attach (mood, activity …).</summary>
         public List<string> Tags { get; set; } = new();
@@ -584,8 +613,11 @@ namespace SongRequestDesktopV2Rewrite
                     bool termMatch =
                         song.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
                         song.Artist.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                        song.AlbumArtist.Contains(term, StringComparison.OrdinalIgnoreCase) ||
                         song.Album.Contains(term, StringComparison.OrdinalIgnoreCase) ||
                         song.Genre.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                        song.Composer.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                        song.Comment.Contains(term, StringComparison.OrdinalIgnoreCase) ||
                         song.Tags.Exists(t => t.Contains(term, StringComparison.OrdinalIgnoreCase));
 
                     if (!termMatch) { match = false; break; }

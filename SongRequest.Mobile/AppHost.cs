@@ -89,6 +89,9 @@ public sealed class AppHost : IDisposable
                 : AndroidFilePickers.PickFilesAsync(title).GetAwaiter().GetResult();
 #endif
 
+        // Cross-platform image picker for the metadata editor (Android and iOS).
+        Interop.PickArtworkFile = () => MobileImagePicker.PickAsync("Choose cover art");
+
         RemoteControlService.Instance.RegisterMusicEngine(Host.Music);
         AppBootstrap.Initialize();
         RegisterCarMediaBridge();

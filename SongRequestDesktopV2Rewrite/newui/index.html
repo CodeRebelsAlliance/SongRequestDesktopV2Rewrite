@@ -323,7 +323,7 @@
               <div class="settings-hint">Kept for compatibility. You do not need to change this.</div>
             </div>
           </div>
-          <div class="settings-card">
+          <div class="settings-card" id="s-card-playback" style="display:none">
             <div class="settings-card-title">Playback &amp; Presentation</div>
             <div class="settings-hint">Options that affect queueing, screen behavior, and audio handling.</div>
             <label class="settings-checkbox"><input type="checkbox" id="s-fullscreen" /> Open presentation in fullscreen mode</label>
@@ -337,16 +337,8 @@
               <label class="settings-checkbox"><input type="checkbox" id="s-autopilot" /> ✈ Autopilot Mode</label>
               <div class="settings-hint" style="margin-left:24px">Automatically adds newly sent-in songs to the player queue.</div>
             </div>
-            <div class="settings-field" style="margin-top:12px">
-              <label>Default Submit Method</label>
-              <select id="s-default-submit-method" class="settings-input">
-                <option value="search">Search (YouTube search)</option>
-                <option value="url">URL (Direct YouTube link)</option>
-              </select>
-              <div class="settings-hint">Which tab is selected by default when the Submit Song modal opens.</div>
-            </div>
           </div>
-          <div class="settings-card ai-settings-card" id="s-card-ai-vocal">
+          <div class="settings-card ai-settings-card" id="s-card-ai-vocal" style="display:none">
             <div class="ai-card-title-row">
               <div class="settings-card-title">Enhanced Vocal Removal</div>
               <span class="ai-badge"><i class="fas fa-wand-magic-sparkles"></i> AI</span>
@@ -367,6 +359,22 @@
               <button id="s-ai-vocal-refresh" class="top-btn" style="font-size:12px">Refresh</button>
             </div>
             <div id="s-ai-vocal-progress" class="settings-hint" style="color:#d0d0d0"></div>
+          </div>
+          <div class="settings-card" id="s-card-player-settings-link">
+            <div class="settings-card-title">Player Settings</div>
+            <div class="settings-hint">Playback, lyrics, audio output, karaoke/AI, library analysis and online metadata sources now live in the Music Player's Settings tab.</div>
+            <button id="s-open-player-settings" class="action-btn" style="width:auto;padding:8px 16px;font-size:13px"><i class="fas fa-gear"></i> Open Player Settings</button>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Song Submission</div>
+            <div class="settings-field">
+              <label>Default Submit Method</label>
+              <select id="s-default-submit-method" class="settings-input">
+                <option value="search">Search (YouTube search)</option>
+                <option value="url">URL (Direct YouTube link)</option>
+              </select>
+              <div class="settings-hint">Which tab is selected by default when the Submit Song modal opens.</div>
+            </div>
           </div>
           <div class="settings-card" id="s-card-startup">
             <div class="settings-card-title">Startup &amp; Window</div>

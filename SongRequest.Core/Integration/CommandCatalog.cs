@@ -45,6 +45,7 @@ public static class CommandCatalog
         // ── Windows and UI ────────────────────────────────────────────────
         Add("showMusicPlayer", "Windows", "Open the music player window or tab.", null);
         Add("closeMusicPlayer", "Windows", "Close the music player window or tab.", null);
+        Add("showPlayerSettings", "Windows", "Open the music player's player settings tab.", null);
         Add("showPresentation", "Windows", "Open the presentation window.", null);
         Add("closePresentation", "Windows", "Close the presentation window.", null);
         Add("presentationReady", "Windows", "Tell the app the presentation page finished loading and push its current state.", null);
@@ -120,7 +121,17 @@ public static class CommandCatalog
         Add("getLibrarySongs", "Library", "Page through library songs.", new[] { "page", "pageSize", "sortBy", "descending", "filterMissing", "filterDuplicates" });
         Add("searchLibrary", "Library", "Search library songs.", new[] { "query", "maxResults" });
         Add("deleteLibrarySong", "Library", "Delete a library song.", new[] { "songId", "deleteFile" }, true);
-        Add("updateLibrarySongMetadata", "Library", "Edit a library song's metadata.", new[] { "songId", "title", "artist", "album", "genre", "tags" });
+        Add("updateLibrarySongMetadata", "Library", "Edit a library song's basic metadata.", new[] { "songId", "title", "artist", "album", "genre", "tags" });
+        Add("openMetadataEditor", "Library", "Open the metadata editor for a library song.", new[] { "songId" });
+        Add("closeMetadataEditor", "Library", "Close the metadata editor.", null);
+        Add("getSongMetadata", "Library", "Read every editable field, lyrics and artwork for a library song.", new[] { "songId" });
+        Add("saveSongMetadata", "Library", "Write metadata, lyrics and artwork to the file (or the library when the file cannot be written).", new[] { "songId", "title", "artist", "albumArtist", "album", "genre", "year", "track", "disc", "bpm", "comment", "composer", "lyricist", "conductor", "publisher", "copyright", "isrc", "grouping", "lyrics", "artworkDataUrl", "removeArtwork" }, true);
+        Add("identifySongMetadata", "Library", "Identify a library song against the enabled online catalogues.", new[] { "songId" });
+        Add("searchSongMetadata", "Library", "Search online catalogues by title/artist.", new[] { "songId", "query" });
+        Add("fetchSongArtwork", "Library", "Download artwork from a provider URL.", new[] { "url" });
+        Add("pickSongArtwork", "Library", "Pick an image file for the metadata editor.", null, true);
+        Add("fetchSongLyrics", "Library", "Fetch lyrics for a library song from LRCLIB.", new[] { "songId" });
+        Add("getMetadataProviderStatus", "Library", "Read live rate-limit, cooldown and availability status for online metadata providers.", null);
         Add("addLibraryScanFolder", "Library", "Add a folder to the library scan list.", new[] { "folder" });
         Add("removeLibraryScanFolder", "Library", "Remove a folder from the library scan list.", new[] { "folder" });
         Add("importToLibrary", "Library", "Register an existing file or downloaded video in the library.", new[] { "filePath", "youTubeId", "videoUrl", "title", "artist" });

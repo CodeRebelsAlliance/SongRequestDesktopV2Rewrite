@@ -99,6 +99,77 @@ test('startup update checks are capped and flatpak updates stay managed', () => 
   assert.match(interop, /timeout = startup \? TimeSpan\.FromSeconds\(3\)/);
 });
 
+test('metadata editor is a shared desktop window and a hidden mobile page', () => {
+  const root = path.join(__dirname, '..', '..');
+  const editor = read('metadataeditor.html');
+  const js = read('metadataeditor.js');
+  const desktopWindow = fs.readFileSync(path.join(root, 'SongRequestDesktopV2Rewrite', 'NewUiWindow.cs'), 'utf8');
+  const mobilePage = fs.readFileSync(path.join(root, 'SongRequest.Mobile', 'MainPage.cs'), 'utf8');
+  const music = read('musicplayer.html');
+  const musicJs = read('musicplayer.js');
+  const mobile = read('mobilemusic.js');
+
+  for (const id of ['me-title', 'me-artist', 'me-album', 'me-year', 'me-genre', 'me-lyrics-timeline',
+    'me-lyrics-lines', 'me-artwork-pick', 'me-prov-mb', 'me-prov-itunes', 'me-prov-deezer', 'me-prov-caa',
+    'me-prov-acoustid', 'me-prov-discogs', 'me-provider-priority', 'me-identify', 'me-save']) {
+    assert.ok(editor.includes(`id="${id}"`), `missing metadata editor #${id}`);
+  }
+  assert.match(js, /parseLrc/);
+  assert.match(js, /saveSongMetadata/);
+  assert.match(js, /identifySongMetadata/);
+  assert.match(js, /pickSongArtwork/);
+  assert.match(js, /pointermove/);
+
+  assert.match(desktopWindow, /metadataeditor\.html/);
+  assert.match(desktopWindow, /ShowMetadataEditorWindow/);
+  assert.match(mobilePage, /MetadataEditorFile = "metadataeditor\.html"/);
+  assert.match(mobilePage, /ShowMetadataEditorPage/);
+  assert.match(mobilePage, /SetImmersive\(true\)/);
+
+  // Right-click on desktop and the long-press song menu on mobile.
+  assert.match(music, /data-action="editMetadata"/);
+  assert.match(musicJs, /openMetadataEditor/);
+  assert.match(mobile, /data-song-action="editMetadata"/);
+  assert.match(mobile, /openMetadataEditor/);
+});
+
+test('player settings are consolidated into a shared tab on both platforms', () => {
+  const root = path.join(__dirname, '..', '..');
+  const settings = read('playersettings.js');
+  const desktop = read('musicplayer.html');
+  const mobile = read('mobilemusic.html');
+  const mobileJs = read('mobilemusic.js');
+  const index = read('index.html');
+  const interop = fs.readFileSync(path.join(root, 'SongRequest.Core', 'YoutubeFormInterop.cs'), 'utf8');
+
+  for (const id of ['ps-volume', 'ps-crossfade', 'ps-normalize', 'ps-karaoke', 'ps-ai-toggle',
+    'ps-lib-start', 'ps-prov-mb', 'ps-prov-deezer', 'ps-prov-discogs', 'ps-provider-priority']) {
+    assert.ok(settings.includes(`'${id}'`) || settings.includes(`"${id}"`), `missing player setting ${id}`);
+  }
+  assert.match(desktop, /data-view="settings"/);
+  assert.match(desktop, /id="player-settings-desktop"/);
+  assert.match(mobile, /id="mm-view-settings"/);
+  assert.match(mobile, /id="mm-player-settings"/);
+  assert.match(mobileJs, /openPlayerSettingsTab/);
+  assert.match(mobileJs, /SongRequestPlayerSettings\.mount/);
+
+  // The old main settings cards are kept for backward-compatible DOM ids but
+  // are hidden; the visible entry point opens the player settings tab instead.
+  assert.match(index, /id="s-card-playback" style="display:none"/);
+  assert.match(index, /id="s-card-ai-vocal" style="display:none"/);
+  assert.match(index, /s-open-player-settings/);
+  assert.match(interop, /case "showPlayerSettings"/);
+  assert.match(settings, /getMetadataProviderStatus/);
+  assert.match(settings, /refreshProviderStatus/);
+  const editorJs = read('metadataeditor.js');
+  assert.match(editorJs, /getMetadataProviderStatus/);
+  const governor = fs.readFileSync(path.join(root, 'SongRequest.Core', 'MetadataProviderGovernor.cs'), 'utf8');
+  assert.match(governor, /AcquireAsync/);
+  assert.match(governor, /CooldownUntilUtc/);
+  assert.match(governor, /MusicBrainz/);
+  assert.match(governor, /DiscogsAuth/);
+});
+
 test('startup is not replayed when a page is recreated', () => {
   const root = path.join(__dirname, '..', '..');
   const app = fs.readFileSync(path.join(ui, 'app.js'), 'utf8');
@@ -184,7 +255,7 @@ test('mobile queue is a player chip, not a navigation tab', () => {
   const html = read('mobilemusic.html');
   const page = fs.readFileSync(path.join(__dirname, '..', '..', 'SongRequest.Mobile', 'MainPage.cs'), 'utf8');
   assert.match(html, /id="mm-queue-toggle"/);
-  assert.match(html, /id="mm-more"[\s\S]*?<span>Options<\/span>/);
+  assert.match(html, /id="mm-more"[\s\S]*?<span>Settings<\/span>/);
 
   // The phone layout keeps the queue as a player chip. Car screens add a
   // dedicated queue tab because there is no other way to reach it while driving.

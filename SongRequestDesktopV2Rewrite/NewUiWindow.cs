@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace SongRequestDesktopV2Rewrite;
 
@@ -130,6 +131,7 @@ public class NewUiWindow : IUiShell
     private PhotinoWindow? _soundboardWindow;
     private PhotinoWindow? _visualizationWindow;
     private PhotinoWindow? _announcementWindow;
+    private PhotinoWindow? _metadataEditorWindow;
 
     private ITrayIcon? _tray;
     private volatile bool _forceClose;
@@ -148,6 +150,7 @@ public class NewUiWindow : IUiShell
 
     private Action? _onDataRefreshedHandler;
     private volatile bool _presentationClosing;
+    private Action<string>? _metadataEditorSend;
 
     public bool IsOpen => _window != null;
 
@@ -156,6 +159,7 @@ public class NewUiWindow : IUiShell
     public Action<string>? SoundboardSendMessage { get; set; }
     public Action<string>? VisualizationSendMessage { get; set; }
     public Action<string>? AnnouncementSendMessage { get; set; }
+    public Action<string>? MetadataEditorSendMessage { get; set; }
 
     public LibraryService? LibraryService => _interop.LibraryService;
 
@@ -258,6 +262,18 @@ public class NewUiWindow : IUiShell
                     return result != null && result.Length > 0 ? result : null;
                 }
                 catch { return null; }
+            };
+
+            _interop.PickArtworkFile = () =>
+            {
+                try
+                {
+                    var result = w.ShowOpenFile(
+                        "Choose cover art", "", false,
+                        new[] { ("Images", new[] { "png", "jpg", "jpeg", "webp", "gif", "bmp" }) });
+                    return Task.FromResult(result != null && result.Length > 0 ? result[0] : null);
+                }
+                catch { return Task.FromResult<string?>(null); }
             };
 
             _interop.SendMessage = json =>
@@ -590,6 +606,63 @@ public class NewUiWindow : IUiShell
         // The window instance is kept (hidden) so reopening it is instant and no
         // web-view teardown can block the UI thread.
         SetSubWindowVisible("Music Player - ", false);;
+    }
+
+    public void ShowMetadataEditorWindow()
+    {
+        var mainWindow = _window;
+        if (mainWindow == null)
+            return;
+
+        mainWindow.Invoke(() =>
+        {
+            if (_metadataEditorWindow != null)
+            {
+                SetSubWindowVisible("Edit Metadata - ", true);
+                MetadataEditorSendMessage = _metadataEditorSend;
+                _interop.SendMetadataEditorSongFromShell();
+                return;
+            }
+
+            var htmlPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "newui",
+                "metadataeditor.html");
+
+            var mw = new PhotinoWindow()
+                .SetTitle("Edit Metadata - SongRequest V2")
+                .SetSize(1100, 780)
+                .Center()
+                .Load(htmlPath);
+
+            mw.WindowCreated += (_, _) => { ApplyInitialGeometry(mw, 1100, 780); BringToFront(mw); };
+
+            mw.RegisterWebMessageReceivedHandler((sender, message) =>
+            {
+                _interop.HandleMessage(message, json =>
+                {
+                    try { mw.Invoke(() => mw.SendWebMessage(json)); }
+                    catch { }
+                });
+            });
+
+            MetadataEditorSendMessage = json =>
+            {
+                try { mw.Invoke(() => mw.SendWebMessage(json)); }
+                catch { }
+            };
+            _metadataEditorSend = MetadataEditorSendMessage;
+
+            RegisterHideOnClose(mw, "Edit Metadata - ", () => MetadataEditorSendMessage = null);
+
+            _metadataEditorWindow = mw;
+            mw.WaitForClose();
+        });
+    }
+
+    public void CloseMetadataEditorWindow()
+    {
+        SetSubWindowVisible("Edit Metadata - ", false);
     }
 
     public void ShowPresentationWindow()

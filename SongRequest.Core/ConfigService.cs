@@ -35,6 +35,20 @@ namespace SongRequestDesktopV2Rewrite
         private bool _libraryAutoAddDownloads = true;
         private bool _libraryRemoveMissingOnScan = false;
         private bool _libraryRecommendationsEnabled = true;
+        // Online metadata/artwork sources. Editable per provider from the metadata
+        // editor and the player settings tab.
+        private bool _metadataProviderMusicBrainz = true;
+        private bool _metadataProviderITunes = true;
+        private bool _metadataProviderDeezer = true;
+        private bool _metadataProviderCoverArtArchive = true;
+        private bool _metadataProviderAcoustId = false;
+        private string _acoustIdApiKey = string.Empty;
+        private bool _metadataProviderDiscogs = false;
+        private string _discogsToken = string.Empty;
+        private List<string> _metadataProviderPriority = new()
+        {
+            "MusicBrainz", "iTunes", "Deezer", "CoverArtArchive", "AcoustID", "Discogs"
+        };
         private bool _logPlayback = false;
         private float _lyricsFontScale = 1.0f;
         private bool _lyricsHidden = false;
@@ -231,6 +245,64 @@ namespace SongRequestDesktopV2Rewrite
         {
             get => _libraryRecommendationsEnabled;
             set => SetField(ref _libraryRecommendationsEnabled, value);
+        }
+
+        public bool MetadataProviderMusicBrainz
+        {
+            get => _metadataProviderMusicBrainz;
+            set => SetField(ref _metadataProviderMusicBrainz, value);
+        }
+
+        public bool MetadataProviderITunes
+        {
+            get => _metadataProviderITunes;
+            set => SetField(ref _metadataProviderITunes, value);
+        }
+
+        public bool MetadataProviderDeezer
+        {
+            get => _metadataProviderDeezer;
+            set => SetField(ref _metadataProviderDeezer, value);
+        }
+
+        public bool MetadataProviderCoverArtArchive
+        {
+            get => _metadataProviderCoverArtArchive;
+            set => SetField(ref _metadataProviderCoverArtArchive, value);
+        }
+
+        public bool MetadataProviderAcoustId
+        {
+            get => _metadataProviderAcoustId;
+            set => SetField(ref _metadataProviderAcoustId, value);
+        }
+
+        /// <summary>Free AcoustID application key; empty disables fingerprint identification.</summary>
+        public string AcoustIdApiKey
+        {
+            get => _acoustIdApiKey;
+            set => SetField(ref _acoustIdApiKey, value ?? string.Empty);
+        }
+
+        public bool MetadataProviderDiscogs
+        {
+            get => _metadataProviderDiscogs;
+            set => SetField(ref _metadataProviderDiscogs, value);
+        }
+
+        /// <summary>Optional Discogs personal access token (raises the rate limit to 60/min).</summary>
+        public string DiscogsToken
+        {
+            get => _discogsToken;
+            set => SetField(ref _discogsToken, value ?? string.Empty);
+        }
+
+        /// <summary>Provider order for online metadata/artwork lookups (names, highest priority first).</summary>
+        public List<string> MetadataProviderPriority
+        {
+            get => _metadataProviderPriority;
+            set => SetField(ref _metadataProviderPriority,
+                value ?? new List<string> { "MusicBrainz", "iTunes", "Deezer", "CoverArtArchive", "AcoustID", "Discogs" });
         }
 
         public bool LogPlayback
