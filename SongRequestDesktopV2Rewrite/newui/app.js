@@ -405,6 +405,19 @@
 
   // Settings modal
   const settingsModal = document.getElementById('settings-modal');
+
+  // The mobile Song Requests page intentionally omits desktop-only cards
+  // (AI voice separation, playback analysis). The shared settings loader still
+  // runs there, so every optional control is addressed through these guards
+  // instead of assuming the desktop DOM.
+  function settingsElement(id) {
+    return document.getElementById(id);
+  }
+  function setSettingsChecked(id, value) {
+    const el = settingsElement(id);
+    if (el) el.checked = value;
+  }
+
   function showSettings() {
     settingsModal.style.display = 'flex';
     loadSettings();
@@ -427,10 +440,10 @@
       document.getElementById('s-normalize-volume').checked = cfg.normalizeVolume ?? false;
       const newLaunch = document.getElementById('s-new-launch');
       if (newLaunch) newLaunch.checked = cfg.newLaunchExperience === true;
-      document.getElementById('s-auto-analyze').checked = cfg.autoAnalyzeSongs ?? true;
-      document.getElementById('s-karaoke-mode').checked = cfg.karaokeMode === true;
-      document.getElementById('s-play-karaoke').checked = cfg.playKaraokeVersions === true;
-      document.getElementById('s-ai-vocal-removal').checked = cfg.enhancedVocalRemoval === true;
+      setSettingsChecked('s-auto-analyze', cfg.autoAnalyzeSongs ?? true);
+      setSettingsChecked('s-karaoke-mode', cfg.karaokeMode === true);
+      setSettingsChecked('s-play-karaoke', cfg.playKaraokeVersions === true);
+      setSettingsChecked('s-ai-vocal-removal', cfg.enhancedVocalRemoval === true);
       _aiSelectedModelId = cfg.aiVocalModelId || '';
       _aiDisclaimerAccepted = cfg.aiDisclaimerAccepted === true;
       if (cfg.enhancedVocalRemoval === true && !_aiDisclaimerAccepted) {
@@ -438,9 +451,9 @@
         if (aiToggle) {
           aiToggle.checked = false;
           aiToggle.dataset.touched = '1';
+          updateAiCardActive();
+          setTimeout(function () { openAiDisclaimer(true); }, 250);
         }
-        updateAiCardActive();
-        setTimeout(function () { openAiDisclaimer(true); }, 250);
       } else {
         updateAiCardActive();
       }
@@ -472,8 +485,8 @@
       document.getElementById('s-operating-mode').value = cfg.operatingMode || 'SongRequests';
       document.getElementById('s-library-remove-missing').checked = cfg.libraryRemoveMissingOnScan ?? false;
       document.getElementById('s-library-recommendations').checked = cfg.libraryRecommendationsEnabled ?? true;
-      document.getElementById('s-library-auto-analyze-add').checked = cfg.autoAnalyzeLibraryOnAdd !== false;
-      document.getElementById('s-library-auto-analyze-version').checked = cfg.autoAnalyzeLibraryOnAlgorithmUpdate !== false;
+      setSettingsChecked('s-library-auto-analyze-add', cfg.autoAnalyzeLibraryOnAdd !== false);
+      setSettingsChecked('s-library-auto-analyze-version', cfg.autoAnalyzeLibraryOnAlgorithmUpdate !== false);
       document.getElementById('s-log-playback').checked = cfg.logPlayback ?? false;
       document.getElementById('s-autostart').checked = cfg.autoStart ?? false;
       document.getElementById('s-start-minimized').checked = cfg.startMinimized ?? false;
@@ -605,14 +618,6 @@
         presentationFullscreen: document.getElementById('s-fullscreen').checked,
         normalizeVolume: document.getElementById('s-normalize-volume').checked,
         newLaunchExperience: !!(document.getElementById('s-new-launch') && document.getElementById('s-new-launch').checked),
-        autoAnalyzeSongs: document.getElementById('s-auto-analyze').checked,
-        karaokeMode: document.getElementById('s-karaoke-mode').checked,
-        playKaraokeVersions: document.getElementById('s-play-karaoke').checked,
-        enhancedVocalRemoval: document.getElementById('s-ai-vocal-removal').checked,
-        aiVocalModelId: document.getElementById('s-ai-vocal-model').value || 'uvr-kara-2',
-        aiDisclaimerAccepted: _aiDisclaimerAccepted,
-        autoAnalyzeLibraryOnAdd: document.getElementById('s-library-auto-analyze-add').checked,
-        autoAnalyzeLibraryOnAlgorithmUpdate: document.getElementById('s-library-auto-analyze-version').checked,
         useCaptionLyricsFallback: document.getElementById('s-caption-fallback').checked,
         enableAnnouncements: document.getElementById('s-enable-announcements').checked,
         autoEnqueue: document.getElementById('s-autopilot').checked,
@@ -643,6 +648,27 @@
         libraryRemoveMissingOnScan: document.getElementById('s-library-remove-missing').checked,
         libraryRecommendationsEnabled: document.getElementById('s-library-recommendations').checked
       };
+
+      // Optional cards are only present on desktop. Leave their keys out of the
+      // payload on mobile so saveSettings keeps the existing values instead of
+      // overwriting them with defaults.
+      const autoAnalyzeToggle = settingsElement('s-auto-analyze');
+      if (autoAnalyzeToggle) settings.autoAnalyzeSongs = autoAnalyzeToggle.checked;
+      const karaokeToggle = settingsElement('s-karaoke-mode');
+      if (karaokeToggle) settings.karaokeMode = karaokeToggle.checked;
+      const playKaraokeToggle = settingsElement('s-play-karaoke');
+      if (playKaraokeToggle) settings.playKaraokeVersions = playKaraokeToggle.checked;
+      if (aiToggle) {
+        settings.enhancedVocalRemoval = aiToggle.checked;
+        settings.aiDisclaimerAccepted = _aiDisclaimerAccepted;
+      }
+      const aiModelSelect = settingsElement('s-ai-vocal-model');
+      if (aiModelSelect) settings.aiVocalModelId = aiModelSelect.value || 'uvr-kara-2';
+      const libraryAnalyzeAdd = settingsElement('s-library-auto-analyze-add');
+      if (libraryAnalyzeAdd) settings.autoAnalyzeLibraryOnAdd = libraryAnalyzeAdd.checked;
+      const libraryAnalyzeUpdate = settingsElement('s-library-auto-analyze-version');
+      if (libraryAnalyzeUpdate) settings.autoAnalyzeLibraryOnAlgorithmUpdate = libraryAnalyzeUpdate.checked;
+
       const r = await send('saveSettings', { settings });
       if (!r.success) { statusEl.textContent = 'Save failed: ' + (r.error || 'unknown'); return; }
 

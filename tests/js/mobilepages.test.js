@@ -819,3 +819,24 @@ test('artist search, home rows and detail views are wired on desktop and mobile'
   assert.match(catalog, /Add\("getArtist"/);
   assert.match(catalog, /Add\("playArtist"/);
 });
+
+test('mobile song-request settings tolerate desktop-only controls', () => {
+  const js = read('app.js');
+  const mobile = read('mobilerequests.html');
+
+  // The mobile Settings page deliberately leaves out AI voice separation,
+  // karaoke and library-analysis cards. The shared loader/saver must not touch
+  // those ids blindly or opening Settings throws before anything loads.
+  for (const id of ['s-auto-analyze', 's-karaoke-mode', 's-play-karaoke',
+    's-ai-vocal-removal', 's-ai-vocal-model', 's-library-auto-analyze-add',
+    's-library-auto-analyze-version']) {
+    assert.ok(!mobile.includes(`id="${id}"`), `mobile markup unexpectedly has #${id}`);
+  }
+
+  assert.match(js, /setSettingsChecked\('s-auto-analyze'/);
+  assert.match(js, /setSettingsChecked\('s-library-auto-analyze-add'/);
+  assert.match(js, /const autoAnalyzeToggle = settingsElement\('s-auto-analyze'\);\s*if \(autoAnalyzeToggle\)/);
+  assert.match(js, /const karaokeToggle = settingsElement\('s-karaoke-mode'\);\s*if \(karaokeToggle\)/);
+  assert.match(js, /const aiModelSelect = settingsElement\('s-ai-vocal-model'\);\s*if \(aiModelSelect\)/);
+  assert.match(js, /if \(aiToggle\) \{\s*settings\.enhancedVocalRemoval/);
+});
