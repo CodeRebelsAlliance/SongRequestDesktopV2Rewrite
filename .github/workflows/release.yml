@@ -181,7 +181,7 @@ jobs:
           name: SongRequest-${{ matrix.rid }}
           path: SongRequest-${{ matrix.rid }}.*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # All tests (unit + integration + JS) with coverage floors. Every suite runs
@@ -302,6 +302,7 @@ jobs:
         with:
           name: test-results
           path: TestResults/**
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Mobile (Android) APK. Linux is enough: SongRequest.Mobile only adds the iOS
@@ -416,6 +417,7 @@ jobs:
           name: SongRequest-android
           path: SongRequest-android.apk
           if-no-files-found: error
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Decide whether this run publishes a release: every manual dispatch, and any
